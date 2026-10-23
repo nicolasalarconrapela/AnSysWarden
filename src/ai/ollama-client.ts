@@ -7,6 +7,9 @@ const VALID_CLASSIFICATIONS = new Set<Classification>([
   'USER_DATA',
 ]);
 
+const DEFAULT_CLASSIFY_TIMEOUT_MS = 30_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 5_000;
+
 interface OllamaGenerateResponse {
   response?: string;
 }
@@ -15,7 +18,18 @@ interface OllamaTagsResponse {
   models?: Array<{ name?: string }>;
 }
 
+function readPositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export class OllamaClient {
+  private readonly classifyTimeoutMs = readPositiveInt(
+    process.env.ANSYSWARDEN_AI_TIMEOUT_MS,
+    DEFAULT_CLASSIFY_TIMEOUT_MS,
+  );
+
   constructor(
     private readonly host = process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
     private readonly model = process.env.ANSYSWARDEN_MODEL ?? 'gemma2:2b',
@@ -30,8 +44,14 @@ export class OllamaClient {
     return this.model;
   }
 
+  getTimeoutMs(): number {
+    return this.classifyTimeoutMs;
+  }
+
   async health(): Promise<{ ok: boolean; models: string[] }> {
-    const response = await fetch(`${this.host}/api/tags`);
+    const response = await fetch(`${this.host}/api/tags`, {
+      signal: AbortSignal.timeout(DEFAULT_HEALTH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
     }
@@ -71,19 +91,55 @@ export class OllamaClient {
       host: this.host,
       model: this.model,
       input_path: inputPath,
+      timeout_ms: this.classifyTimeoutMs,
     });
 
-    const response = await fetch(`${this.host}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    let response: Response;
+    try {
+      response = await fetch(`${this.host}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(this.classifyTimeoutMs),
+        body: JSON.stringify({
+          model: this.model,
+          prompt,
+          stream: false,
+          format: 'json',
+          keep_alive: '10m',
+          options: {
+            temperature: 0,
+            num_predict: 128,
+          },
+        }),
+      });
+    } catch (error) {
+      const durationMs = Math.round(performance.now() - startedAt);
+      const isTimeout = error instanceof Error && (
+        error.name === 'TimeoutError'
+        || error.name === 'AbortError'
+        || error.message.toLowerCase().includes('timeout')
+      );
+
+      if (isTimeout) {
+        await this.logger?.warn('ollama.timeout', 'Gemma superó el tiempo máximo permitido', {
+          host: this.host,
+          model: this.model,
+          input_path: inputPath,
+          timeout_ms: this.classifyTimeoutMs,
+          duration_ms: durationMs,
+        });
+        throw new Error(`Gemma superó el timeout de ${this.classifyTimeoutMs} ms`);
+      }
+
+      await this.logger?.error('ollama.request.failed', 'Falló la llamada a Ollama', {
+        host: this.host,
         model: this.model,
-        prompt,
-        stream: false,
-        format: 'json',
-        options: { temperature: 0 },
-      }),
-    });
+        input_path: inputPath,
+        duration_ms: durationMs,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     const durationMs = Math.round(performance.now() - startedAt);
 
