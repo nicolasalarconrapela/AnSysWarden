@@ -20,7 +20,6 @@ usage() {
 AnSysWarden CLI
 
 Uso:
-  ./ansys ai bootstrap
   ./ansys ai start
   ./ansys ai stop
   ./ansys ai status
@@ -31,6 +30,7 @@ Uso:
   ./ansys inspect <ruta>
   ./ansys test safety
   ./ansys test rules
+  ./ansys test benchmark [--offset N] [--limit N]
   ./ansys review export <ruta>
   ./ansys logs [--raw]
 
@@ -47,21 +47,6 @@ require_command() {
 
 ollama_ready() {
   curl -fsS "$OLLAMA_HOST_URL/api/tags" >/dev/null 2>&1
-}
-
-ai_bootstrap() {
-  local setup_script="$ROOT_DIR/scripts/setup-mobile-ai.sh"
-
-  if [[ ! -f "$setup_script" ]]; then
-    err "No se encuentra el bootstrap de IA: $setup_script"
-    exit 1
-  fi
-
-  info "Preparando Ollama y $MODEL para AnSysWarden..."
-  OLLAMA_HOST_URL="$OLLAMA_HOST_URL" \
-  ANSYSWARDEN_MODEL="$MODEL" \
-  OLLAMA_LOG_FILE="$OLLAMA_LOG_FILE" \
-  bash "$setup_script"
 }
 
 ai_start() {
@@ -232,7 +217,6 @@ main() {
   case "$command" in
     ai)
       case "${2:-}" in
-        bootstrap) ai_bootstrap ;;
         start) ai_start ;;
         stop) ai_stop ;;
         status) ai_status ;;
@@ -260,6 +244,10 @@ main() {
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
         rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
+        benchmark)
+          shift 2
+          run_ts "$ROOT_DIR/src/tests/cache-benchmark-runner.ts" "$@"
+          ;;
         *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
