@@ -27,6 +27,7 @@ Uso:
   ./ansys doctor
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
+  ./ansys test safety
   ./ansys logs [--raw]
 
 La interfaz diaria no requiere usar npm directamente.
@@ -213,6 +214,12 @@ main() {
       [[ -n "${2:-}" ]] || { err "Falta la ruta a escanear."; exit 1; }
       shift
       run_ts scan "$@"
+      ;;
+    test)
+      case "${2:-}" in
+        safety) run_ts test safety ;;
+        *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
+      esac
       ;;
     logs)
       show_logs "${2:-}"
