@@ -1,18 +1,31 @@
 #!/bin/bash
 
-# Extraer usuario
+# Archivo oculto para guardar tu IP
+CONFIG_FILE="$HOME/.ansyswarden_ip"
 USER_NAME=$(whoami)
 
-# Extraer IP usando Node.js (infalible en Termux sin root)
-IP_LOCAL=$(node -e "const os = require('os'); const nets = os.networkInterfaces(); for (const name of Object.keys(nets)) { for (const net of nets[name]) { if (net.family === 'IPv4' && !net.internal) console.log(net.address); } }" | head -n 1)
-
-if [ -z "$IP_LOCAL" ]; then
-    IP_LOCAL="<REVISA_TU_WIFI_EN_AJUSTES>"
+# 1. Comprobar si ya tenemos la IP guardada
+if [ -f "$CONFIG_FILE" ]; then
+    IP_LOCAL=$(cat "$CONFIG_FILE")
+else
+    clear
+    echo "==================================================="
+    echo "⚠️ Android bloquea la lectura automática de red."
+    echo "Ve a Ajustes > Conexiones > Wi-Fi y mira tu Dirección IP."
+    echo "==================================================="
+    read -p "Introduce tu IP local (ej. 192.168.1.50): " IP_LOCAL
+    
+    # Guardar la IP para no volver a preguntarla
+    echo "$IP_LOCAL" > "$CONFIG_FILE"
+    echo "✅ IP guardada con éxito."
+    sleep 1
 fi
 
 clear
 echo "==================================================="
-echo "  🚀 Entorno Híbrido S25 Ultra <-> nar-devops 🚀"
+echo "  🚀 Entorno AnSysWarden (S25 Ultra <-> nar-devops) 🚀"
+echo "==================================================="
+echo "📡 IP Actual: $IP_LOCAL (Para cambiarla usa: rm $CONFIG_FILE)"
 echo "==================================================="
 echo "Elige cómo quieres abrir tu código en el PC:"
 echo "1) Método 1: VS Code Nativo (Extensión Remote-SSH)"
