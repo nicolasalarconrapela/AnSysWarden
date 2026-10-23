@@ -14,7 +14,7 @@ const USER_DATA_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /(^|\/)(pictures|photos|fotos|dcim)(\/|$)/i, reason: 'Ruta asociada a fotografías o imágenes del usuario.' },
   { pattern: /(^|\/)(movies|videos|vídeos)(\/|$)/i, reason: 'Ruta asociada a vídeos del usuario.' },
   { pattern: /(^|\/)(music|música)(\/|$)/i, reason: 'Ruta asociada a contenido multimedia del usuario.' },
-  { pattern: /(^|\/)(downloads|descargas)(\/|$)/i, reason: 'La carpeta de descargas puede contener datos personales o únicos.' },
+  { pattern: /(^|\/)(download|downloads|descargas)(\/|$)/i, reason: 'La carpeta de descargas puede contener datos personales o únicos.' },
 ];
 
 export function classifyByRules(inputPath: string): ClassificationResult | null {
