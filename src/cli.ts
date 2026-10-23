@@ -8,27 +8,16 @@ import { runAiSafetySuite } from './tests/ai-safety';
 const ANSI = {
   reset: '\u001b[0m',
   bold: '\u001b[1m',
-  dim: '\u001b[2m',
   red: '\u001b[31m',
   green: '\u001b[32m',
   yellow: '\u001b[33m',
-  blue: '\u001b[34m',
-  magenta: '\u001b[35m',
   cyan: '\u001b[36m',
   gray: '\u001b[90m',
 };
 
-function color(text: string, code: string): string {
+function paint(text: string, code: string): string {
   if (!process.stdout.isTTY || process.env.NO_COLOR) return text;
   return `${code}${text}${ANSI.reset}`;
-}
-
-function classificationColor(value: string): string {
-  if (value === 'SAFE_CACHE') return color(value, ANSI.green);
-  if (value === 'USER_DATA') return color(value, ANSI.blue);
-  if (value === 'REVIEW_REQUIRED') return color(value, ANSI.yellow);
-  if (value === 'ERROR') return color(value, ANSI.red);
-  return value;
 }
 
 function usage(): void {
@@ -139,64 +128,65 @@ async function runScan(root: string, args: string[], logger: TraceLogger): Promi
   console.log(`Trace:               ${logger.logFile}`);
 }
 
+function humanMeaning(classification: string): string {
+  if (classification === 'SAFE_CACHE') return 'Se reconoce como caché conocida y regenerable.';
+  if (classification === 'USER_DATA') return 'Parece información del usuario. Se protege.';
+  if (classification === 'REVIEW_REQUIRED') return 'No hay suficiente seguridad. No se autoriza como caché.';
+  return 'El test no pudo obtener una decisión válida.';
+}
+
 async function runSafety(logger: TraceLogger): Promise<void> {
-  console.log(`\n${color('AnSysWarden · AI Safety Tests', ANSI.bold)}`);
-  console.log('════════════════════════════════════════════════════');
-  console.log(`${color('Objetivo', ANSI.cyan)}  Gemma puede opinar; AnSysWarden decide.`);
-  console.log(`${color('Política', ANSI.cyan)}  SAFE_CACHE solo se autoriza mediante regla local explícita.`);
-  console.log(`${color('Modo', ANSI.cyan)}      READ ONLY`);
+  console.log(`\n${paint('AnSysWarden · Prueba de seguridad', ANSI.bold)}`);
+  console.log('════════════════════════════════════════════');
+  console.log('Queremos comprobar una sola cosa:');
+  console.log(paint('Gemma nunca puede hacer que AnSysWarden trate datos dudosos como basura segura.', ANSI.cyan));
 
   const result = await runAiSafetySuite(logger);
 
-  console.log(`\n${color('TRACE VISUAL', ANSI.bold)}`);
-  console.log('════════════════════════════════════════════════════');
+  for (let index = 0; index < result.results.length; index += 1) {
+    const item = result.results[index];
+    const ok = item.passed;
+    const number = `${index + 1}/${result.results.length}`;
 
-  for (const item of result.results) {
-    const status = item.passed
-      ? color('PASS', ANSI.green)
-      : color('FAIL', ANSI.red);
-    const mode = item.test.mode === 'system'
-      ? color('SYSTEM', ANSI.magenta)
-      : color('GEMMA', ANSI.cyan);
-    const expected = item.test.allowed.map(classificationColor).join(' | ');
-    const actual = classificationColor(item.actual);
-
-    console.log(`\n${status}  ${color(item.test.id, ANSI.bold)}  [${mode}]`);
-    console.log(`│ ${item.test.description}`);
-    console.log(`│`);
-    console.log(`├─ ${color('INPUT', ANSI.gray)}      ${item.test.input}`);
-    console.log(`├─ ${color('EXPECTED', ANSI.gray)}   ${expected}`);
+    console.log('\n────────────────────────────────────────────');
+    console.log(`${paint(number, ANSI.gray)}  ${ok ? paint('🟢 SEGURO', ANSI.green) : paint('🔴 PELIGRO', ANSI.red)}`);
+    console.log(item.test.description);
+    console.log('');
+    console.log(`📁 Probamos: ${item.test.input}`);
 
     if (item.test.mode === 'model') {
-      console.log(`├─ ${color('GEMMA', ANSI.cyan)}      ${actual}${item.confidence !== undefined ? ` · ${Math.round(item.confidence * 100)}%` : ''}`);
-      console.log(`│  ${color('reason', ANSI.dim)}     ${item.reason ?? item.error ?? '(sin detalle)'}`);
-      console.log(`└─ ${color('VERDICT', item.passed ? ANSI.green : ANSI.red)}    ${item.passed ? 'La respuesta del modelo respeta la política del test.' : 'La respuesta del modelo viola la política del test.'}`);
+      console.log(`🤖 Gemma respondió: ${item.actual}${item.confidence !== undefined ? ` (${Math.round(item.confidence * 100)}%)` : ''}`);
+      console.log(`   ${item.reason ?? item.error ?? 'Sin explicación.'}`);
+      console.log(`🛡️ Resultado: ${ok ? 'La respuesta de Gemma no pone los datos en riesgo.' : 'Gemma ha dado una respuesta que podría ser peligrosa.'}`);
     } else {
-      const source = item.source ?? 'unknown';
-      const policyBlocked = source === 'fallback' && item.reason?.includes('Gemma propuso SAFE_CACHE');
-      console.log(`├─ ${color('SYSTEM', ANSI.magenta)}     ${actual}${item.confidence !== undefined ? ` · ${Math.round(item.confidence * 100)}%` : ''}`);
-      console.log(`├─ ${color('SOURCE', ANSI.gray)}     ${source}`);
+      const policyBlocked = item.source === 'fallback' && item.reason?.includes('Gemma propuso SAFE_CACHE');
       if (policyBlocked) {
-        console.log(`├─ ${color('POLICY', ANSI.yellow)}     ${color('BLOCKED', ANSI.yellow)} · Gemma intentó elevar a SAFE_CACHE y AnSysWarden lo degradó.`);
+        console.log(`🤖 Gemma quiso marcarlo como: ${paint('SAFE_CACHE', ANSI.red)}`);
+        console.log(`🛡️ AnSysWarden respondió: ${paint('BLOQUEADO', ANSI.yellow)}`);
+        console.log(`✅ Resultado final: ${paint('REVISAR, NO BORRAR', ANSI.green)}`);
+      } else {
+        console.log(`🛡️ AnSysWarden decidió: ${item.actual}`);
+        console.log(`   ${humanMeaning(item.actual)}`);
       }
-      console.log(`│  ${color('reason', ANSI.dim)}     ${item.reason ?? item.error ?? '(sin detalle)'}`);
-      console.log(`└─ ${color('VERDICT', item.passed ? ANSI.green : ANSI.red)}    ${item.passed ? 'La decisión efectiva del sistema es segura.' : 'La decisión efectiva del sistema NO es segura.'}`);
     }
 
-    console.log(`   ${color('duration', ANSI.dim)} ${item.durationMs} ms`);
+    if (!ok) {
+      console.log(paint('⚠️ ESTE CASO NECESITA CORRECCIÓN.', ANSI.red));
+    }
   }
 
-  console.log(`\n${color('SUMMARY', ANSI.bold)}`);
-  console.log('════════════════════════════════════════════════════');
-  console.log(`${color('Passed', ANSI.green)}   ${result.passed}`);
-  console.log(`${color('Failed', result.failed === 0 ? ANSI.green : ANSI.red)}   ${result.failed}`);
-  console.log(`Run ID   ${logger.runId}`);
-  console.log(`Trace    ${logger.logFile}`);
-  console.log(`\nLeyenda: ${color('verde=seguro', ANSI.green)} · ${color('amarillo=revisión/bloqueo', ANSI.yellow)} · ${color('rojo=fallo', ANSI.red)} · ${color('cian=Gemma', ANSI.cyan)} · ${color('magenta=AnSysWarden', ANSI.magenta)}`);
-
-  if (result.failed > 0) {
-    process.exitCode = 2;
+  console.log('\n════════════════════════════════════════════');
+  if (result.failed === 0) {
+    console.log(paint(`🟢 RESULTADO: ${result.passed}/${result.results.length} pruebas seguras`, ANSI.green));
+    console.log('No hemos encontrado ningún caso en el que AnSysWarden deje pasar una decisión peligrosa.');
+  } else {
+    console.log(paint(`🔴 RESULTADO: ${result.failed} prueba(s) peligrosa(s)`, ANSI.red));
+    console.log('No debemos considerar segura esta versión todavía.');
   }
+  console.log(`\nTraza técnica: ${logger.logFile}`);
+  console.log(paint('La traza JSONL queda aparte para diagnóstico técnico/IA.', ANSI.gray));
+
+  if (result.failed > 0) process.exitCode = 2;
 }
 
 async function main(): Promise<void> {
