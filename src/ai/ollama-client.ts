@@ -1,4 +1,5 @@
 import type { AiClassificationPayload, Classification } from './types';
+import { TraceLogger } from '../observability/logger';
 
 const VALID_CLASSIFICATIONS = new Set<Classification>([
   'SAFE_CACHE',
@@ -10,11 +11,38 @@ interface OllamaGenerateResponse {
   response?: string;
 }
 
+interface OllamaTagsResponse {
+  models?: Array<{ name?: string }>;
+}
+
 export class OllamaClient {
   constructor(
     private readonly host = process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
     private readonly model = process.env.ANSYSWARDEN_MODEL ?? 'gemma2:2b',
+    private readonly logger?: TraceLogger,
   ) {}
+
+  getHost(): string {
+    return this.host;
+  }
+
+  getModel(): string {
+    return this.model;
+  }
+
+  async health(): Promise<{ ok: boolean; models: string[] }> {
+    const response = await fetch(`${this.host}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
+    }
+
+    const body = (await response.json()) as OllamaTagsResponse;
+    const models = (body.models ?? [])
+      .map((item) => item.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0);
+
+    return { ok: true, models };
+  }
 
   async classifyPath(inputPath: string): Promise<AiClassificationPayload> {
     const prompt = [
@@ -32,6 +60,13 @@ export class OllamaClient {
       `Ruta: ${inputPath}`,
     ].join('\n');
 
+    const startedAt = performance.now();
+    await this.logger?.info('ollama.request', 'Enviando clasificación a Gemma', {
+      host: this.host,
+      model: this.model,
+      input_path: inputPath,
+    });
+
     const response = await fetch(`${this.host}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,8 +79,18 @@ export class OllamaClient {
       }),
     });
 
+    const durationMs = Math.round(performance.now() - startedAt);
+
     if (!response.ok) {
-      throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
+      const body = await response.text();
+      await this.logger?.error('ollama.response.error', 'Ollama devolvió un error', {
+        host: this.host,
+        model: this.model,
+        status: response.status,
+        duration_ms: durationMs,
+        body,
+      });
+      throw new Error(`Ollama HTTP ${response.status}: ${body}`);
     }
 
     const body = (await response.json()) as OllamaGenerateResponse;
@@ -53,7 +98,17 @@ export class OllamaClient {
       throw new Error('Ollama no devolvió contenido en response.');
     }
 
-    return this.parsePayload(body.response);
+    const parsed = this.parsePayload(body.response);
+    await this.logger?.info('ollama.response', 'Gemma respondió correctamente', {
+      host: this.host,
+      model: this.model,
+      input_path: inputPath,
+      duration_ms: durationMs,
+      classification: parsed.classification,
+      confidence: parsed.confidence,
+    });
+
+    return parsed;
   }
 
   private parsePayload(raw: string): AiClassificationPayload {
