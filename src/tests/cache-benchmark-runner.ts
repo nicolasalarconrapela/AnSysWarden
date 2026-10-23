@@ -1,5 +1,6 @@
 import { PathClassifier } from '../ai/classifier';
 import { OllamaClient } from '../ai/ollama-client';
+import { classifyByRules } from '../ai/rules';
 import { TraceLogger } from '../observability/logger';
 import { CACHE_BENCHMARK_100, BENCHMARK_METADATA } from './cache-benchmark-100';
 
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   console.log(`Tanda:         ${offset + 1}-${offset + selected.length}`);
   console.log(`Modelo:        ${ollama.getModel()}`);
   console.log('Métrica crítica: falsos SAFE_CACHE efectivos.');
+  console.log('Modo rápido: una sola inferencia de Gemma por caso como máximo.');
   console.log('No se borra ni modifica ningún archivo.');
 
   const status = await ollama.health();
@@ -41,11 +43,20 @@ async function main(): Promise<void> {
     throw new Error(`El modelo ${ollama.getModel()} no está disponible en Ollama.`);
   }
 
+  console.log('🔥 Warm-up de Gemma...');
+  try {
+    await ollama.classifyPath('/benchmark/warmup/unknown-artifact');
+    console.log('✓ Modelo listo.');
+  } catch (error) {
+    console.log(`! Warm-up no concluyente: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   let modelCorrect = 0;
   let modelErrors = 0;
   let dangerousModelSafe = 0;
   let dangerousEffectiveSafe = 0;
   let systemSafetyPass = 0;
+  let skippedAiByRule = 0;
 
   for (let index = 0; index < selected.length; index += 1) {
     const test = selected[index];
@@ -58,23 +69,33 @@ async function main(): Promise<void> {
     console.log(`Esperado:   ${test.expected}`);
     console.log(`Dificultad: ${test.difficulty}`);
 
-    let modelActual = 'ERROR';
-    try {
-      const model = await ollama.classifyPath(test.path);
-      modelActual = model.classification;
-      if (model.classification === test.expected) modelCorrect += 1;
-      if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
-        dangerousModelSafe += 1;
+    const ruleResult = classifyByRules(test.path);
+    let modelActual = 'SKIPPED_BY_RULE';
+    let effective;
+
+    if (ruleResult) {
+      skippedAiByRule += 1;
+      effective = ruleResult;
+      console.log(`⚡ Gemma:      OMITIDA (regla local suficiente)`);
+    } else {
+      try {
+        const model = await ollama.classifyPath(test.path);
+        modelActual = model.classification;
+        if (model.classification === test.expected) modelCorrect += 1;
+        if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
+          dangerousModelSafe += 1;
+        }
+        console.log(`🤖 Gemma:      ${model.classification} (${Math.round(model.confidence * 100)}%)`);
+        console.log(`   Motivo:     ${model.reason}`);
+        effective = await classifier.applyAiRecommendation(test.path, model);
+      } catch (error) {
+        modelErrors += 1;
+        console.log(`🤖 Gemma:      ERROR`);
+        console.log(`   Motivo:     ${error instanceof Error ? error.message : String(error)}`);
+        effective = await classifier.fallbackFromAiError(test.path, error);
       }
-      console.log(`🤖 Gemma:      ${model.classification} (${Math.round(model.confidence * 100)}%)`);
-      console.log(`   Motivo:     ${model.reason}`);
-    } catch (error) {
-      modelErrors += 1;
-      console.log(`🤖 Gemma:      ERROR`);
-      console.log(`   Motivo:     ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    const effective = await classifier.classify(test.path);
     const unsafe = effective.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE';
     if (unsafe) dangerousEffectiveSafe += 1;
     else systemSafetyPass += 1;
@@ -94,18 +115,23 @@ async function main(): Promise<void> {
       size_mb: test.sizeMb,
       category: test.category,
       difficulty: test.difficulty,
+      ai_skipped_by_rule: Boolean(ruleResult),
     });
   }
 
   const total = selected.length;
+  const aiEvaluated = total - skippedAiByRule;
   console.log('\n════════════════════════════════════════════════════');
   console.log('RESUMEN DE LA TANDA');
-  console.log(`Gemma exacta:              ${modelCorrect}/${total}`);
-  console.log(`Errores/timeouts Gemma:    ${modelErrors}/${total}`);
-  console.log(`SAFE_CACHE peligrosos IA:  ${dangerousModelSafe}`);
-  console.log(`Seguridad AnSysWarden:     ${systemSafetyPass}/${total}`);
-  console.log(`SAFE_CACHE efectivos malos:${dangerousEffectiveSafe}`);
-  console.log(`Traza JSONL:               ${logger.logFile}`);
+  console.log(`Casos totales:              ${total}`);
+  console.log(`Gemma omitida por reglas:   ${skippedAiByRule}`);
+  console.log(`Gemma realmente evaluada:   ${aiEvaluated}`);
+  console.log(`Gemma exacta:               ${modelCorrect}/${aiEvaluated}`);
+  console.log(`Errores/timeouts Gemma:     ${modelErrors}/${aiEvaluated}`);
+  console.log(`SAFE_CACHE peligrosos IA:   ${dangerousModelSafe}`);
+  console.log(`Seguridad AnSysWarden:      ${systemSafetyPass}/${total}`);
+  console.log(`SAFE_CACHE efectivos malos: ${dangerousEffectiveSafe}`);
+  console.log(`Traza JSONL:                ${logger.logFile}`);
 
   if (dangerousEffectiveSafe > 0) {
     console.log('\n🔴 FALLO CRÍTICO: el sistema autorizó SAFE_CACHE en uno o más casos no seguros.');
