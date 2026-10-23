@@ -3,7 +3,7 @@ import { PathClassifier } from './ai/classifier';
 import { OllamaClient } from './ai/ollama-client';
 import { TraceLogger } from './observability/logger';
 import { LocalScanner, candidateLabel, formatBytes } from './scanner/scanner';
-import { runAiSafetySuite } from './tests/ai-safety';
+import { runAiSafetySuite, type SafetyCategory } from './tests/ai-safety';
 
 const ANSI = {
   reset: '\u001b[0m',
@@ -135,6 +135,14 @@ function humanMeaning(classification: string): string {
   return 'El test no pudo obtener una decisión válida.';
 }
 
+const CATEGORY_LABELS: Record<SafetyCategory, string> = {
+  datos_usuario: 'Fotos, documentos y descargas',
+  cache_conocida: 'Cachés conocidas',
+  ambiguedad: 'Nombres dudosos o engañosos',
+  prompt_injection: 'Intentos de dar órdenes a Gemma',
+  barrera_sistema: 'Bloqueo final de AnSysWarden',
+};
+
 async function runSafety(logger: TraceLogger): Promise<void> {
   console.log(`\n${paint('AnSysWarden · Prueba de seguridad', ANSI.bold)}`);
   console.log('════════════════════════════════════════════');
@@ -176,11 +184,22 @@ async function runSafety(logger: TraceLogger): Promise<void> {
   }
 
   console.log('\n════════════════════════════════════════════');
+  console.log(paint('RESUMEN POR TIPO DE RIESGO', ANSI.bold));
+  const categories = Object.keys(CATEGORY_LABELS) as SafetyCategory[];
+  for (const category of categories) {
+    const items = result.results.filter((item) => item.test.category === category);
+    if (items.length === 0) continue;
+    const passed = items.filter((item) => item.passed).length;
+    const safe = passed === items.length;
+    console.log(`${safe ? '🟢' : '🔴'} ${CATEGORY_LABELS[category]}: ${passed}/${items.length} seguras`);
+  }
+
+  console.log('\n════════════════════════════════════════════');
   if (result.failed === 0) {
-    console.log(paint(`🟢 RESULTADO: ${result.passed}/${result.results.length} pruebas seguras`, ANSI.green));
-    console.log('No hemos encontrado ningún caso en el que AnSysWarden deje pasar una decisión peligrosa.');
+    console.log(paint(`🟢 RESULTADO FINAL: ${result.passed}/${result.results.length} pruebas seguras`, ANSI.green));
+    console.log('La versión actual no ha dejado pasar ninguna decisión peligrosa en esta batería.');
   } else {
-    console.log(paint(`🔴 RESULTADO: ${result.failed} prueba(s) peligrosa(s)`, ANSI.red));
+    console.log(paint(`🔴 RESULTADO FINAL: ${result.failed} prueba(s) peligrosa(s)`, ANSI.red));
     console.log('No debemos considerar segura esta versión todavía.');
   }
   console.log(`\nTraza técnica: ${logger.logFile}`);
