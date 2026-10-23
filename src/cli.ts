@@ -146,11 +146,59 @@ function humanInterpretation(actual: string, source?: string, reason?: string): 
   return 'No se obtuvo una decisión válida; el caso debe revisarse.';
 }
 
+async function ensureSafetyAiReady(logger: TraceLogger): Promise<boolean> {
+  const ollama = new OllamaClient(undefined, undefined, logger);
+  console.log(`\n${paint('Precheck de IA', ANSI.bold)}`);
+  console.log('────────────────────────────────────────────────────');
+  console.log(`Host:   ${ollama.getHost()}`);
+  console.log(`Modelo: ${ollama.getModel()}`);
+
+  try {
+    const status = await ollama.health();
+    const modelPresent = status.models.some((name) => name.startsWith(ollama.getModel()));
+    if (!modelPresent) {
+      console.log(paint('🔴 Gemma no está disponible en Ollama.', ANSI.red));
+      console.log(`Modelos detectados: ${status.models.length ? status.models.join(', ') : '(ninguno)'}`);
+      console.log('En humano: el test no puede evaluar a Gemma porque el modelo no está cargado/instalado.');
+      console.log('Acción: ejecuta ./ansys ai start y después ./ansys ai test.');
+      await logger.error('safety.precheck.model_missing', 'Modelo requerido no disponible para la batería de seguridad', {
+        model: ollama.getModel(),
+        models: status.models,
+      });
+      process.exitCode = 3;
+      return false;
+    }
+
+    console.log(paint('🟢 Ollama responde y Gemma está disponible.', ANSI.green));
+    console.log('En humano: ahora sí podemos medir el comportamiento real del modelo.');
+    await logger.info('safety.precheck.ok', 'Precheck de IA correcto', {
+      model: ollama.getModel(),
+      models: status.models,
+    });
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(paint('🔴 Ollama no está accesible.', ANSI.red));
+    console.log(`Detalle técnico: ${message}`);
+    console.log('En humano: Gemma no ha fallado los tests; simplemente no llegó a ejecutarse.');
+    console.log('Acción: ejecuta ./ansys ai start y confirma con ./ansys ai status.');
+    await logger.error('safety.precheck.ollama_unavailable', 'Ollama no accesible antes de la batería de seguridad', {
+      error: message,
+      host: ollama.getHost(),
+      model: ollama.getModel(),
+    });
+    process.exitCode = 3;
+    return false;
+  }
+}
+
 async function runSafety(logger: TraceLogger): Promise<void> {
   console.log(`\n${paint('AnSysWarden · AI Safety Tests', ANSI.bold)}`);
   console.log('════════════════════════════════════════════════════');
   console.log('Vista híbrida: datos técnicos + explicación humana.');
   console.log(`${paint('Regla principal', ANSI.cyan)}: Gemma puede recomendar; solo AnSysWarden puede autorizar SAFE_CACHE.`);
+
+  if (!(await ensureSafetyAiReady(logger))) return;
 
   const result = await runAiSafetySuite(logger);
 
@@ -184,7 +232,7 @@ async function runSafety(logger: TraceLogger): Promise<void> {
       console.log(`🤖 Gemma dice: ${item.actual}${item.confidence !== undefined ? ` con ${Math.round(item.confidence * 100)}% de confianza` : ''}.`);
       console.log(`💬 En otras palabras: ${item.reason ?? item.error ?? 'sin explicación disponible.'}`);
     } else if (blocked) {
-      console.log(`🤖 Gemma quiso decir: SAFE_CACHE.`);
+      console.log('🤖 Gemma quiso decir: SAFE_CACHE.');
       console.log(`🛡️ AnSysWarden dijo: ${paint('NO', ANSI.yellow)}. Esa decisión no está autorizada por una regla local.`);
     } else {
       console.log(`🛡️ AnSysWarden decidió: ${item.actual}.`);
