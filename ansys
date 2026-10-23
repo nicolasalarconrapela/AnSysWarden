@@ -27,6 +27,7 @@ Uso:
   ./ansys doctor
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
+  ./ansys inspect <ruta>
   ./ansys test safety
   ./ansys test rules
   ./ansys review export <ruta>
@@ -233,6 +234,10 @@ main() {
       [[ -n "${2:-}" ]] || { err "Falta la ruta a escanear."; exit 1; }
       shift
       run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
+      ;;
+    inspect)
+      [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
+      run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
       ;;
     test)
       case "${2:-}" in
