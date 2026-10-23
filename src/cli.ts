@@ -137,8 +137,14 @@ const CATEGORY_LABELS: Record<SafetyCategory, string> = {
   barrera_sistema: 'Bloqueo final de AnSysWarden',
 };
 
-function humanInterpretation(actual: string, source?: string, reason?: string): string {
+function humanInterpretation(mode: 'system' | 'model', actual: string, source?: string, reason?: string): string {
   const blocked = source === 'fallback' && reason?.includes('Gemma propuso SAFE_CACHE');
+  if (mode === 'model' && actual === 'SAFE_CACHE') {
+    return 'Gemma ha sido demasiado permisivo. Esta respuesta NO debe usarse directamente para borrar.';
+  }
+  if (mode === 'model' && actual === 'ERROR') {
+    return 'Gemma no respetó el formato esperado. Esto es un fallo del modelo, no una autorización para borrar.';
+  }
   if (blocked) return 'Gemma se equivocó, pero AnSysWarden lo bloqueó. No se borraría nada.';
   if (actual === 'SAFE_CACHE') return 'Es una caché conocida y regenerable. Solo se acepta porque existe una regla local.';
   if (actual === 'USER_DATA') return 'Se considera información del usuario y queda protegida.';
@@ -231,37 +237,47 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     if (item.test.mode === 'model') {
       console.log(`🤖 Gemma dice: ${item.actual}${item.confidence !== undefined ? ` con ${Math.round(item.confidence * 100)}% de confianza` : ''}.`);
       console.log(`💬 En otras palabras: ${item.reason ?? item.error ?? 'sin explicación disponible.'}`);
+      console.log(`🧪 Estamos midiendo aquí la ${paint('calidad de Gemma', ANSI.cyan)}, no la decisión final de AnSysWarden.`);
     } else if (blocked) {
       console.log('🤖 Gemma quiso decir: SAFE_CACHE.');
       console.log(`🛡️ AnSysWarden dijo: ${paint('NO', ANSI.yellow)}. Esa decisión no está autorizada por una regla local.`);
     } else {
       console.log(`🛡️ AnSysWarden decidió: ${item.actual}.`);
     }
-    console.log(`${ok ? '✅' : '⚠️'} Qué significa: ${humanInterpretation(item.actual, item.source, item.reason)}`);
+    console.log(`${ok ? '✅' : '⚠️'} Qué significa: ${humanInterpretation(item.test.mode, item.actual, item.source, item.reason)}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
-  console.log(paint('RESUMEN POR TIPO DE RIESGO', ANSI.bold));
+  console.log(paint('DOS RESULTADOS DIFERENTES', ANSI.bold));
+  console.log(`${result.modelFailed === 0 ? '🟢' : '🟡'} Calidad de Gemma: ${result.modelPassed}/${result.modelPassed + result.modelFailed} respuestas correctas`);
+  console.log(`${result.systemFailed === 0 ? '🟢' : '🔴'} Seguridad de AnSysWarden: ${result.systemPassed}/${result.systemPassed + result.systemFailed} decisiones seguras`);
+  console.log('');
+  if (result.modelFailed > 0 && result.systemFailed === 0) {
+    console.log('En humano: Gemma se ha equivocado en algunos casos, pero las barreras de AnSysWarden han evitado que esos errores se conviertan en decisiones peligrosas.');
+  }
+
+  console.log('\n' + paint('RESUMEN POR TIPO DE RIESGO', ANSI.bold));
   const categories = Object.keys(CATEGORY_LABELS) as SafetyCategory[];
   for (const category of categories) {
     const items = result.results.filter((item) => item.test.category === category);
     if (items.length === 0) continue;
     const passed = items.filter((item) => item.passed).length;
     const safe = passed === items.length;
-    console.log(`${safe ? '🟢' : '🔴'} ${CATEGORY_LABELS[category]}: ${passed}/${items.length}`);
+    console.log(`${safe ? '🟢' : '🟡'} ${CATEGORY_LABELS[category]}: ${passed}/${items.length}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
-  if (result.failed === 0) {
-    console.log(paint(`🟢 RESULTADO FINAL: ${result.passed}/${result.results.length} pruebas seguras`, ANSI.green));
-    console.log('La batería no ha encontrado ninguna decisión peligrosa que AnSysWarden deje pasar.');
+  if (result.systemFailed === 0) {
+    console.log(paint('🟢 SEGURIDAD EFECTIVA: las barreras del sistema han pasado todas sus pruebas', ANSI.green));
   } else {
-    console.log(paint(`🔴 RESULTADO FINAL: ${result.failed} prueba(s) peligrosa(s)`, ANSI.red));
-    console.log('Esta versión todavía necesita correcciones de seguridad.');
+    console.log(paint(`🔴 SEGURIDAD EFECTIVA: ${result.systemFailed} fallo(s) del sistema`, ANSI.red));
+  }
+  if (result.modelFailed > 0) {
+    console.log(paint(`🟡 CALIDAD DE GEMMA: ${result.modelFailed} fallo(s) detectado(s) que debemos seguir estudiando`, ANSI.yellow));
   }
   console.log(`\nTraza JSONL completa: ${logger.logFile}`);
 
-  if (result.failed > 0) process.exitCode = 2;
+  if (result.systemFailed > 0) process.exitCode = 2;
 }
 
 async function main(): Promise<void> {
