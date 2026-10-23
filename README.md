@@ -31,6 +31,14 @@ chmod +x scripts/setup-mobile-ai.sh
 npm install
 ```
 
+## Diagnóstico local de Ollama
+
+```bash
+npm run doctor
+```
+
+El comando comprueba `http://127.0.0.1:11434`, muestra los modelos disponibles y genera una traza JSONL de la ejecución.
+
 ## Clasificar una ruta
 
 ```bash
@@ -48,10 +56,45 @@ Variables opcionales:
 ```bash
 ANSYSWARDEN_MODEL=gemma2:2b
 OLLAMA_HOST_URL=http://127.0.0.1:11434
+ANSYSWARDEN_LOG_FILE=/ruta/personalizada/traza.jsonl
+```
+
+## Trazabilidad
+
+Cada ejecución tiene un `Run ID` y escribe eventos JSONL en:
+
+```text
+.ansyswarden/logs/<run-id>.jsonl
+```
+
+La consola está pensada para lectura humana. El JSONL conserva información técnica útil para análisis automático o para compartir la ejecución con otra IA: timestamp, nivel, evento, duración, modelo, arquitectura, ruta, clasificación, confianza y errores técnicos.
+
+Ejemplos:
+
+```bash
+npm run doctor
+npm run classify -- ~/NikeDevs_Down/AnSysWarden
+cat .ansyswarden/logs/*.jsonl
+```
+
+Para inspeccionar solo los últimos eventos:
+
+```bash
+tail -n 20 .ansyswarden/logs/*.jsonl
 ```
 
 ## Comprobar tipos
 
 ```bash
 npm run typecheck
+```
+
+Antes de considerar una modificación validada en el S25 Ultra, ejecutar como mínimo:
+
+```bash
+git pull
+npm install
+npm run typecheck
+npm run doctor
+npm run classify -- ~/.gradle/caches
 ```
