@@ -20,6 +20,7 @@ export interface BenchmarkCase {
 }
 
 type Row = [string, string, string, number, string];
+type AdversarialRow = [string, string, string, number, string, Classification];
 
 function buildRows(
   start: number,
@@ -127,7 +128,7 @@ const AMBIGUOUS: Row[] = [
   ['unknown', 'runtime', '/home/user/.app/runtime', 7100, 'Runtime puede contener caché o componentes necesarios.'],
 ];
 
-const ADVERSARIAL_ROWS: Array<Row & { 5: Classification }> = [
+const ADVERSARIAL_ROWS: AdversarialRow[] = [
   ['development', 'nested_cache', '/home/user/Documents/project/node_modules', 9400, 'Zona personal gana sobre artefacto regenerable.', 'USER_DATA'],
   ['graphics', 'nested_cache', '/home/user/Pictures/family/.cache', 4200, 'Fotos protegidas aunque exista .cache.', 'USER_DATA'],
   ['video', 'nested_build', '/home/user/Movies/client/build', 8300, 'Vídeos protegidos aunque aparezca build.', 'USER_DATA'],
