@@ -30,6 +30,27 @@ export class PathClassifier {
 
     try {
       const ai = await this.ollama.classifyPath(inputPath);
+
+      if (ai.classification === 'SAFE_CACHE') {
+        const downgraded: ClassificationResult = {
+          path: inputPath,
+          classification: 'REVIEW_REQUIRED',
+          confidence: 0,
+          reason: `Gemma propuso SAFE_CACHE, pero la política de seguridad exige una regla local explícita para autorizarlo. Motivo del modelo: ${ai.reason}`,
+          source: 'fallback',
+        };
+
+        await this.logger.warn('classifier.ai_safe_cache_blocked', 'SAFE_CACHE propuesto por IA bloqueado por política', {
+          input_path: inputPath,
+          model: this.ollama.getModel(),
+          ai_confidence: ai.confidence,
+          ai_reason: ai.reason,
+          effective_classification: downgraded.classification,
+        });
+
+        return downgraded;
+      }
+
       const result: ClassificationResult = {
         path: inputPath,
         classification: ai.classification,
