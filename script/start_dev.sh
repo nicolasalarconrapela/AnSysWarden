@@ -1,5 +1,33 @@
 #!/bin/bash
 
+clear
+echo "==================================================="
+echo "  📦 Verificando dependencias de AnSysWarden..."
+echo "==================================================="
+
+# 1. AUTO-INSTALADOR DE DEPENDENCIAS
+if ! command -v sshd >/dev/null 2>&1; then
+    echo "[+] Instalando OpenSSH (para Método 1)..."
+    pkg install openssh -y
+fi
+
+if ! command -v python >/dev/null 2>&1; then
+    echo "[+] Instalando Python (para extraer IP de Android)..."
+    pkg install python -y
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "[+] Instalando Node.js (base del proyecto)..."
+    pkg install nodejs -y
+fi
+
+if ! command -v code-server >/dev/null 2>&1; then
+    echo "[+] Instalando code-server (para Método 2)..."
+    echo "    (Esto puede tardar un par de minutos la primera vez)"
+    npm install -g code-server
+fi
+
+# 2. GESTIÓN DE LA IP
 CONFIG_FILE="$HOME/.ansyswarden_ip"
 USER_NAME=$(whoami)
 IP_LOCAL=""
@@ -10,36 +38,30 @@ if [[ "$1" == "-r" || "$1" == "--reset-ip" ]]; then
     rm -f "$CONFIG_FILE"
 fi
 
-# 1. Comprobar si ya tenemos la IP guardada
 if [ -f "$CONFIG_FILE" ]; then
     IP_LOCAL=$(cat "$CONFIG_FILE")
 else
-    # 2. Intento de detección nativa: El truco del socket UDP con Python
+    # Intento de detección nativa: El truco del socket UDP con Python
     if command -v python >/dev/null 2>&1; then
         IP_LOCAL=$(python -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('8.8.8.8', 80)); print(s.getsockname()[0]); s.close()" 2>/dev/null)
     fi
 
-    # 3. Fallback: El truco del socket UDP con Node.js (por si Python falla)
+    # Fallback: El truco del socket UDP con Node.js
     if [ -z "$IP_LOCAL" ] && command -v node >/dev/null 2>&1; then
         IP_LOCAL=$(node -e "const dgram = require('dgram'); const s = dgram.createSocket('udp4'); s.connect(80, '8.8.8.8', () => { console.log(s.address().address); s.close(); });" 2>/dev/null)
     fi
 
-    # 4. Si todo falla, pedirla a mano
+    # Si todo falla, pedirla a mano
     if [ -z "$IP_LOCAL" ]; then
-        clear
-        echo "==================================================="
         echo "⚠️ Android ha bloqueado la lectura automática de red."
-        echo "Ve a Ajustes > Conexiones > Wi-Fi y copia tu Dirección IP."
-        echo "==================================================="
         read -p "Introduce tu IP local (ej. 192.168.1.59): " IP_LOCAL
     fi
     
-    # Guardar la IP final en el archivo
     echo "$IP_LOCAL" > "$CONFIG_FILE"
-    echo "✅ IP configurada: $IP_LOCAL"
     sleep 1
 fi
 
+# 3. INTERFAZ DE ARRANQUE
 clear
 echo "==================================================="
 echo "  🚀 Entorno AnSysWarden (S25 Ultra <-> nar-devops) 🚀"
