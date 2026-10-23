@@ -20,6 +20,7 @@ usage() {
 AnSysWarden CLI
 
 Uso:
+  ./ansys ai bootstrap
   ./ansys ai start
   ./ansys ai stop
   ./ansys ai status
@@ -46,6 +47,21 @@ require_command() {
 
 ollama_ready() {
   curl -fsS "$OLLAMA_HOST_URL/api/tags" >/dev/null 2>&1
+}
+
+ai_bootstrap() {
+  local setup_script="$ROOT_DIR/scripts/setup-mobile-ai.sh"
+
+  if [[ ! -f "$setup_script" ]]; then
+    err "No se encuentra el bootstrap de IA: $setup_script"
+    exit 1
+  fi
+
+  info "Preparando Ollama y $MODEL para AnSysWarden..."
+  OLLAMA_HOST_URL="$OLLAMA_HOST_URL" \
+  ANSYSWARDEN_MODEL="$MODEL" \
+  OLLAMA_LOG_FILE="$OLLAMA_LOG_FILE" \
+  bash "$setup_script"
 }
 
 ai_start() {
@@ -216,6 +232,7 @@ main() {
   case "$command" in
     ai)
       case "${2:-}" in
+        bootstrap) ai_bootstrap ;;
         start) ai_start ;;
         stop) ai_stop ;;
         status) ai_status ;;
