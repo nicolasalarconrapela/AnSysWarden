@@ -18,37 +18,88 @@ Clasificaciones:
 
 La CLI actual es estrictamente de solo lectura y no contiene operaciones de borrado.
 
+## Interfaz principal en el móvil
+
+La interfaz diaria es el comando `./ansys`. No es necesario usar `npm` para arrancar, parar o probar Ollama.
+
+Primera vez:
+
+```bash
+chmod +x ansys
+```
+
+Comandos principales:
+
+```bash
+./ansys ai start
+./ansys ai status
+./ansys ai test
+./ansys doctor
+./ansys classify ~/.gradle/caches
+./ansys logs
+./ansys logs --raw
+./ansys ai stop
+```
+
 ## Preparar IA móvil
+
+Si Ollama y Gemma todavía no están instalados:
 
 ```bash
 chmod +x scripts/setup-mobile-ai.sh
 ./scripts/setup-mobile-ai.sh
 ```
 
-## Instalar dependencias TypeScript
+Después, el ciclo normal se gestiona con `./ansys ai ...`.
+
+## Dependencias TypeScript
+
+La implementación interna de algunos comandos está escrita en TypeScript. Las dependencias solo necesitan instalarse una vez o cuando cambie `package.json`:
 
 ```bash
 npm install
 ```
 
-## Diagnóstico local de Ollama
+Esto no arranca Ollama ni forma parte del uso diario de la IA.
+
+## Gestión de Ollama
+
+Arrancar:
 
 ```bash
-npm run doctor
+./ansys ai start
 ```
 
-El comando comprueba `http://127.0.0.1:11434`, muestra los modelos disponibles y genera una traza JSONL de la ejecución.
+Estado:
+
+```bash
+./ansys ai status
+```
+
+Prueba de inferencia:
+
+```bash
+./ansys ai test
+```
+
+Detener:
+
+```bash
+./ansys ai stop
+```
+
+## Diagnóstico
+
+```bash
+./ansys doctor
+```
+
+Comprueba el Ollama local, el modelo configurado y genera una traza JSONL de la ejecución.
 
 ## Clasificar una ruta
 
 ```bash
-npm run classify -- ~/.gradle/caches
-```
-
-O directamente:
-
-```bash
-npx tsx src/cli.ts classify ~/.gradle/caches
+./ansys classify ~/.gradle/caches
 ```
 
 Variables opcionales:
@@ -61,40 +112,40 @@ ANSYSWARDEN_LOG_FILE=/ruta/personalizada/traza.jsonl
 
 ## Trazabilidad
 
-Cada ejecución tiene un `Run ID` y escribe eventos JSONL en:
+La consola está pensada para lectura humana. En paralelo, los comandos TypeScript escriben eventos estructurados en:
 
 ```text
 .ansyswarden/logs/<run-id>.jsonl
 ```
 
-La consola está pensada para lectura humana. El JSONL conserva información técnica útil para análisis automático o para compartir la ejecución con otra IA: timestamp, nivel, evento, duración, modelo, arquitectura, ruta, clasificación, confianza y errores técnicos.
+Estos eventos conservan timestamp, nivel, evento, duración, modelo, arquitectura, ruta, clasificación, confianza y errores técnicos.
 
-Ejemplos:
-
-```bash
-npm run doctor
-npm run classify -- ~/NikeDevs_Down/AnSysWarden
-cat .ansyswarden/logs/*.jsonl
-```
-
-Para inspeccionar solo los últimos eventos:
+Ver logs humanos y de Ollama:
 
 ```bash
-tail -n 20 .ansyswarden/logs/*.jsonl
+./ansys logs
 ```
 
-## Comprobar tipos
+Ver las trazas JSONL completas:
 
 ```bash
-npm run typecheck
+./ansys logs --raw
 ```
 
-Antes de considerar una modificación validada en el S25 Ultra, ejecutar como mínimo:
+## Testing en el S25 Ultra
+
+Antes de considerar una modificación validada:
 
 ```bash
 git pull
+chmod +x ansys
 npm install
 npm run typecheck
-npm run doctor
-npm run classify -- ~/.gradle/caches
+./ansys ai status
+./ansys ai test
+./ansys doctor
+./ansys classify ~/.gradle/caches
+./ansys logs --raw
 ```
+
+`npm install` y `npm run typecheck` son tareas de preparación/desarrollo. El manejo diario de Ollama y AnSysWarden se realiza mediante `./ansys`.
