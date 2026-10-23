@@ -3,12 +3,11 @@
 # Extraer usuario
 USER_NAME=$(whoami)
 
-# Extraer IP automáticamente (Método 1: hostname)
-IP_LOCAL=$(hostname -I 2>/dev/null | awk '{print $1}')
+# Extraer IP usando Node.js (infalible en Termux sin root)
+IP_LOCAL=$(node -e "const os = require('os'); const nets = os.networkInterfaces(); for (const name of Object.keys(nets)) { for (const net of nets[name]) { if (net.family === 'IPv4' && !net.internal) console.log(net.address); } }" | head -n 1)
 
-# Extraer IP automáticamente (Método 2: ip addr, ignora localhost)
 if [ -z "$IP_LOCAL" ]; then
-    IP_LOCAL=$(ip -4 addr show | grep inet | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+    IP_LOCAL="<REVISA_TU_WIFI_EN_AJUSTES>"
 fi
 
 clear
