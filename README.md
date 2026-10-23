@@ -26,31 +26,26 @@ Primera vez:
 
 ```bash
 chmod +x ansys
+./ansys ai bootstrap
 ```
+
+`./ansys ai bootstrap` prepara el entorno móvil, instala/verifica Ollama, descarga `gemma2:2b` y ejecuta una prueba nativa y otra desde Node.js/TypeScript.
 
 Comandos principales:
 
 ```bash
+./ansys ai bootstrap
 ./ansys ai start
 ./ansys ai status
 ./ansys ai test
 ./ansys doctor
 ./ansys classify ~/.gradle/caches
+./ansys inspect ~/.gradle/caches
+./ansys scan ~ --min-mb 50
 ./ansys logs
 ./ansys logs --raw
 ./ansys ai stop
 ```
-
-## Preparar IA móvil
-
-Si Ollama y Gemma todavía no están instalados:
-
-```bash
-chmod +x scripts/setup-mobile-ai.sh
-./scripts/setup-mobile-ai.sh
-```
-
-Después, el ciclo normal se gestiona con `./ansys ai ...`.
 
 ## Dependencias TypeScript
 
@@ -63,6 +58,12 @@ npm install
 Esto no arranca Ollama ni forma parte del uso diario de la IA.
 
 ## Gestión de Ollama
+
+Preparación inicial completa:
+
+```bash
+./ansys ai bootstrap
+```
 
 Arrancar:
 
@@ -101,6 +102,22 @@ Comprueba el Ollama local, el modelo configurado y genera una traza JSONL de la 
 ```bash
 ./ansys classify ~/.gradle/caches
 ```
+
+## Inspección contextual
+
+```bash
+./ansys inspect ~/.gradle/caches
+```
+
+Recoge contexto útil de una ruta sin modificar archivos para ayudar a decidir si es caché, artefacto regenerable o contenido que requiere revisión.
+
+## Escaneo
+
+```bash
+./ansys scan ~ --min-mb 50
+```
+
+El escaneo identifica candidatos pesados para revisión; no elimina nada.
 
 Variables opcionales:
 
@@ -146,6 +163,12 @@ npm run typecheck
 ./ansys doctor
 ./ansys classify ~/.gradle/caches
 ./ansys logs --raw
+```
+
+Para una instalación nueva o después de rehacer el entorno Debian/Termux, ejecuta antes:
+
+```bash
+./ansys ai bootstrap
 ```
 
 `npm install` y `npm run typecheck` son tareas de preparación/desarrollo. El manejo diario de Ollama y AnSysWarden se realiza mediante `./ansys`.
