@@ -1,31 +1,47 @@
 #!/bin/bash
 
-# Archivo oculto para guardar tu IP
 CONFIG_FILE="$HOME/.ansyswarden_ip"
 USER_NAME=$(whoami)
+IP_LOCAL=""
 
-# 1. Comprobar si ya tenemos la IP guardada
-if [ -f "$CONFIG_FILE" ]; then
-    IP_LOCAL=$(cat "$CONFIG_FILE")
+# 1. Intento de detección nativa (Linux estándar)
+IP_LOCAL=$(ip -4 addr show 2>/dev/null | grep inet | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+
+# 2. Intento vía Node.js (Si 'ip' está bloqueado pero Node tiene permisos)
+if [ -z "$IP_LOCAL" ] && command -v node >/dev/null 2>&1; then
+    IP_LOCAL=$(node -e "const os = require('os'); const nets = os.networkInterfaces(); for (const name of Object.keys(nets)) { for (const net of nets[name]) { if (net.family === 'IPv4' && !net.internal) console.log(net.address); } }" 2>/dev/null | head -n 1)
+fi
+
+# 3. Intento vía ifconfig (Rutas antiguas)
+if [ -z "$IP_LOCAL" ]; then
+    IP_LOCAL=$(ifconfig wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}')
+fi
+
+# 4. Si TODO falla (Restricción estricta de Android) usamos la guardada o preguntamos
+if [ -z "$IP_LOCAL" ]; then
+    if [ -f "$CONFIG_FILE" ]; then
+        IP_LOCAL=$(cat "$CONFIG_FILE")
+    else
+        clear
+        echo "==================================================="
+        echo "⚠️ Android ha bloqueado la lectura automática de red."
+        echo "Ve a Ajustes > Conexiones > Wi-Fi y copia tu Dirección IP."
+        echo "==================================================="
+        read -p "Introduce tu IP local (ej. 192.168.1.50): " IP_LOCAL
+        echo "$IP_LOCAL" > "$CONFIG_FILE"
+        echo "✅ IP guardada en caché."
+        sleep 1
+    fi
 else
-    clear
-    echo "==================================================="
-    echo "⚠️ Android bloquea la lectura automática de red."
-    echo "Ve a Ajustes > Conexiones > Wi-Fi y mira tu Dirección IP."
-    echo "==================================================="
-    read -p "Introduce tu IP local (ej. 192.168.1.50): " IP_LOCAL
-    
-    # Guardar la IP para no volver a preguntarla
+    # Si la detectó automáticamente, actualizamos el caché silenciosamente por si cambiaste de red
     echo "$IP_LOCAL" > "$CONFIG_FILE"
-    echo "✅ IP guardada con éxito."
-    sleep 1
 fi
 
 clear
 echo "==================================================="
 echo "  🚀 Entorno AnSysWarden (S25 Ultra <-> nar-devops) 🚀"
 echo "==================================================="
-echo "📡 IP Actual: $IP_LOCAL (Para cambiarla usa: rm $CONFIG_FILE)"
+echo "📡 IP Actual: $IP_LOCAL (Borra $CONFIG_FILE para resetearla)"
 echo "==================================================="
 echo "Elige cómo quieres abrir tu código en el PC:"
 echo "1) Método 1: VS Code Nativo (Extensión Remote-SSH)"
