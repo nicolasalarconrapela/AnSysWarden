@@ -28,6 +28,8 @@ Uso:
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
   ./ansys test safety
+  ./ansys test rules
+  ./ansys review export <ruta>
   ./ansys logs [--raw]
 
 La interfaz diaria no requiere usar npm directamente.
@@ -79,26 +81,43 @@ ai_start() {
 }
 
 ai_stop() {
-  if [[ -f "$OLLAMA_PID_FILE" ]]; then
-    local pid
-    pid="$(cat "$OLLAMA_PID_FILE")"
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid"
-      rm -f "$OLLAMA_PID_FILE"
-      info "Ollama detenido (PID $pid)."
-      return
+  if [[ ! -f "$OLLAMA_PID_FILE" ]]; then
+    if ollama_ready; then
+      warn "Ollama está activo, pero AnSysWarden no tiene un PID propio registrado."
+      warn "Por seguridad no se detendrá un proceso iniciado externamente."
+      return 2
     fi
-    rm -f "$OLLAMA_PID_FILE"
+    warn "No hay ningún proceso de Ollama gestionado por AnSysWarden."
+    return
   fi
 
-  local pids
-  pids="$(pgrep -f 'ollama serve' || true)"
-  if [[ -n "$pids" ]]; then
-    kill $pids
-    info "Ollama detenido."
-  else
-    warn "No hay ningún proceso 'ollama serve' gestionable en ejecución."
+  local pid
+  pid="$(cat "$OLLAMA_PID_FILE")"
+
+  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    rm -f "$OLLAMA_PID_FILE"
+    err "El PID registrado no es válido. Se elimina el estado local sin detener procesos."
+    return 2
   fi
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$OLLAMA_PID_FILE"
+    warn "El proceso registrado (PID $pid) ya no existe. Estado local limpiado."
+    return
+  fi
+
+  local command_line
+  command_line="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+  if [[ "$command_line" != *"ollama serve"* ]]; then
+    err "El PID $pid ya no corresponde a 'ollama serve'."
+    err "Por seguridad NO se enviará ninguna señal al proceso."
+    rm -f "$OLLAMA_PID_FILE"
+    return 2
+  fi
+
+  kill "$pid"
+  rm -f "$OLLAMA_PID_FILE"
+  info "Ollama gestionado por AnSysWarden detenido (PID $pid)."
 }
 
 ai_status() {
@@ -115,7 +134,7 @@ ai_status() {
     ended="$(date +%s%3N 2>/dev/null || date +%s000)"
     latency=$((ended - started))
     printf 'Latencia: %s ms\n' "$latency"
-    [[ -f "$OLLAMA_PID_FILE" ]] && printf 'PID:      %s\n' "$(cat "$OLLAMA_PID_FILE")"
+    [[ -f "$OLLAMA_PID_FILE" ]] && printf 'PID propio: %s\n' "$(cat "$OLLAMA_PID_FILE")"
     printf 'Log:      %s\n' "$OLLAMA_LOG_FILE"
   else
     printf 'STOPPED\n'
@@ -163,7 +182,7 @@ run_ts() {
     exit 1
   fi
 
-  exec "$ROOT_DIR/node_modules/.bin/tsx" "$ROOT_DIR/src/cli.ts" "$@"
+  exec "$ROOT_DIR/node_modules/.bin/tsx" "$@"
 }
 
 show_logs() {
@@ -204,21 +223,31 @@ main() {
       esac
       ;;
     doctor)
-      run_ts doctor
+      run_ts "$ROOT_DIR/src/cli.ts" doctor
       ;;
     classify)
       [[ -n "${2:-}" ]] || { err "Falta la ruta a clasificar."; exit 1; }
-      run_ts classify "$2"
+      run_ts "$ROOT_DIR/src/cli.ts" classify "$2"
       ;;
     scan)
       [[ -n "${2:-}" ]] || { err "Falta la ruta a escanear."; exit 1; }
       shift
-      run_ts scan "$@"
+      run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
       ;;
     test)
       case "${2:-}" in
-        safety) run_ts test safety ;;
+        safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
+        rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
         *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
+      esac
+      ;;
+    review)
+      case "${2:-}" in
+        export)
+          [[ -n "${3:-}" ]] || { err "Falta la ruta a exportar para revisión."; exit 1; }
+          run_ts "$ROOT_DIR/src/review/export-review.ts" "$3"
+          ;;
+        *) err "Comando review desconocido: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
     logs)
