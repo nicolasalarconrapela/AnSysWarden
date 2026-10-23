@@ -146,31 +146,38 @@ typescript_test() {
 const host = process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434';
 const model = process.env.ANSYSWARDEN_MODEL ?? 'gemma2:2b';
 
-const response = await fetch(`${host}/api/generate`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    model,
-    prompt: 'Clasifica esta ruta: /node_modules/.cache. Responde EXCLUSIVAMENTE con JUNK_CACHE o USER_DATA.',
-    stream: false,
-  }),
+async function main(): Promise<void> {
+  const response = await fetch(`${host}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      prompt: 'Clasifica esta ruta: /node_modules/.cache. Responde EXCLUSIVAMENTE con JUNK_CACHE o USER_DATA.',
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  const data = await response.json() as { response?: string };
+  const answer = (data.response ?? '').trim();
+  console.log(`\n[AnSysWarden] Respuesta de Gemma: ${answer}`);
+
+  if (!['JUNK_CACHE', 'USER_DATA'].includes(answer)) {
+    console.warn('[AnSysWarden] AVISO: la respuesta no respetó exactamente el contrato esperado.');
+    process.exitCode = 2;
+  } else if (answer !== 'JUNK_CACHE') {
+    console.warn('[AnSysWarden] AVISO: el formato es válido, pero /node_modules/.cache debería clasificarse como JUNK_CACHE en esta prueba.');
+    process.exitCode = 3;
+  }
+}
+
+main().catch((error: unknown) => {
+  console.error('[AnSysWarden] Error en la prueba TypeScript:', error);
+  process.exitCode = 1;
 });
-
-if (!response.ok) {
-  throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
-}
-
-const data = await response.json() as { response?: string };
-const answer = (data.response ?? '').trim();
-console.log(`\n[AnSysWarden] Respuesta de Gemma: ${answer}`);
-
-if (!['JUNK_CACHE', 'USER_DATA'].includes(answer)) {
-  console.warn('[AnSysWarden] AVISO: la respuesta no respetó exactamente el contrato esperado.');
-  process.exitCode = 2;
-} else if (answer !== 'JUNK_CACHE') {
-  console.warn('[AnSysWarden] AVISO: el formato es válido, pero /node_modules/.cache debería clasificarse como JUNK_CACHE en esta prueba.');
-  process.exitCode = 3;
-}
 TS
 
   OLLAMA_HOST_URL="$OLLAMA_HOST_URL" ANSYSWARDEN_MODEL="$MODEL" npx --yes tsx "$TS_FILE"
