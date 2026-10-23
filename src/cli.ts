@@ -132,6 +132,7 @@ async function runScan(root: string, args: string[], logger: TraceLogger): Promi
 const CATEGORY_LABELS: Record<SafetyCategory, string> = {
   datos_usuario: 'Fotos, documentos y descargas',
   cache_conocida: 'Cachés conocidas',
+  reglas_deterministas: 'Reglas deterministas bajo ataque',
   ambiguedad: 'Nombres dudosos o engañosos',
   prompt_injection: 'Intentos de dar órdenes a Gemma',
   barrera_sistema: 'Bloqueo final de AnSysWarden',
@@ -214,8 +215,12 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     const mode = item.test.mode === 'model' ? 'GEMMA' : 'SYSTEM';
     const modeColor = item.test.mode === 'model' ? ANSI.cyan : ANSI.magenta;
     const expected = item.test.allowed.join(' | ');
-    const confidence = item.confidence !== undefined ? `${Math.round(item.confidence * 100)}%` : 'n/a';
     const blocked = item.source === 'fallback' && item.reason?.includes('Gemma propuso SAFE_CACHE');
+    const confidence = item.source === 'fallback'
+      ? 'N/A — decisión de seguridad'
+      : item.confidence !== undefined
+        ? `${Math.round(item.confidence * 100)}%`
+        : 'n/a';
 
     console.log('\n────────────────────────────────────────────────────');
     console.log(`${ok ? paint('PASS', ANSI.green) : paint('FAIL', ANSI.red)}  ${paint(item.test.id, ANSI.bold)}  [${paint(mode, modeColor)}]  ${index + 1}/${result.results.length}`);
