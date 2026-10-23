@@ -4,6 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "doctor": "tsx src/cli.ts doctor",
     "classify": "tsx src/cli.ts classify",
     "typecheck": "tsc --noEmit"
   },
