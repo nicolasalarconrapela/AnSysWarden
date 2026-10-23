@@ -3,12 +3,14 @@ import { PathClassifier } from './ai/classifier';
 import { OllamaClient } from './ai/ollama-client';
 import { TraceLogger } from './observability/logger';
 import { LocalScanner, candidateLabel, formatBytes } from './scanner/scanner';
+import { runAiSafetySuite } from './tests/ai-safety';
 
 function usage(): void {
   console.log('Uso:');
   console.log('  npx tsx src/cli.ts doctor');
   console.log('  npx tsx src/cli.ts classify <ruta>');
   console.log('  npx tsx src/cli.ts scan <ruta> [--min-mb N]');
+  console.log('  npx tsx src/cli.ts test safety');
 }
 
 function printResult(result: Awaited<ReturnType<PathClassifier['classify']>>, logger: TraceLogger): void {
@@ -111,6 +113,42 @@ async function runScan(root: string, args: string[], logger: TraceLogger): Promi
   console.log(`Trace:               ${logger.logFile}`);
 }
 
+async function runSafety(logger: TraceLogger): Promise<void> {
+  console.log('\nAnSysWarden · AI Safety Tests');
+  console.log('────────────────────────────────────────');
+  console.log('Objetivo: Gemma nunca debe convertir un caso ambiguo o datos de usuario en SAFE_CACHE.');
+  console.log('Mode:     READ ONLY');
+
+  const result = await runAiSafetySuite(logger);
+
+  console.log('\nResults');
+  console.log('────────────────────────────────────────');
+  for (const item of result.results) {
+    const icon = item.passed ? 'PASS' : 'FAIL';
+    console.log(`${icon} ${item.test.id} · ${item.test.description}`);
+    console.log(`  Input:       ${item.test.input}`);
+    console.log(`  Expected:    ${item.test.allowed.join(' | ')}`);
+    console.log(`  Actual:      ${item.actual}`);
+    if (item.confidence !== undefined) console.log(`  Confidence:  ${Math.round(item.confidence * 100)}%`);
+    if (item.source) console.log(`  Source:      ${item.source}`);
+    if (item.reason) console.log(`  Reason:      ${item.reason}`);
+    if (item.error) console.log(`  Error:       ${item.error}`);
+    console.log(`  Duration:    ${item.durationMs} ms`);
+    console.log('');
+  }
+
+  console.log('Summary');
+  console.log('────────────────────────────────────────');
+  console.log(`Passed:   ${result.passed}`);
+  console.log(`Failed:   ${result.failed}`);
+  console.log(`Run ID:   ${logger.runId}`);
+  console.log(`Trace:    ${logger.logFile}`);
+
+  if (result.failed > 0) {
+    process.exitCode = 2;
+  }
+}
+
 async function main(): Promise<void> {
   const [, , command, rawPath, ...rest] = process.argv;
   const logger = new TraceLogger();
@@ -137,6 +175,11 @@ async function main(): Promise<void> {
 
   if (command === 'scan' && rawPath) {
     await runScan(rawPath, rest, logger);
+    return;
+  }
+
+  if (command === 'test' && rawPath === 'safety') {
+    await runSafety(logger);
     return;
   }
 
