@@ -4,6 +4,7 @@ import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { BackendStorage } from '../backend/storage';
 import { SCAN_SCHEMA, type ScanDocument, type ScanEntry } from '../backend/types';
+import { resolveDustBin } from './dust-path';
 
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_DEPTH = 5;
@@ -29,21 +30,24 @@ export interface DustScanResult {
 }
 
 export class DustScanner {
-  private readonly bin: string;
   private readonly storage: BackendStorage;
   private readonly maxOutputBytes: number;
 
   constructor(storage = new BackendStorage()) {
     this.storage = storage;
-    this.bin = process.env.ANSYSWARDEN_DUST_BIN?.trim() || 'dust';
     this.maxOutputBytes = readPositiveInt(
       process.env.ANSYSWARDEN_DUST_MAX_OUTPUT_BYTES,
       DEFAULT_MAX_OUTPUT_BYTES,
     );
   }
 
+  getBinary(): { path: string; source: 'env' | 'managed' | 'path' } {
+    return resolveDustBin();
+  }
+
   async version(): Promise<string> {
-    const result = await runProcess(this.bin, ['--version'], 1024 * 1024);
+    const bin = this.getBinary();
+    const result = await runProcess(bin.path, ['--version'], 1024 * 1024);
     return result.stdout.trim();
   }
 
@@ -60,7 +64,8 @@ export class DustScanner {
 
     const target = resolve(inputPath);
     const args = ['-j', '-p', '-P', '-o', 'b', '-d', String(depth), '-z', minSize, target];
-    const result = await runProcess(this.bin, args, this.maxOutputBytes);
+    const bin = this.getBinary();
+    const result = await runProcess(bin.path, args, this.maxOutputBytes);
 
     let parsed: unknown;
     try {
@@ -227,7 +232,7 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
 
     child.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') {
-        fail(new Error(`No se encuentra '${bin}'. Instala Dust o define ANSYSWARDEN_DUST_BIN.`));
+        fail(new Error(`No se encuentra '${bin}'. Ejecuta: ./ansys dust install`));
         return;
       }
       fail(error);
