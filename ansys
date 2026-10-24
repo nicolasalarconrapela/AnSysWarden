@@ -32,6 +32,8 @@ Uso:
   ./ansys inspect <ruta>
   ./ansys backend token
   ./ansys backend serve [--host IP] [--port N]
+  ./ansys source drup inspect <archivo>
+  ./ansys source drup stage <archivo>
   ./ansys test safety
   ./ansys test rules
   ./ansys test benchmark [--offset N] [--limit N]
@@ -276,6 +278,10 @@ main() {
     backend)
       shift
       run_ts "$ROOT_DIR/src/backend/backend-cli.ts" "$@"
+      ;;
+    source)
+      shift
+      run_ts "$ROOT_DIR/src/sources/source-cli.ts" "$@"
       ;;
     test)
       case "${2:-}" in
