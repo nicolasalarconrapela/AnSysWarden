@@ -26,6 +26,46 @@ function percentile(values: number[], fraction: number): number | null {
   return sorted[Math.max(0, index)];
 }
 
+async function warmupModel(ollama: OllamaClient, label: string): Promise<boolean> {
+  const startedAt = performance.now();
+  try {
+    await ollama.classifyPath('/benchmark/warmup/unknown-artifact');
+    console.log(`✓ ${label}: modelo listo (${Math.round(performance.now() - startedAt)} ms).`);
+    return true;
+  } catch (error) {
+    console.log(`! ${label}: warm-up no concluyente: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
+async function recoverModel(
+  ollama: OllamaClient,
+  cooldownMs: number,
+): Promise<boolean> {
+  console.log('↻ Recuperación: descargando modelo de memoria...');
+  try {
+    await ollama.unloadModel();
+    console.log('✓ Modelo:      descargado de memoria');
+  } catch (error) {
+    console.log(`! Modelo:      no se pudo descargar limpiamente: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (cooldownMs > 0) {
+    console.log(`↻ Cooldown:    ${cooldownMs} ms antes del warm-up`);
+    await sleep(cooldownMs);
+  }
+
+  try {
+    await ollama.health();
+    console.log('✓ Ollama:      servidor activo');
+  } catch (error) {
+    console.log(`! Ollama:      servidor no disponible: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+
+  return warmupModel(ollama, 'Recuperación');
+}
+
 async function main(): Promise<void> {
   const offset = readNumberArg('--offset', 0);
   const limit = readNumberArg('--limit', 10);
@@ -53,6 +93,7 @@ async function main(): Promise<void> {
   console.log(`Modelo:        ${ollama.getModel()}`);
   console.log(`Timeout test:  ${timeoutMs} ms`);
   console.log(`Cooldown:      ${cooldownMs} ms tras timeout`);
+  console.log('Recuperación:  unload + health + warm-up real tras timeout.');
   console.log('Métrica crítica: falsos SAFE_CACHE efectivos.');
   console.log('Modo rápido: una sola inferencia de Gemma por caso como máximo.');
   console.log('No se borra ni modifica ningún archivo.');
@@ -64,15 +105,7 @@ async function main(): Promise<void> {
   }
 
   console.log('🔥 Warm-up de Gemma...');
-  try {
-    const startedAt = performance.now();
-    await ollama.classifyPath('/benchmark/warmup/unknown-artifact');
-    console.log(`✓ Modelo listo (${Math.round(performance.now() - startedAt)} ms).`);
-  } catch (error) {
-    console.log(`! Warm-up no concluyente: ${error instanceof Error ? error.message : String(error)}`);
-    console.log(`↻ Recuperación: ${cooldownMs} ms antes de continuar.`);
-    await sleep(cooldownMs);
-  }
+  await warmupModel(ollama, 'Inicio');
 
   let modelCorrect = 0;
   let modelErrors = 0;
@@ -81,6 +114,12 @@ async function main(): Promise<void> {
   let dangerousEffectiveSafe = 0;
   let systemSafetyPass = 0;
   let skippedAiByRule = 0;
+  let successfulAiCases = 0;
+  let consecutiveTimeouts = 0;
+  let maxTimeoutStreak = 0;
+  let firstTimeoutAfterAiCases: number | null = null;
+  let recoveriesAttempted = 0;
+  let recoveriesSucceeded = 0;
   const successfulLatenciesMs: number[] = [];
   const attemptedLatenciesMs: number[] = [];
 
@@ -111,6 +150,8 @@ async function main(): Promise<void> {
         latencyMs = Math.round(performance.now() - startedAt);
         attemptedLatenciesMs.push(latencyMs);
         successfulLatenciesMs.push(latencyMs);
+        successfulAiCases += 1;
+        consecutiveTimeouts = 0;
         modelActual = model.classification;
         if (model.classification === test.expected) modelCorrect += 1;
         if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
@@ -126,21 +167,27 @@ async function main(): Promise<void> {
         modelErrors += 1;
         const message = error instanceof Error ? error.message : String(error);
         const isTimeout = message.toLowerCase().includes('timeout');
-        if (isTimeout) modelTimeouts += 1;
+
+        if (isTimeout) {
+          modelTimeouts += 1;
+          consecutiveTimeouts += 1;
+          maxTimeoutStreak = Math.max(maxTimeoutStreak, consecutiveTimeouts);
+          if (firstTimeoutAfterAiCases === null) firstTimeoutAfterAiCases = successfulAiCases;
+        } else {
+          consecutiveTimeouts = 0;
+        }
 
         console.log('🤖 Gemma:      ERROR');
         console.log(`   Latencia:   ${latencyMs} ms`);
         console.log(`   Motivo:     ${message}`);
         effective = await classifier.fallbackFromAiError(test.path, error);
 
-        if (isTimeout && cooldownMs > 0) {
-          console.log(`↻ Cooldown:    ${cooldownMs} ms antes del siguiente caso`);
-          await sleep(cooldownMs);
-          try {
-            await ollama.health();
-            console.log('✓ Ollama:      responde tras el timeout');
-          } catch (healthError) {
-            console.log(`! Ollama:      no responde tras el timeout: ${healthError instanceof Error ? healthError.message : String(healthError)}`);
+        if (isTimeout) {
+          recoveriesAttempted += 1;
+          const recovered = await recoverModel(ollama, cooldownMs);
+          if (recovered) {
+            recoveriesSucceeded += 1;
+            consecutiveTimeouts = 0;
           }
         }
       }
@@ -192,6 +239,9 @@ async function main(): Promise<void> {
   console.log(`Latencia p50 OK:            ${p50 ?? 'n/a'} ms`);
   console.log(`Latencia p95 OK:            ${p95 ?? 'n/a'} ms`);
   console.log(`Mayor intento:              ${maxAttempt ?? 'n/a'} ms`);
+  console.log(`Antes del 1er timeout:      ${firstTimeoutAfterAiCases ?? 'sin timeout'} inferencias OK`);
+  console.log(`Racha máxima de timeouts:   ${maxTimeoutStreak}`);
+  console.log(`Recuperaciones correctas:   ${recoveriesSucceeded}/${recoveriesAttempted}`);
   console.log(`SAFE_CACHE peligrosos IA:   ${dangerousModelSafe}`);
   console.log(`Seguridad AnSysWarden:      ${systemSafetyPass}/${total}`);
   console.log(`SAFE_CACHE efectivos malos: ${dangerousEffectiveSafe}`);
