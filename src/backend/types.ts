@@ -6,8 +6,8 @@ export const RESULT_SCHEMA = 'ansyswarden.result.v1' as const;
 export interface ScanEntry {
   path: string;
   sizeBytes: number;
-  files: number;
-  directories: number;
+  files?: number;
+  directories?: number;
 }
 
 export interface ScanDocument {
@@ -76,8 +76,12 @@ function isScanEntry(value: unknown): value is ScanEntry {
     && entry.path.length > 0
     && entry.path.length <= 16_384
     && isNonNegative(entry.sizeBytes)
-    && isNonNegative(entry.files)
-    && isNonNegative(entry.directories);
+    && isOptionalNonNegative(entry.files)
+    && isOptionalNonNegative(entry.directories);
+}
+
+function isOptionalNonNegative(value: unknown): boolean {
+  return value === undefined || isNonNegative(value);
 }
 
 function isNonNegative(value: unknown): value is number {
