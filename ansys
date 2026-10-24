@@ -30,6 +30,10 @@ Uso:
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
   ./ansys inspect <ruta>
+  ./ansys bridge token
+  ./ansys bridge serve [--host IP] [--port N]
+  ./ansys bridge ping
+  ./ansys bridge classify <ruta>
   ./ansys test safety
   ./ansys test rules
   ./ansys test benchmark [--offset N] [--limit N]
@@ -270,6 +274,10 @@ main() {
     inspect)
       [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
+      ;;
+    bridge)
+      shift
+      run_ts "$ROOT_DIR/src/bridge/bridge-cli.ts" "$@"
       ;;
     test)
       case "${2:-}" in
