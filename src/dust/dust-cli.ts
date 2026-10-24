@@ -14,6 +14,51 @@ function readOption(args: string[], name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function formatElapsed(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function startScanProgress(): () => void {
+  const startedAt = Date.now();
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frame = 0;
+
+  if (process.stdout.isTTY) {
+    const render = (): void => {
+      const elapsed = formatElapsed(Date.now() - startedAt);
+      const text = `${frames[frame % frames.length]} Escaneando con Dust... ${elapsed} · proceso activo`;
+      frame += 1;
+      process.stdout.write(`\r${text.padEnd(72, ' ')}`);
+    };
+
+    render();
+    const timer = setInterval(render, 200);
+    timer.unref();
+
+    return () => {
+      clearInterval(timer);
+      const elapsed = formatElapsed(Date.now() - startedAt);
+      process.stdout.write(`\r✓ Escaneo de Dust finalizado en ${elapsed}${' '.repeat(32)}\n`);
+    };
+  }
+
+  console.log('Estado:     Escaneando con Dust...');
+  const timer = setInterval(() => {
+    const elapsed = formatElapsed(Date.now() - startedAt);
+    console.log(`Progreso:   ${elapsed} transcurridos · Dust sigue activo`);
+  }, 10_000);
+  timer.unref();
+
+  return () => {
+    clearInterval(timer);
+    const elapsed = formatElapsed(Date.now() - startedAt);
+    console.log(`Progreso:   finalizado tras ${elapsed}`);
+  };
+}
+
 async function run(): Promise<void> {
   const [, , command, ...args] = process.argv;
   const dust = new DustScanner();
@@ -61,12 +106,24 @@ async function run(): Promise<void> {
     }
 
     const minSize = readOption(args, '--min-size');
-    const result = await dust.scan(inputPath, { depth, minSize });
 
     console.log('\nAnSysWarden · Dust Scan');
     console.log('────────────────────────────────────────');
-    console.log(`Scan ID:    ${result.scan.id}`);
     console.log(`Origen:     ${inputPath}`);
+    console.log(`Profundidad:${depth === undefined ? ' por defecto' : String(depth).padStart(2, ' ')}`);
+    console.log(`Tamaño mín: ${minSize ?? 'por defecto'}`);
+    console.log('Progreso:   tiempo vivo; Dust no expone un porcentaje fiable');
+
+    const stopProgress = startScanProgress();
+    let result: Awaited<ReturnType<DustScanner['scan']>>;
+    try {
+      result = await dust.scan(inputPath, { depth, minSize });
+    } finally {
+      stopProgress();
+    }
+
+    console.log('────────────────────────────────────────');
+    console.log(`Scan ID:    ${result.scan.id}`);
     console.log(`Entradas:   ${result.scan.entries.length}`);
     console.log(`Profundidad:${String(result.depth).padStart(2, ' ')}`);
     console.log(`Tamaño mín: ${result.minSize}`);
