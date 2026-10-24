@@ -1,7 +1,9 @@
+import { installDust } from './dust-installer';
 import { DustScanner } from './dust-scanner';
 
 function usage(): never {
   console.log('Uso:');
+  console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
   console.log('  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE]');
   process.exit(1);
@@ -16,12 +18,34 @@ async function run(): Promise<void> {
   const [, , command, ...args] = process.argv;
   const dust = new DustScanner();
 
+  if (command === 'install') {
+    console.log('\nAnSysWarden · Instalación de Dust');
+    console.log('────────────────────────────────────────');
+    console.log('Origen:    release oficial bootandy/dust');
+    console.log('Destino:   instalación local gestionada por AnSysWarden');
+    console.log('Seguridad: verificación SHA-256 obligatoria');
+
+    const result = await installDust();
+    console.log(`Versión:   ${result.version}`);
+    console.log(`Arquitectura: ${result.architecture}`);
+    console.log(`Binario:   ${result.binPath}`);
+    console.log(`SHA-256:   ${result.sha256}`);
+
+    const version = await dust.version();
+    console.log(`Verificación: ${version}`);
+    console.log('Estado:    OK');
+    return;
+  }
+
   if (command === 'status') {
+    const bin = dust.getBinary();
     const version = await dust.version();
     console.log('\nAnSysWarden · Dust');
     console.log('────────────────────────────────────────');
-    console.log(`Estado:   OK`);
+    console.log('Estado:   OK');
     console.log(`Versión:  ${version || '(sin versión)'}`);
+    console.log(`Binario:  ${bin.path}`);
+    console.log(`Origen:   ${bin.source}`);
     console.log('Modo:     motor externo de solo lectura');
     return;
   }
