@@ -247,13 +247,16 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
       const passed = test.allowed.includes(classification)
         && !(test.forbidden ?? []).includes(classification);
       const durationMs = Math.round(performance.now() - startedAt);
+      const source = 'source' in result && typeof result.source === 'string'
+        ? result.source
+        : 'ai-direct';
 
       const safetyResult: SafetyResult = {
         test,
         actual: classification,
         confidence: result.confidence,
         reason: result.reason,
-        source: 'source' in result ? result.source : 'ai-direct',
+        source,
         passed,
         durationMs,
       };
