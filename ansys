@@ -29,6 +29,8 @@ Uso:
   ./ansys doctor
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
+  ./ansys dust status
+  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE]
   ./ansys inspect <ruta>
   ./ansys backend token
   ./ansys backend serve [--host IP] [--port N]
@@ -268,6 +270,10 @@ main() {
       [[ -n "${2:-}" ]] || { err "Falta la ruta a escanear."; exit 1; }
       shift
       run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
+      ;;
+    dust)
+      shift
+      run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@"
       ;;
     inspect)
       [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
