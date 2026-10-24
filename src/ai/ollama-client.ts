@@ -103,7 +103,11 @@ export class OllamaClient {
     });
   }
 
-  async classifyPath(inputPath: string): Promise<AiClassificationPayload> {
+  async classifyPath(inputPath: string, timeoutOverrideMs?: number): Promise<AiClassificationPayload> {
+    const requestTimeoutMs = timeoutOverrideMs && timeoutOverrideMs > 0
+      ? timeoutOverrideMs
+      : this.classifyTimeoutMs;
+
     const prompt = [
       'Eres el clasificador de seguridad de AnSysWarden.',
       'Tu trabajo es clasificar rutas de archivos sin borrar ni modificar nada.',
@@ -144,7 +148,7 @@ export class OllamaClient {
       host: this.host,
       model: this.model,
       input_path: inputPath,
-      timeout_ms: this.classifyTimeoutMs,
+      timeout_ms: requestTimeoutMs,
     });
 
     let response: Response;
@@ -152,7 +156,7 @@ export class OllamaClient {
       response = await fetch(`${this.host}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(this.classifyTimeoutMs),
+        signal: AbortSignal.timeout(requestTimeoutMs),
         body: JSON.stringify({
           model: this.model,
           prompt,
@@ -178,10 +182,10 @@ export class OllamaClient {
           host: this.host,
           model: this.model,
           input_path: inputPath,
-          timeout_ms: this.classifyTimeoutMs,
+          timeout_ms: requestTimeoutMs,
           duration_ms: durationMs,
         });
-        throw new Error(`Gemma superó el timeout de ${this.classifyTimeoutMs} ms`);
+        throw new Error(`Gemma superó el timeout de ${requestTimeoutMs} ms`);
       }
 
       await this.logger?.error('ollama.request.failed', 'Falló la llamada a Ollama', {
