@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { timingSafeEqual } from 'node:crypto';
 import { OllamaClient } from '../ai/ollama-client';
 import { PathClassifier } from '../ai/classifier';
+import { classifyByRules } from '../ai/rules';
 import type { ClassificationResult } from '../ai/types';
 import { TraceLogger } from '../observability/logger';
 import {
@@ -68,7 +69,7 @@ export function startBridgeServer(options: BridgeServerOptions): void {
 
   const server = createServer(async (req, res) => {
     const startedAt = performance.now();
-    const requestUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const requestUrl = new URL(req.url ?? '/', 'http://ansyswarden.local');
 
     try {
       if (requestUrl.pathname === '/v1/health' && req.method === 'GET') {
@@ -104,10 +105,17 @@ export function startBridgeServer(options: BridgeServerOptions): void {
         }
 
         let result: ClassificationResult;
-        if (body.profile) {
-          const ruleOnly = await classifier.applyAiRecommendation.bind(classifier);
-          const ai = await ollama.classifyPath(body.path, undefined, body.profile);
-          result = await ruleOnly(body.path, ai);
+        const ruleResult = classifyByRules(body.path);
+
+        if (ruleResult) {
+          result = ruleResult;
+        } else if (body.profile) {
+          try {
+            const ai = await ollama.classifyPath(body.path, undefined, body.profile);
+            result = await classifier.applyAiRecommendation(body.path, ai);
+          } catch (error) {
+            result = await classifier.fallbackFromAiError(body.path, error);
+          }
         } else {
           result = await classifier.classify(body.path);
         }
