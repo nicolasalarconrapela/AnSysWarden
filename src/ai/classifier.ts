@@ -25,9 +25,8 @@ export class PathClassifier {
       return ruleResult;
     }
 
-    await this.logger.info('classifier.ai_required', 'Ruta ambigua: se requiere análisis de evidencia de Gemma', {
+    await this.logger.info('classifier.profile_required', 'Ruta ambigua: se requiere inspección local antes de usar Gemma', {
       input_path: inputPath,
-      model: this.ollama.getModel(),
     });
 
     let profile;
@@ -42,11 +41,28 @@ export class PathClassifier {
         extensions: profile.extensions,
       });
     } catch (error) {
-      await this.logger.warn('classifier.profile_unavailable', 'No se pudo generar perfil local; Gemma recibe contexto incompleto', {
+      const message = error instanceof Error ? error.message : String(error);
+      const fallback: ClassificationResult = {
+        path: inputPath,
+        classification: 'REVIEW_REQUIRED',
+        confidence: 0,
+        reason: `No se pudo inspeccionar el contenido real de la ruta. Por seguridad no se consulta a Gemma y se requiere revisión. Detalle: ${message}`,
+        source: 'fallback',
+      };
+
+      await this.logger.warn('classifier.profile_required_but_unavailable', 'Sin inspección real no se consulta a Gemma', {
         input_path: inputPath,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
+        effective_classification: fallback.classification,
       });
+
+      return fallback;
     }
+
+    await this.logger.info('classifier.ai_required', 'Perfil real disponible: Gemma puede analizar la evidencia', {
+      input_path: inputPath,
+      model: this.ollama.getModel(),
+    });
 
     try {
       const evidence = await this.ollama.analyzePath(inputPath, undefined, profile);
@@ -62,9 +78,8 @@ export class PathClassifier {
   ): Promise<ClassificationResult> {
     const evidenceText = ai.evidence.join('; ');
 
-    // La IA nunca puede autorizar SAFE_CACHE. La única salida de IA que
-    // puede elevar protección es USER_DATA cuando detecta riesgo alto o
-    // regenerabilidad improbable con suficiente confianza.
+    // Gemma nunca puede autorizar SAFE_CACHE. Solo puede elevar protección
+    // a USER_DATA cuando detecta señales suficientemente fuertes.
     if (
       ai.userDataRisk === 'high'
       || (ai.regenerability === 'unlikely' && ai.confidence >= 0.7)
