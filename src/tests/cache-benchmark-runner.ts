@@ -9,9 +9,7 @@ function readNumberArg(name: string, fallback: number): number {
   if (index === -1) return fallback;
   const raw = process.argv[index + 1];
   const parsed = Number.parseInt(raw ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Valor inválido para ${name}: ${String(raw)}`);
-  }
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`Valor inválido para ${name}: ${String(raw)}`);
   return parsed;
 }
 
@@ -26,11 +24,7 @@ function percentile(values: number[], fraction: number): number | null {
   return sorted[Math.max(0, index)];
 }
 
-async function warmupModel(
-  ollama: OllamaClient,
-  label: string,
-  timeoutMs?: number,
-): Promise<boolean> {
+async function warmupModel(ollama: OllamaClient, label: string, timeoutMs?: number): Promise<boolean> {
   const startedAt = performance.now();
   try {
     await ollama.classifyPath('/benchmark/warmup/unknown-artifact', timeoutMs);
@@ -42,11 +36,7 @@ async function warmupModel(
   }
 }
 
-async function recoverModel(
-  ollama: OllamaClient,
-  cooldownMs: number,
-  recoveryTimeoutMs: number,
-): Promise<boolean> {
+async function recoverModel(ollama: OllamaClient, cooldownMs: number, recoveryTimeoutMs: number): Promise<boolean> {
   console.log('↻ Recuperación fuerte: descargando modelo de memoria...');
   try {
     await ollama.unloadModel();
@@ -87,9 +77,7 @@ async function main(): Promise<void> {
   const classifier = new PathClassifier(logger, ollama);
   const selected = CACHE_BENCHMARK_100.slice(offset, offset + limit);
 
-  if (selected.length === 0) {
-    throw new Error(`No hay casos para offset=${offset} limit=${limit}`);
-  }
+  if (selected.length === 0) throw new Error(`No hay casos para offset=${offset} limit=${limit}`);
 
   console.log(`\n${BENCHMARK_METADATA.name}`);
   console.log('════════════════════════════════════════════════════');
@@ -101,24 +89,23 @@ async function main(): Promise<void> {
   console.log(`Cooldown:      ${cooldownMs} ms tras timeout`);
   console.log(`Recycle:       tras ${recycleAfterTimeouts} timeouts consecutivos`);
   console.log(`Timeout recovery: ${recoveryTimeoutMs} ms`);
-  console.log('Recuperación:  timeout aislado = pausa; timeout repetido = unload + warm-up largo.');
   console.log('Métrica crítica: falsos SAFE_CACHE efectivos.');
-  console.log('Modo rápido: una sola inferencia de Gemma por caso como máximo.');
+  console.log('Errores del modelo: exacto / conservador / peligroso.');
+  console.log('Nota: este benchmark usa rutas sintéticas; el ArtifactProfiler se evalúa con rutas reales.');
   console.log('No se borra ni modifica ningún archivo.');
 
   const status = await ollama.health();
   const modelPresent = status.models.some((name) => name.startsWith(ollama.getModel()));
-  if (!modelPresent) {
-    throw new Error(`El modelo ${ollama.getModel()} no está disponible en Ollama.`);
-  }
+  if (!modelPresent) throw new Error(`El modelo ${ollama.getModel()} no está disponible en Ollama.`);
 
   console.log('🔥 Warm-up de Gemma...');
   await warmupModel(ollama, 'Inicio', recoveryTimeoutMs);
 
   let modelCorrect = 0;
+  let conservativeModelErrors = 0;
+  let dangerousModelErrors = 0;
   let modelErrors = 0;
   let modelTimeouts = 0;
-  let dangerousModelSafe = 0;
   let dangerousEffectiveSafe = 0;
   let systemSafetyPass = 0;
   let skippedAiByRule = 0;
@@ -162,13 +149,21 @@ async function main(): Promise<void> {
         successfulAiCases += 1;
         consecutiveTimeouts = 0;
         modelActual = model.classification;
-        if (model.classification === test.expected) modelCorrect += 1;
-        if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
-          dangerousModelSafe += 1;
+
+        if (model.classification === test.expected) {
+          modelCorrect += 1;
+        } else if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
+          dangerousModelErrors += 1;
+        } else {
+          conservativeModelErrors += 1;
         }
+
         console.log(`🤖 Gemma:      ${model.classification} (${Math.round(model.confidence * 100)}%)`);
         console.log(`   Latencia:   ${latencyMs} ms`);
         console.log(`   Motivo:     ${model.reason}`);
+        if (model.classification !== test.expected) {
+          console.log(`   Error:      ${model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE' ? 'PELIGROSO' : 'CONSERVADOR'}`);
+        }
         effective = await classifier.applyAiRecommendation(test.path, model);
       } catch (error) {
         latencyMs = Math.round(performance.now() - startedAt);
@@ -242,6 +237,7 @@ async function main(): Promise<void> {
 
   const total = selected.length;
   const aiEvaluated = total - skippedAiByRule;
+  const validModelResponses = aiEvaluated - modelErrors;
   const averageLatency = successfulLatenciesMs.length > 0
     ? Math.round(successfulLatenciesMs.reduce((sum, value) => sum + value, 0) / successfulLatenciesMs.length)
     : null;
@@ -254,8 +250,11 @@ async function main(): Promise<void> {
   console.log(`Casos totales:              ${total}`);
   console.log(`Gemma omitida por reglas:   ${skippedAiByRule}`);
   console.log(`Gemma realmente evaluada:   ${aiEvaluated}`);
-  console.log(`Gemma exacta:               ${modelCorrect}/${aiEvaluated}`);
-  console.log(`Errores Gemma:              ${modelErrors}/${aiEvaluated}`);
+  console.log(`Respuestas válidas:         ${validModelResponses}/${aiEvaluated}`);
+  console.log(`Gemma exacta:               ${modelCorrect}/${validModelResponses}`);
+  console.log(`Errores conservadores:      ${conservativeModelErrors}`);
+  console.log(`Errores peligrosos IA:      ${dangerousModelErrors}`);
+  console.log(`Errores técnicos Gemma:     ${modelErrors}/${aiEvaluated}`);
   console.log(`Timeouts Gemma:             ${modelTimeouts}/${aiEvaluated}`);
   console.log(`Latencia media OK:          ${averageLatency ?? 'n/a'} ms`);
   console.log(`Latencia p50 OK:            ${p50 ?? 'n/a'} ms`);
@@ -265,7 +264,6 @@ async function main(): Promise<void> {
   console.log(`Racha máxima de timeouts:   ${maxTimeoutStreak}`);
   console.log(`Recuperaciones suaves:      ${softRecoveries}`);
   console.log(`Recuperaciones fuertes OK:  ${recoveriesSucceeded}/${recoveriesAttempted}`);
-  console.log(`SAFE_CACHE peligrosos IA:   ${dangerousModelSafe}`);
   console.log(`Seguridad AnSysWarden:      ${systemSafetyPass}/${total}`);
   console.log(`SAFE_CACHE efectivos malos: ${dangerousEffectiveSafe}`);
   console.log(`Traza JSONL:                ${logger.logFile}`);
