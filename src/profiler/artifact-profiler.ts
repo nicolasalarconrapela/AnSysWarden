@@ -19,8 +19,30 @@ export class ArtifactProfiler {
   async profile(inputPath: string): Promise<ArtifactProfile> {
     const root = resolve(inputPath);
     const rootStat = await lstat(root);
+
+    if (rootStat.isSymbolicLink()) {
+      throw new Error(`No se perfilan enlaces simbólicos: ${root}`);
+    }
+
+    if (rootStat.isFile()) {
+      const extension = extname(root).toLowerCase() || '[sin extensión]';
+      const profile: ArtifactProfile = {
+        path: root,
+        sizeBytes: rootStat.size,
+        fileCount: 1,
+        directoryCount: 0,
+        skippedEntries: 0,
+        newestMtimeMs: rootStat.mtimeMs,
+        oldestMtimeMs: rootStat.mtimeMs,
+        extensions: [{ extension, files: 1, bytes: rootStat.size }],
+      };
+
+      await this.logger.info('profile.complete', 'Perfil local generado', profile);
+      return profile;
+    }
+
     if (!rootStat.isDirectory()) {
-      throw new Error(`La ruta a perfilar no es un directorio: ${root}`);
+      throw new Error(`La ruta a perfilar no es un archivo ni directorio regular: ${root}`);
     }
 
     let fileCount = 0;
