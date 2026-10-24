@@ -1,6 +1,6 @@
 import { OllamaClient } from './ollama-client';
 import { classifyByRules } from './rules';
-import type { AiClassificationPayload, ClassificationResult } from './types';
+import type { AiEvidencePayload, ClassificationResult } from './types';
 import { TraceLogger } from '../observability/logger';
 import { ArtifactProfiler } from '../profiler/artifact-profiler';
 
@@ -25,7 +25,7 @@ export class PathClassifier {
       return ruleResult;
     }
 
-    await this.logger.info('classifier.ai_required', 'Ruta ambigua: se requiere Gemma', {
+    await this.logger.info('classifier.ai_required', 'Ruta ambigua: se requiere análisis de evidencia de Gemma', {
       input_path: inputPath,
       model: this.ollama.getModel(),
     });
@@ -42,60 +42,72 @@ export class PathClassifier {
         extensions: profile.extensions,
       });
     } catch (error) {
-      await this.logger.warn('classifier.profile_unavailable', 'No se pudo generar perfil local; se mantiene fallback conservador de contexto', {
+      await this.logger.warn('classifier.profile_unavailable', 'No se pudo generar perfil local; Gemma recibe contexto incompleto', {
         input_path: inputPath,
         error: error instanceof Error ? error.message : String(error),
       });
     }
 
     try {
-      const ai = await this.ollama.classifyPath(inputPath, undefined, profile);
-      return await this.applyAiRecommendation(inputPath, ai);
+      const evidence = await this.ollama.analyzePath(inputPath, undefined, profile);
+      return await this.applyAiEvidence(inputPath, evidence);
     } catch (error) {
       return await this.fallbackFromAiError(inputPath, error);
     }
   }
 
-  async applyAiRecommendation(
+  async applyAiEvidence(
     inputPath: string,
-    ai: AiClassificationPayload,
+    ai: AiEvidencePayload,
   ): Promise<ClassificationResult> {
-    if (ai.classification === 'SAFE_CACHE') {
-      const downgraded: ClassificationResult = {
+    const evidenceText = ai.evidence.join('; ');
+
+    // La IA nunca puede autorizar SAFE_CACHE. La única salida de IA que
+    // puede elevar protección es USER_DATA cuando detecta riesgo alto o
+    // regenerabilidad improbable con suficiente confianza.
+    if (
+      ai.userDataRisk === 'high'
+      || (ai.regenerability === 'unlikely' && ai.confidence >= 0.7)
+    ) {
+      const protectedResult: ClassificationResult = {
         path: inputPath,
-        classification: 'REVIEW_REQUIRED',
-        confidence: 0,
-        reason: `Gemma propuso SAFE_CACHE, pero la política de seguridad exige una regla local explícita para autorizarlo. Motivo del modelo: ${ai.reason}`,
-        source: 'fallback',
+        classification: 'USER_DATA',
+        confidence: ai.confidence,
+        reason: `Gemma detectó señales de datos persistentes o potencialmente únicos. Evidencia: ${evidenceText}. ${ai.reason}`,
+        source: 'ai',
       };
 
-      await this.logger.warn('classifier.ai_safe_cache_blocked', 'SAFE_CACHE propuesto por IA bloqueado por política', {
+      await this.logger.info('classifier.ai_protect', 'Gemma aporta evidencia suficiente para proteger como USER_DATA', {
         input_path: inputPath,
         model: this.ollama.getModel(),
-        ai_confidence: ai.confidence,
-        ai_reason: ai.reason,
-        effective_classification: downgraded.classification,
+        regenerability: ai.regenerability,
+        user_data_risk: ai.userDataRisk,
+        confidence: ai.confidence,
+        evidence: ai.evidence,
       });
 
-      return downgraded;
+      return protectedResult;
     }
 
-    const result: ClassificationResult = {
+    const reviewResult: ClassificationResult = {
       path: inputPath,
-      classification: ai.classification,
+      classification: 'REVIEW_REQUIRED',
       confidence: ai.confidence,
-      reason: ai.reason,
+      reason: `Gemma aporta evidencia, pero no puede autorizar SAFE_CACHE. Regenerabilidad=${ai.regenerability}, riesgo_datos=${ai.userDataRisk}. Evidencia: ${evidenceText}. ${ai.reason}`,
       source: 'ai',
     };
 
-    await this.logger.info('classifier.success', 'Clasificación completada', {
+    await this.logger.info('classifier.ai_review', 'La evidencia de Gemma se mantiene en REVIEW_REQUIRED', {
       input_path: inputPath,
-      source: result.source,
-      classification: result.classification,
-      confidence: result.confidence,
+      model: this.ollama.getModel(),
+      regenerability: ai.regenerability,
+      user_data_risk: ai.userDataRisk,
+      confidence: ai.confidence,
+      evidence: ai.evidence,
+      effective_classification: reviewResult.classification,
     });
 
-    return result;
+    return reviewResult;
   }
 
   async fallbackFromAiError(inputPath: string, error: unknown): Promise<ClassificationResult> {
@@ -104,7 +116,7 @@ export class PathClassifier {
       path: inputPath,
       classification: 'REVIEW_REQUIRED',
       confidence: 0,
-      reason: `No se pudo validar la clasificación de la IA: ${message}`,
+      reason: `No se pudo validar el análisis de la IA: ${message}`,
       source: 'fallback',
     };
 
