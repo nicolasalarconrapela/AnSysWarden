@@ -9,6 +9,7 @@ const VALID_CLASSIFICATIONS = new Set<Classification>([
 
 const DEFAULT_CLASSIFY_TIMEOUT_MS = 30_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 5_000;
+const DEFAULT_UNLOAD_TIMEOUT_MS = 15_000;
 
 interface OllamaGenerateResponse {
   response?: string;
@@ -62,6 +63,44 @@ export class OllamaClient {
       .filter((name): name is string => typeof name === 'string' && name.length > 0);
 
     return { ok: true, models };
+  }
+
+  async unloadModel(): Promise<void> {
+    const startedAt = performance.now();
+    await this.logger?.info('ollama.model.unload.request', 'Solicitando descarga del modelo de memoria', {
+      host: this.host,
+      model: this.model,
+    });
+
+    const response = await fetch(`${this.host}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(DEFAULT_UNLOAD_TIMEOUT_MS),
+      body: JSON.stringify({
+        model: this.model,
+        stream: false,
+        keep_alive: 0,
+      }),
+    });
+
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (!response.ok) {
+      const body = await response.text();
+      await this.logger?.warn('ollama.model.unload.failed', 'No se pudo descargar el modelo de memoria', {
+        host: this.host,
+        model: this.model,
+        status: response.status,
+        duration_ms: durationMs,
+        body,
+      });
+      throw new Error(`Ollama no pudo descargar ${this.model} de memoria: HTTP ${response.status}`);
+    }
+
+    await this.logger?.info('ollama.model.unloaded', 'Modelo descargado de memoria', {
+      host: this.host,
+      model: this.model,
+      duration_ms: durationMs,
+    });
   }
 
   async classifyPath(inputPath: string): Promise<AiClassificationPayload> {
