@@ -30,10 +30,8 @@ Uso:
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
   ./ansys inspect <ruta>
-  ./ansys bridge token
-  ./ansys bridge serve [--host IP] [--port N]
-  ./ansys bridge ping
-  ./ansys bridge classify <ruta>
+  ./ansys backend token
+  ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
   ./ansys test rules
   ./ansys test benchmark [--offset N] [--limit N]
@@ -160,7 +158,7 @@ ai_models() {
   printf 'qwen3:1.7b    ~1.4 GB   más calidad / aún ligero\n'
   printf 'gemma2:2b     actual    referencia\n'
   printf '\nDescargar:\n  ./ansys ai pull qwen3:0.6b\n'
-  printf '\nProbar temporalmente:\n  ANSYSWARDEN_MODEL=qwen3:0.6b ./ansys test benchmark --offset 0 --limit 10\n'
+  printf '\nProbar temporalmente:\n  ANSYSWARDEN_MODEL=qwen3:0.6b ./ansys test benchmark --offset 0 --limit 10\n' "$requested_model"
 }
 
 ai_pull() {
@@ -275,9 +273,9 @@ main() {
       [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
       ;;
-    bridge)
+    backend)
       shift
-      run_ts "$ROOT_DIR/src/bridge/bridge-cli.ts" "$@"
+      run_ts "$ROOT_DIR/src/backend/backend-cli.ts" "$@"
       ;;
     test)
       case "${2:-}" in
