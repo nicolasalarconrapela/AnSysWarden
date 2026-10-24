@@ -2,11 +2,13 @@ import { OllamaClient } from './ollama-client';
 import { classifyByRules } from './rules';
 import type { AiClassificationPayload, ClassificationResult } from './types';
 import { TraceLogger } from '../observability/logger';
+import { ArtifactProfiler } from '../profiler/artifact-profiler';
 
 export class PathClassifier {
   constructor(
     private readonly logger = new TraceLogger(),
     private readonly ollama = new OllamaClient(undefined, undefined, logger),
+    private readonly profiler = new ArtifactProfiler(logger),
   ) {}
 
   async classify(inputPath: string): Promise<ClassificationResult> {
@@ -28,8 +30,26 @@ export class PathClassifier {
       model: this.ollama.getModel(),
     });
 
+    let profile;
     try {
-      const ai = await this.ollama.classifyPath(inputPath);
+      profile = await this.profiler.profile(inputPath);
+      await this.logger.info('classifier.profile_ready', 'Perfil objetivo disponible para la IA', {
+        input_path: inputPath,
+        size_bytes: profile.sizeBytes,
+        file_count: profile.fileCount,
+        directory_count: profile.directoryCount,
+        skipped_entries: profile.skippedEntries,
+        extensions: profile.extensions,
+      });
+    } catch (error) {
+      await this.logger.warn('classifier.profile_unavailable', 'No se pudo generar perfil local; se mantiene fallback conservador de contexto', {
+        input_path: inputPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      const ai = await this.ollama.classifyPath(inputPath, undefined, profile);
       return await this.applyAiRecommendation(inputPath, ai);
     } catch (error) {
       return await this.fallbackFromAiError(inputPath, error);
