@@ -18,6 +18,98 @@ Clasificaciones:
 
 La CLI actual es estrictamente de solo lectura y no contiene operaciones de borrado.
 
+## Arquitectura PC ↔ móvil
+
+El ordenador es la fuente de verdad y aloja el backend de AnSysWarden. El móvil no expone ningún servidor.
+
+Flujo:
+
+```text
+scanner / fuente externa
+        ↓
+normalización AnSysWarden
+        ↓
+JSON persistido en el PC
+        ↓
+backend HTTP del PC
+        ↓
+móvil consume el JSON
+        ↓
+Gemma / Ollama analiza
+        ↓
+resultado devuelto por API
+        ↓
+PC valida y persiste el resultado
+```
+
+Los archivos reales del PC no se transfieren al móvil. Solo viajan los JSON generados expresamente por AnSysWarden.
+
+Los datos persistidos viven por defecto en:
+
+```text
+.ansyswarden/backend/data/
+├── scans/
+│   ├── latest.json
+│   └── <scan-id>.json
+└── results/
+    └── <scan-id>.result.json
+```
+
+El formato se versiona mediante `schema`, empezando por `ansyswarden.scan.v1`.
+
+### Backend del PC
+
+Arranque:
+
+```bash
+export ANSYSWARDEN_API_TOKEN='una-clave-larga'
+./ansys backend serve
+```
+
+Por defecto escucha en `0.0.0.0:8787` y exige `Authorization: Bearer <token>`.
+
+Endpoints iniciales:
+
+```text
+GET  /api/health
+GET  /api/scans
+GET  /api/scans/latest
+GET  /api/scans/:id
+POST /api/scans
+POST /api/scans/:id/results
+GET  /api/scans/:id/results
+```
+
+### Crear un JSON de escaneo
+
+El backend acepta un documento ya normalizado mediante:
+
+```text
+POST /api/scans
+```
+
+Ejemplo:
+
+```json
+{
+  "schema": "ansyswarden.scan.v1",
+  "id": "scan-a81f",
+  "createdAt": "2026-10-24T12:47:00+02:00",
+  "source": "drup",
+  "computer": "NICO-PC",
+  "entries": [
+    {
+      "path": "C:\\Users\\nico\\.gradle\\caches",
+      "sizeBytes": 8452342341,
+      "files": 192304,
+      "directories": 12537
+    }
+  ]
+}
+```
+
+La salida de la herramienta externa (por ejemplo `drup`) debe transformarse primero a este contrato; el backend no depende de esa herramienta concreta.
+
 ## Interfaz principal
 
 La interfaz diaria es el comando `./ansys`.
@@ -32,85 +124,15 @@ Comandos principales:
 ./ansys classify ~/.gradle/caches
 ./ansys inspect ~/.gradle/caches
 ./ansys scan ~ --min-mb 50
-./ansys bridge token
-./ansys bridge serve
-./ansys bridge ping
-./ansys bridge classify <ruta>
+./ansys backend serve
 ./ansys logs
 ./ansys logs --raw
 ./ansys ai stop
 ```
 
-## Puente PC ↔ móvil
-
-El bridge permite que el PC haga el trabajo pesado de inspección del sistema de archivos y que el móvil use Gemma/Ollama como cerebro de clasificación.
-
-En esta versión no se transfieren archivos ni su contenido. El PC genera un perfil local con tamaño, número de archivos/directorios, fechas y resumen de extensiones; únicamente esos metadatos y la ruta se envían al móvil.
-
-Flujo:
-
-```text
-PC                              S25 Ultra / Termux
-scan/perfil ── metadatos ─────> AnSys Bridge ──> Ollama/Gemma
-            <── clasificación ─              <── resultado
-```
-
-Ollama sigue escuchando únicamente en `127.0.0.1`. El que se expone en la LAN es el bridge autenticado.
-
-### 1. Crear un token compartido
-
-En uno de los dos dispositivos:
-
-```bash
-./ansys bridge token
-```
-
-Guarda el valor generado y configura exactamente el mismo token en móvil y PC:
-
-```bash
-export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
-```
-
-### 2. Arrancar el móvil
-
-Con PC y móvil en la misma red local:
-
-```bash
-./ansys ai start
-export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
-./ansys bridge serve
-```
-
-Por defecto el bridge escucha en el puerto `8787`.
-
-### 3. Configurar el PC
-
-Sustituye `IP_DEL_MOVIL` por la dirección local del S25:
-
-```bash
-export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
-export ANSYSWARDEN_BRIDGE_URL='http://IP_DEL_MOVIL:8787'
-```
-
-Comprueba la conexión:
-
-```bash
-./ansys bridge ping
-```
-
-### 4. Clasificar en el móvil una ruta del PC
-
-Desde el PC:
-
-```bash
-./ansys bridge classify ~/.gradle/caches
-```
-
-El PC inspecciona la ruta localmente, envía solo el perfil al móvil y recibe la clasificación. Ningún archivo se borra ni se transfiere.
-
 ## Dependencias TypeScript
 
-Las dependencias solo necesitan instalarse una vez o cuando cambie `package.json`:
+La implementación interna está escrita en TypeScript. Las dependencias solo necesitan instalarse una vez o cuando cambie `package.json`:
 
 ```bash
 npm install
@@ -148,8 +170,6 @@ Detener:
 ./ansys doctor
 ```
 
-Comprueba el Ollama local, el modelo configurado y genera una traza JSONL de la ejecución.
-
 ## Clasificar una ruta
 
 ```bash
@@ -162,8 +182,6 @@ Comprueba el Ollama local, el modelo configurado y genera una traza JSONL de la 
 ./ansys inspect ~/.gradle/caches
 ```
 
-Recoge contexto útil de una ruta sin modificar archivos para ayudar a decidir si es caché, artefacto regenerable o contenido que requiere revisión.
-
 ## Escaneo
 
 ```bash
@@ -175,51 +193,31 @@ El escaneo identifica candidatos pesados para revisión; no elimina nada.
 Variables opcionales:
 
 ```bash
-ANSYSWARDEN_MODEL=gemma2:2b
+ANSYSWARDEN_MODEL=gemma3:1b
 OLLAMA_HOST_URL=http://127.0.0.1:11434
 ANSYSWARDEN_LOG_FILE=/ruta/personalizada/traza.jsonl
-ANSYSWARDEN_BRIDGE_TOKEN=<token compartido>
-ANSYSWARDEN_BRIDGE_URL=http://<ip-movil>:8787
-ANSYSWARDEN_BRIDGE_HOST=0.0.0.0
-ANSYSWARDEN_BRIDGE_PORT=8787
+ANSYSWARDEN_API_TOKEN=clave-larga
+ANSYSWARDEN_BACKEND_HOST=0.0.0.0
+ANSYSWARDEN_BACKEND_PORT=8787
+ANSYSWARDEN_BACKEND_DATA_DIR=/ruta/al/backend/data
 ```
 
 ## Trazabilidad
 
-La consola está pensada para lectura humana. En paralelo, los comandos TypeScript escriben eventos estructurados en:
+Las trazas estructuradas se escriben en:
 
 ```text
 .ansyswarden/logs/<run-id>.jsonl
 ```
 
-Ver logs humanos y de Ollama:
+## Validación pendiente
 
-```bash
-./ansys logs
-```
-
-Ver las trazas JSONL completas:
-
-```bash
-./ansys logs --raw
-```
-
-## Validación recomendada
-
-Antes de considerar una modificación validada:
+Antes de considerar esta rama validada en ejecución:
 
 ```bash
 npm install
 npm run typecheck
-./ansys ai status
-./ansys ai test
-./ansys bridge ping
+./ansys backend serve
 ```
 
-Para probar el flujo completo desde el PC:
-
-```bash
-./ansys bridge classify <ruta-local-del-pc>
-```
-
-No se considera validado el bridge hasta ejecutar estas comprobaciones en los dos dispositivos reales.
+Después debe comprobarse desde otro dispositivo que `/api/health`, `/api/scans/latest` y el envío de resultados funcionan correctamente.
