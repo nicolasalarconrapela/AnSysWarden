@@ -37,7 +37,7 @@ export class ArtifactProfiler {
         extensions: [{ extension, files: 1, bytes: rootStat.size }],
       };
 
-      await this.logger.info('profile.complete', 'Perfil local generado', profile);
+      await this.logger.info('profile.complete', 'Perfil local generado', { ...profile });
       return profile;
     }
 
@@ -122,7 +122,7 @@ export class ArtifactProfiler {
       extensions: extensionRows,
     };
 
-    await this.logger.info('profile.complete', 'Perfil local generado', profile);
+    await this.logger.info('profile.complete', 'Perfil local generado', { ...profile });
     return profile;
   }
 }
