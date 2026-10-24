@@ -7,7 +7,7 @@ AnSysWarden es un clasificador local y conservador para identificar cachés y ar
 La clasificación sigue este orden:
 
 1. Reglas deterministas para rutas conocidas.
-2. Gemma 2 2B mediante Ollama solo para casos ambiguos.
+2. Gemma mediante Ollama solo para casos ambiguos.
 3. Si la IA falla o devuelve una respuesta inválida, el resultado es `REVIEW_REQUIRED`.
 
 Clasificaciones:
@@ -18,23 +18,13 @@ Clasificaciones:
 
 La CLI actual es estrictamente de solo lectura y no contiene operaciones de borrado.
 
-## Interfaz principal en el móvil
+## Interfaz principal
 
-La interfaz diaria es el comando `./ansys`. No es necesario usar `npm` para arrancar, parar o probar Ollama.
-
-Primera vez:
-
-```bash
-chmod +x ansys
-./ansys ai bootstrap
-```
-
-`./ansys ai bootstrap` prepara el entorno móvil, instala/verifica Ollama, descarga `gemma2:2b` y ejecuta una prueba nativa y otra desde Node.js/TypeScript.
+La interfaz diaria es el comando `./ansys`.
 
 Comandos principales:
 
 ```bash
-./ansys ai bootstrap
 ./ansys ai start
 ./ansys ai status
 ./ansys ai test
@@ -42,28 +32,91 @@ Comandos principales:
 ./ansys classify ~/.gradle/caches
 ./ansys inspect ~/.gradle/caches
 ./ansys scan ~ --min-mb 50
+./ansys bridge token
+./ansys bridge serve
+./ansys bridge ping
+./ansys bridge classify <ruta>
 ./ansys logs
 ./ansys logs --raw
 ./ansys ai stop
 ```
 
+## Puente PC ↔ móvil
+
+El bridge permite que el PC haga el trabajo pesado de inspección del sistema de archivos y que el móvil use Gemma/Ollama como cerebro de clasificación.
+
+En esta versión no se transfieren archivos ni su contenido. El PC genera un perfil local con tamaño, número de archivos/directorios, fechas y resumen de extensiones; únicamente esos metadatos y la ruta se envían al móvil.
+
+Flujo:
+
+```text
+PC                              S25 Ultra / Termux
+scan/perfil ── metadatos ─────> AnSys Bridge ──> Ollama/Gemma
+            <── clasificación ─              <── resultado
+```
+
+Ollama sigue escuchando únicamente en `127.0.0.1`. El que se expone en la LAN es el bridge autenticado.
+
+### 1. Crear un token compartido
+
+En uno de los dos dispositivos:
+
+```bash
+./ansys bridge token
+```
+
+Guarda el valor generado y configura exactamente el mismo token en móvil y PC:
+
+```bash
+export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
+```
+
+### 2. Arrancar el móvil
+
+Con PC y móvil en la misma red local:
+
+```bash
+./ansys ai start
+export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
+./ansys bridge serve
+```
+
+Por defecto el bridge escucha en el puerto `8787`.
+
+### 3. Configurar el PC
+
+Sustituye `IP_DEL_MOVIL` por la dirección local del S25:
+
+```bash
+export ANSYSWARDEN_BRIDGE_TOKEN='TOKEN_GENERADO'
+export ANSYSWARDEN_BRIDGE_URL='http://IP_DEL_MOVIL:8787'
+```
+
+Comprueba la conexión:
+
+```bash
+./ansys bridge ping
+```
+
+### 4. Clasificar en el móvil una ruta del PC
+
+Desde el PC:
+
+```bash
+./ansys bridge classify ~/.gradle/caches
+```
+
+El PC inspecciona la ruta localmente, envía solo el perfil al móvil y recibe la clasificación. Ningún archivo se borra ni se transfiere.
+
 ## Dependencias TypeScript
 
-La implementación interna de algunos comandos está escrita en TypeScript. Las dependencias solo necesitan instalarse una vez o cuando cambie `package.json`:
+Las dependencias solo necesitan instalarse una vez o cuando cambie `package.json`:
 
 ```bash
 npm install
 ```
 
-Esto no arranca Ollama ni forma parte del uso diario de la IA.
-
 ## Gestión de Ollama
-
-Preparación inicial completa:
-
-```bash
-./ansys ai bootstrap
-```
 
 Arrancar:
 
@@ -125,6 +178,10 @@ Variables opcionales:
 ANSYSWARDEN_MODEL=gemma2:2b
 OLLAMA_HOST_URL=http://127.0.0.1:11434
 ANSYSWARDEN_LOG_FILE=/ruta/personalizada/traza.jsonl
+ANSYSWARDEN_BRIDGE_TOKEN=<token compartido>
+ANSYSWARDEN_BRIDGE_URL=http://<ip-movil>:8787
+ANSYSWARDEN_BRIDGE_HOST=0.0.0.0
+ANSYSWARDEN_BRIDGE_PORT=8787
 ```
 
 ## Trazabilidad
@@ -134,8 +191,6 @@ La consola está pensada para lectura humana. En paralelo, los comandos TypeScri
 ```text
 .ansyswarden/logs/<run-id>.jsonl
 ```
-
-Estos eventos conservan timestamp, nivel, evento, duración, modelo, arquitectura, ruta, clasificación, confianza y errores técnicos.
 
 Ver logs humanos y de Ollama:
 
@@ -149,26 +204,22 @@ Ver las trazas JSONL completas:
 ./ansys logs --raw
 ```
 
-## Testing en el S25 Ultra
+## Validación recomendada
 
 Antes de considerar una modificación validada:
 
 ```bash
-git pull
-chmod +x ansys
 npm install
 npm run typecheck
 ./ansys ai status
 ./ansys ai test
-./ansys doctor
-./ansys classify ~/.gradle/caches
-./ansys logs --raw
+./ansys bridge ping
 ```
 
-Para una instalación nueva o después de rehacer el entorno Debian/Termux, ejecuta antes:
+Para probar el flujo completo desde el PC:
 
 ```bash
-./ansys ai bootstrap
+./ansys bridge classify <ruta-local-del-pc>
 ```
 
-`npm install` y `npm run typecheck` son tareas de preparación/desarrollo. El manejo diario de Ollama y AnSysWarden se realiza mediante `./ansys`.
+No se considera validado el bridge hasta ejecutar estas comprobaciones en los dos dispositivos reales.
