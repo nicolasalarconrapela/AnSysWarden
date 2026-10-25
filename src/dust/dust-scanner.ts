@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { AiTreePruner } from '../ai/tree-pruner';
+import type { AiInputDocument } from '../ai/tree-types';
 import { BackendStorage } from '../backend/storage';
 import { SCAN_SCHEMA, type ScanDocument, type ScanEntry } from '../backend/types';
 import { resolveDustBin } from './dust-path';
@@ -20,11 +22,15 @@ interface DustJsonNode {
 export interface DustScanOptions {
   depth?: number;
   minSize?: string;
+  aiTreeDepth?: number;
+  aiTreeMaxEntries?: number;
 }
 
 export interface DustScanResult {
   scan: ScanDocument;
+  aiInput: AiInputDocument;
   filePath: string;
+  aiInputPath: string;
   depth: number;
   minSize: string;
 }
@@ -32,9 +38,11 @@ export interface DustScanResult {
 export class DustScanner {
   private readonly storage: BackendStorage;
   private readonly maxOutputBytes: number;
+  private readonly treePruner: AiTreePruner;
 
-  constructor(storage = new BackendStorage()) {
+  constructor(storage = new BackendStorage(), treePruner = new AiTreePruner()) {
     this.storage = storage;
+    this.treePruner = treePruner;
     this.maxOutputBytes = readPositiveInt(
       process.env.ANSYSWARDEN_DUST_MAX_OUTPUT_BYTES,
       DEFAULT_MAX_OUTPUT_BYTES,
@@ -90,10 +98,20 @@ export class DustScanner {
       entries,
     };
 
+    // El scan Dust es la fuente completa de tamaños. El árbol IA se deriva
+    // después y nunca sustituye ni modifica el inventario original.
     await this.storage.saveScan(scan);
+    const aiInput = await this.treePruner.build(scan, target, {
+      ...(options.aiTreeDepth === undefined ? {} : { maxDepth: options.aiTreeDepth }),
+      ...(options.aiTreeMaxEntries === undefined ? {} : { maxEntries: options.aiTreeMaxEntries }),
+    });
+    await this.storage.saveAiInput(aiInput);
+
     return {
       scan,
+      aiInput,
       filePath: join(this.storage.scansDir, `${scan.id}.json`),
+      aiInputPath: join(this.storage.aiInputsDir, `${scan.id}.ai.json`),
       depth,
       minSize,
     };
@@ -220,6 +238,7 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let stdoutBytes = 0;
+    let stderrBytes = 0;
     let settled = false;
 
     const fail = (error: Error): void => {
@@ -240,7 +259,9 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      if (stderr.reduce((sum, item) => sum + item.length, 0) < 1024 * 1024) stderr.push(chunk);
+      if (stderrBytes >= 1024 * 1024) return;
+      stderrBytes += chunk.length;
+      stderr.push(chunk);
     });
 
     child.on('error', (error: NodeJS.ErrnoException) => {
