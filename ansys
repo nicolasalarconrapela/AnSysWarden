@@ -7,7 +7,7 @@ LOG_DIR="$STATE_DIR/logs"
 OLLAMA_PID_FILE="$STATE_DIR/ollama.pid"
 OLLAMA_LOG_FILE="$LOG_DIR/ollama.log"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
-MODEL="${ANSYSWARDEN_MODEL:-gemma2:2b}"
+MODEL="${ANSYSWARDEN_MODEL:-gemma4:e2b}"
 
 mkdir -p "$LOG_DIR"
 
@@ -151,16 +151,18 @@ ai_status() {
 }
 
 ai_models() {
-  printf 'Modelos recomendados para AnSysWarden\n'
+  printf 'Modelos de AnSysWarden v1\n'
   printf '────────────────────────────────────────\n'
-  printf 'gemma2:2b     referencia actual / prudente\n'
-  printf 'gemma3:1b     ~806 MB   ligero / secundario\n'
-  printf 'gemma3:4b     ~3.4 GB   candidato de equilibrio\n'
-  printf 'gemma4:e2b    candidato móvil/edge prioritario\n'
-  printf 'qwen3:0.6b    descartado provisionalmente por timeouts\n'
-  printf '\nDescargar candidato móvil prioritario:\n  ./ansys ai pull-mobile-candidate\n'
-  printf '\nComparar candidatos móviles instalados:\n  ./ansys test mobile-models\n'
-  printf '\nComparar una selección manual:\n  ./ansys test models --models gemma2:2b,gemma3:4b,gemma4:e2b\n'
+  printf 'gemma4:e2b    PRINCIPAL   mejor equilibrio medido en S25 Ultra\n'
+  printf 'gemma2:2b     REFERENCIA  más ligero; fallback manual\n'
+  printf 'gemma3:1b     SECUNDARIO  ligero pero menos estable en nuestras pruebas\n'
+  printf 'qwen3:0.6b    DESCARTADO  timeouts en el dataset CORE\n'
+  printf '\nPolítica de seguridad:\n'
+  printf '  Solo las reglas locales pueden autorizar SAFE_CACHE.\n'
+  printf '  La IA solo aporta evidencia y puede terminar en proteger o revisar.\n'
+  printf '\nInstalar modelo principal:\n  ./ansys ai pull-mobile-candidate\n'
+  printf '\nComparar modelo principal y referencia:\n  ./ansys test mobile-models\n'
+  printf '\nForzar temporalmente la referencia:\n  ANSYSWARDEN_MODEL=gemma2:2b ./ansys classify <ruta>\n'
 }
 
 ai_pull() {
@@ -179,10 +181,10 @@ ai_pull() {
 }
 
 ai_pull_mobile_candidate() {
-  printf 'AnSysWarden · Candidato móvil prioritario\n'
+  printf 'AnSysWarden · Modelo móvil v1\n'
   printf '────────────────────────────────────────\n'
   printf 'Modelo: gemma4:e2b\n'
-  printf 'Rol:    candidato; NO sustituye todavía al modelo por defecto\n\n'
+  printf 'Rol:    modelo principal de IA local\n\n'
   ai_pull 'gemma4:e2b'
 }
 
@@ -298,7 +300,7 @@ main() {
           ;;
         mobile-models)
           shift 2
-          run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma2:2b,gemma3:4b,gemma4:e2b "$@"
+          run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@"
           ;;
         *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
       esac
