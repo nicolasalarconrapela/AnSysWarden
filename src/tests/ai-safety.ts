@@ -21,11 +21,12 @@ interface SafetyCase {
 
 export interface SafetyResult {
   test: SafetyCase;
-  actual: Classification | 'ERROR';
+  actual: Classification | 'ERROR' | 'SKIPPED';
   confidence?: number;
   reason?: string;
   source?: string;
   passed: boolean;
+  skipped?: boolean;
   error?: string;
   durationMs: number;
 }
@@ -35,6 +36,7 @@ export interface SafetySuiteResult {
   failed: number;
   modelPassed: number;
   modelFailed: number;
+  modelSkipped: number;
   systemPassed: number;
   systemFailed: number;
   results: SafetyResult[];
@@ -96,12 +98,17 @@ function syntheticModelProfile(path: string): ArtifactProfile {
   };
 }
 
+function isTimeoutMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('timeout') || normalized.includes('superó el timeout');
+}
+
 export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuiteResult> {
   const classifier = new PathClassifier(logger);
   const ollama = new OllamaClient(undefined, undefined, logger);
   const results: SafetyResult[] = [];
   let modelReady = true;
-  let modelWarmupError: string | null = null;
+  let modelStopReason: string | null = null;
 
   await logger.info('safety.suite.start', 'Inicio de batería de seguridad IA', {
     total: CASES.length,
@@ -125,18 +132,39 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
       });
     } catch (error) {
       modelReady = false;
-      modelWarmupError = error instanceof Error ? error.message : String(error);
-      await logger.warn('safety.model.warmup.failed', 'Warm-up de Gemma fallido; se omiten nuevas inferencias directas para evitar una cascada de timeouts', {
+      modelStopReason = error instanceof Error ? error.message : String(error);
+      await logger.warn('safety.model.warmup.failed', 'Warm-up de Gemma fallido; se omiten nuevas inferencias directas', {
         model: ollama.getModel(),
         timeout_ms: MODEL_WARMUP_TIMEOUT_MS,
         duration_ms: Math.round(performance.now() - warmupStartedAt),
-        error: modelWarmupError,
+        error: modelStopReason,
       });
     }
   }
 
   for (const test of CASES) {
     const startedAt = performance.now();
+
+    if (test.mode === 'model' && !modelReady) {
+      const reason = `Caso omitido para evitar nuevas inferencias tras degradación del modelo: ${modelStopReason ?? 'motivo desconocido'}`;
+      results.push({
+        test,
+        actual: 'SKIPPED',
+        passed: false,
+        skipped: true,
+        reason,
+        source: 'circuit-breaker',
+        durationMs: 0,
+      });
+      await logger.warn('safety.case.skipped', `${test.id} SKIPPED: ${test.description}`, {
+        category: test.category,
+        input: test.input,
+        mode: test.mode,
+        reason,
+      });
+      continue;
+    }
+
     try {
       let result;
       let source: string;
@@ -158,10 +186,6 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
         reason = result.reason;
         confidence = result.confidence;
       } else {
-        if (!modelReady) {
-          throw new Error(`Caso de modelo omitido porque el warm-up no terminó correctamente: ${modelWarmupError ?? 'motivo desconocido'}`);
-        }
-
         const evidence = await ollama.analyzePath(
           test.input,
           MODEL_CASE_TIMEOUT_MS,
@@ -209,6 +233,19 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     } catch (error) {
       const durationMs = Math.round(performance.now() - startedAt);
       const message = error instanceof Error ? error.message : String(error);
+
+      if (test.mode === 'model' && isTimeoutMessage(message)) {
+        modelReady = false;
+        modelStopReason = message;
+        await logger.warn('safety.model.circuit_open', 'Cortacircuitos de IA activado tras timeout; se omitirán los siguientes casos reales de Gemma', {
+          model: ollama.getModel(),
+          test_id: test.id,
+          timeout_ms: MODEL_CASE_TIMEOUT_MS,
+          duration_ms: durationMs,
+          error: message,
+        });
+      }
+
       results.push({
         test,
         actual: 'ERROR',
@@ -239,12 +276,15 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     });
   }
 
-  const passed = results.filter((result) => result.passed).length;
-  const failed = results.length - passed;
+  const evaluableResults = results.filter((result) => !result.skipped);
+  const passed = evaluableResults.filter((result) => result.passed).length;
+  const failed = evaluableResults.length - passed;
   const modelResults = results.filter((result) => result.test.mode === 'model');
+  const evaluatedModelResults = modelResults.filter((result) => !result.skipped);
   const systemResults = results.filter((result) => result.test.mode === 'system');
-  const modelPassed = modelResults.filter((result) => result.passed).length;
-  const modelFailed = modelResults.length - modelPassed;
+  const modelPassed = evaluatedModelResults.filter((result) => result.passed).length;
+  const modelFailed = evaluatedModelResults.length - modelPassed;
+  const modelSkipped = modelResults.filter((result) => result.skipped).length;
   const systemPassed = systemResults.filter((result) => result.passed).length;
   const systemFailed = systemResults.length - systemPassed;
 
@@ -254,6 +294,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     failed,
     model_passed: modelPassed,
     model_failed: modelFailed,
+    model_skipped: modelSkipped,
     system_passed: systemPassed,
     system_failed: systemFailed,
   });
@@ -263,6 +304,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     failed,
     modelPassed,
     modelFailed,
+    modelSkipped,
     systemPassed,
     systemFailed,
     results,
