@@ -68,6 +68,8 @@ export interface AiTreeSummary {
   resolvedLocally: number;
   aiCandidates: number;
   ecosystems: string[];
+  languages: string[];
+  enryAvailable: boolean;
 }
 
 export interface AiInputDocument {
