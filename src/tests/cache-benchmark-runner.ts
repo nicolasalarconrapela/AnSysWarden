@@ -1,6 +1,7 @@
 import { PathClassifier } from '../ai/classifier';
 import { OllamaClient } from '../ai/ollama-client';
 import { classifyByRules } from '../ai/rules';
+import type { AiEvidencePayload, Classification } from '../ai/types';
 import { TraceLogger } from '../observability/logger';
 import { CACHE_BENCHMARK_100, BENCHMARK_METADATA } from './cache-benchmark-100';
 
@@ -24,10 +25,35 @@ function percentile(values: number[], fraction: number): number | null {
   return sorted[Math.max(0, index)];
 }
 
+type EvidenceQuality = 'exact' | 'conservative' | 'dangerous';
+
+function evaluateEvidence(expected: Classification, ai: AiEvidencePayload): EvidenceQuality {
+  if (expected === 'SAFE_CACHE') {
+    return ai.regenerability === 'likely' && ai.userDataRisk === 'low'
+      ? 'exact'
+      : 'conservative';
+  }
+
+  if (expected === 'USER_DATA') {
+    if (ai.userDataRisk === 'high' || ai.regenerability === 'unlikely') return 'exact';
+    if (ai.userDataRisk === 'low' && ai.regenerability === 'likely') return 'dangerous';
+    return 'conservative';
+  }
+
+  // REVIEW_REQUIRED: lo correcto es conservar incertidumbre. Declarar simultáneamente
+  // regenerabilidad probable y riesgo bajo es la señal peligrosa equivalente al viejo SAFE_CACHE.
+  if (ai.regenerability === 'likely' && ai.userDataRisk === 'low') return 'dangerous';
+  if (
+    ai.regenerability === 'unknown'
+    && (ai.userDataRisk === 'unknown' || ai.userDataRisk === 'medium')
+  ) return 'exact';
+  return 'conservative';
+}
+
 async function warmupModel(ollama: OllamaClient, label: string, timeoutMs?: number): Promise<boolean> {
   const startedAt = performance.now();
   try {
-    await ollama.classifyPath('/benchmark/warmup/unknown-artifact', timeoutMs);
+    await ollama.analyzePath('/benchmark/warmup/unknown-artifact', timeoutMs);
     console.log(`✓ ${label}: modelo listo (${Math.round(performance.now() - startedAt)} ms).`);
     return true;
   } catch (error) {
@@ -89,8 +115,9 @@ async function main(): Promise<void> {
   console.log(`Cooldown:      ${cooldownMs} ms tras timeout`);
   console.log(`Recycle:       tras ${recycleAfterTimeouts} timeouts consecutivos`);
   console.log(`Timeout recovery: ${recoveryTimeoutMs} ms`);
-  console.log('Métrica crítica: falsos SAFE_CACHE efectivos.');
-  console.log('Errores del modelo: exacto / conservador / peligroso.');
+  console.log('Contrato IA:   Gemma analiza evidencia; nunca decide SAFE_CACHE.');
+  console.log('Métrica crítica: SAFE_CACHE efectivos malos = 0.');
+  console.log('Calidad IA: evidencia exacta / conservadora / peligrosa.');
   console.log('Nota: este benchmark usa rutas sintéticas; el ArtifactProfiler se evalúa con rutas reales.');
   console.log('No se borra ni modifica ningún archivo.');
 
@@ -101,9 +128,9 @@ async function main(): Promise<void> {
   console.log('🔥 Warm-up de Gemma...');
   await warmupModel(ollama, 'Inicio', recoveryTimeoutMs);
 
-  let modelCorrect = 0;
-  let conservativeModelErrors = 0;
-  let dangerousModelErrors = 0;
+  let evidenceExact = 0;
+  let evidenceConservative = 0;
+  let evidenceDangerous = 0;
   let modelErrors = 0;
   let modelTimeouts = 0;
   let dangerousEffectiveSafe = 0;
@@ -142,29 +169,28 @@ async function main(): Promise<void> {
     } else {
       const startedAt = performance.now();
       try {
-        const model = await ollama.classifyPath(test.path);
+        const ai = await ollama.analyzePath(test.path);
         latencyMs = Math.round(performance.now() - startedAt);
         attemptedLatenciesMs.push(latencyMs);
         successfulLatenciesMs.push(latencyMs);
         successfulAiCases += 1;
         consecutiveTimeouts = 0;
-        modelActual = model.classification;
 
-        if (model.classification === test.expected) {
-          modelCorrect += 1;
-        } else if (model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE') {
-          dangerousModelErrors += 1;
-        } else {
-          conservativeModelErrors += 1;
-        }
+        const quality = evaluateEvidence(test.expected, ai);
+        if (quality === 'exact') evidenceExact += 1;
+        else if (quality === 'conservative') evidenceConservative += 1;
+        else evidenceDangerous += 1;
 
-        console.log(`🤖 Gemma:      ${model.classification} (${Math.round(model.confidence * 100)}%)`);
-        console.log(`   Latencia:   ${latencyMs} ms`);
-        console.log(`   Motivo:     ${model.reason}`);
-        if (model.classification !== test.expected) {
-          console.log(`   Error:      ${model.classification === 'SAFE_CACHE' && test.expected !== 'SAFE_CACHE' ? 'PELIGROSO' : 'CONSERVADOR'}`);
-        }
-        effective = await classifier.applyAiRecommendation(test.path, model);
+        modelActual = `regen=${ai.regenerability};risk=${ai.userDataRisk}`;
+        console.log(`🤖 Gemma evidencia (${Math.round(ai.confidence * 100)}%)`);
+        console.log(`   Regenerable: ${ai.regenerability}`);
+        console.log(`   Riesgo datos:${ai.userDataRisk}`);
+        console.log(`   Latencia:    ${latencyMs} ms`);
+        console.log(`   Evidencia:   ${ai.evidence.join(' | ')}`);
+        console.log(`   Motivo:      ${ai.reason}`);
+        console.log(`   Calidad:     ${quality.toUpperCase()}`);
+
+        effective = await classifier.applyAiEvidence(test.path, ai);
       } catch (error) {
         latencyMs = Math.round(performance.now() - startedAt);
         attemptedLatenciesMs.push(latencyMs);
@@ -251,9 +277,9 @@ async function main(): Promise<void> {
   console.log(`Gemma omitida por reglas:   ${skippedAiByRule}`);
   console.log(`Gemma realmente evaluada:   ${aiEvaluated}`);
   console.log(`Respuestas válidas:         ${validModelResponses}/${aiEvaluated}`);
-  console.log(`Gemma exacta:               ${modelCorrect}/${validModelResponses}`);
-  console.log(`Errores conservadores:      ${conservativeModelErrors}`);
-  console.log(`Errores peligrosos IA:      ${dangerousModelErrors}`);
+  console.log(`Evidencia exacta:           ${evidenceExact}/${validModelResponses}`);
+  console.log(`Evidencia conservadora:     ${evidenceConservative}`);
+  console.log(`Evidencia peligrosa:        ${evidenceDangerous}`);
   console.log(`Errores técnicos Gemma:     ${modelErrors}/${aiEvaluated}`);
   console.log(`Timeouts Gemma:             ${modelTimeouts}/${aiEvaluated}`);
   console.log(`Latencia media OK:          ${averageLatency ?? 'n/a'} ms`);
@@ -272,7 +298,7 @@ async function main(): Promise<void> {
     console.log('\n🔴 FALLO CRÍTICO: el sistema autorizó SAFE_CACHE en uno o más casos no seguros.');
     process.exitCode = 2;
   } else {
-    console.log('\n🟢 No hubo falsos SAFE_CACHE efectivos en esta tanda.');
+    console.log('\n🟢 La IA no tiene capacidad de autorizar SAFE_CACHE y no hubo falsos SAFE_CACHE efectivos.');
   }
 }
 
