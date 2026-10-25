@@ -1,142 +1,82 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-# ============================================================
-# AnSysWarden - Entorno de desarrollo S25 Ultra <-> PC
-#
-# Opción 1: VS Code nativo en Windows -> Remote-SSH -> Debian ARM64
-# Opción 2: VS Code Web -> code-server en Termux
-# Opción 3: Ambos
-# Opción 4: SSH directo a Termux (mantenimiento)
-#
-# Puertos:
-#   Debian / VS Code Remote-SSH : 8023
-#   Termux SSH                  : 8022
-#   code-server                 : 8080
-# ============================================================
-
 set -u
-set -o pipefail
 
-# ------------------------------------------------------------
-# CONFIGURACIÓN
-# ------------------------------------------------------------
+# ============================================================
+# AnSysWarden - Entorno de DESARROLLO en S25 Ultra / Termux
+#
+# SOLO desarrollo:
+#   1) VS Code Windows + SSH FS       (recomendado)
+#   2) VS Code Web / code-server      (fallback)
+#   3) SSH directo a Termux
+#   4) VS Code Remote-SSH vía Debian  (experimental)
+#   5) SSH + code-server
+#   6) Estado del entorno DEV
+#   7) Detener servicios DEV iniciados por este script
+#   0) Salir
+#
+# NO gestiona Ollama, Gemma, modelos ni inferencia.
+# ============================================================
 
-DEBIAN_CONTAINER="ansys-debian"
-DEBIAN_IMAGE="debian:bookworm"
-DEBIAN_USER="ansys"
-DEBIAN_SSH_PORT=8023
-TERMUX_SSH_PORT=8022
+SSH_PORT=8022
 CODE_SERVER_PORT=8080
+DEBIAN_SSH_PORT=8023
+
+STATE_DIR="$HOME/.ansyswarden-dev"
+LOG_DIR="$STATE_DIR/logs"
+PID_DIR="$STATE_DIR/pids"
+IP_FILE="$STATE_DIR/ip"
+
+mkdir -p "$LOG_DIR" "$PID_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 
-STATE_DIR="$HOME/.ansyswarden"
-LOG_DIR="$STATE_DIR/logs"
-RUN_DIR="$STATE_DIR/run"
-TMP_DIR="$STATE_DIR/tmp"
-IP_FILE="$STATE_DIR/ip"
-DEBIAN_PASSWORD_FILE="$STATE_DIR/debian_password"
-CODE_SERVER_CONFIG="$HOME/.config/code-server/config.yaml"
+USER_NAME="$(whoami)"
+IP_LOCAL=""
 
-DEBIAN_SSH_LOG="$LOG_DIR/debian-sshd.log"
-TERMUX_SSH_LOG="$LOG_DIR/termux-sshd.log"
-CODE_SERVER_LOG="$LOG_DIR/code-server.log"
-DEBIAN_PID_FILE="$RUN_DIR/debian-sshd.pid"
-TERMUX_PID_FILE="$RUN_DIR/termux-sshd.pid"
-CODE_SERVER_PID_FILE="$RUN_DIR/code-server.pid"
-
-mkdir -p "$STATE_DIR" "$LOG_DIR" "$RUN_DIR" "$TMP_DIR"
-
-IS_TERMUX=false
-if [[ -n "${PREFIX:-}" && "$PREFIX" == *"com.termux"* ]]; then
-    IS_TERMUX=true
-fi
-
-if [ "$IS_TERMUX" != true ]; then
-    echo "❌ Este script está pensado para ejecutarse desde Termux en el S25 Ultra."
-    exit 1
-fi
-
-# ------------------------------------------------------------
-# UTILIDADES
-# ------------------------------------------------------------
+DEBIAN_DISTRO="debian"
+DEBIAN_PROJECT="/workspace/AnSysWarden"
+DEBIAN_PASSWORD_FILE="$STATE_DIR/debian-root-password"
 
 have() {
     command -v "$1" >/dev/null 2>&1
 }
 
-is_running_pidfile() {
-    local pidfile="$1"
-    [ -f "$pidfile" ] || return 1
-    local pid
-    pid="$(cat "$pidfile" 2>/dev/null || true)"
-    [ -n "$pid" ] || return 1
-    kill -0 "$pid" 2>/dev/null
+is_termux() {
+    [[ -n "${PREFIX:-}" && "$PREFIX" == *"/com.termux/"* ]]
 }
 
-stop_pidfile() {
-    local pidfile="$1"
-    [ -f "$pidfile" ] || return 0
+pause_screen() {
+    echo
+    read -r -p "Pulsa [ENTER] para volver al menú..." _
+}
 
-    local pid
-    pid="$(cat "$pidfile" 2>/dev/null || true)"
+safe_pid_alive() {
+    local pid="${1:-}"
+    [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
+}
 
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        for _ in 1 2 3 4 5; do
-            kill -0 "$pid" 2>/dev/null || break
-            sleep 1
-        done
-        kill -9 "$pid" 2>/dev/null || true
-    fi
-
-    rm -f "$pidfile"
+read_pid() {
+    local file="$1"
+    [[ -f "$file" ]] && cat "$file" 2>/dev/null || true
 }
 
 random_password() {
     if have openssl; then
-        openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20
+        openssl rand -hex 12
     else
-        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20
+        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24
+        echo
     fi
 }
-
-install_termux_package() {
-    local pkg_name="$1"
-    if ! dpkg -s "$pkg_name" >/dev/null 2>&1; then
-        echo "[+] Instalando $pkg_name..."
-        pkg install -y "$pkg_name"
-    fi
-}
-
-ensure_base_dependencies() {
-    echo "==================================================="
-    echo " 📦 Verificando dependencias de AnSysWarden..."
-    echo "==================================================="
-
-    install_termux_package openssh
-    install_termux_package python
-    install_termux_package nodejs
-    install_termux_package proot-distro
-    install_termux_package termux-exec
-
-    if ! have code-server; then
-        echo "[+] Instalando code-server desde TUR..."
-        install_termux_package tur-repo
-        pkg install -y code-server
-    fi
-}
-
-# ------------------------------------------------------------
-# IP LOCAL
-# ------------------------------------------------------------
 
 detect_ip() {
     local ip=""
 
     if have python; then
-        ip="$(python - <<'PY' 2>/dev/null
+        ip="$(
+            python - <<'PY'
 import socket
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -146,543 +86,614 @@ try:
 except Exception:
     pass
 PY
-)"
+        )"
+    elif have python3; then
+        ip="$(
+            python3 - <<'PY'
+import socket
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    print(s.getsockname()[0])
+    s.close()
+except Exception:
+    pass
+PY
+        )"
     fi
 
-    if [ -z "$ip" ] && have node; then
-        ip="$(node -e '
-const dgram = require("dgram");
-const s = dgram.createSocket("udp4");
-s.on("error", () => process.exit(1));
-s.connect(80, "8.8.8.8", () => {
-  console.log(s.address().address);
-  s.close();
-});
-' 2>/dev/null || true)"
+    if [[ -z "$ip" ]] && have ip; then
+        ip="$(
+            ip -4 route get 1.1.1.1 2>/dev/null |
+            awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+        )"
     fi
 
     printf '%s' "$ip"
 }
 
-valid_ipv4() {
-    local ip="$1"
-    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
-    local IFS='.'
-    read -r a b c d <<< "$ip"
-    for n in "$a" "$b" "$c" "$d"; do
-        (( n >= 0 && n <= 255 )) || return 1
-    done
-}
+load_ip() {
+    local reset="${1:-}"
 
-get_ip() {
-    if [[ "${1:-}" == "-r" || "${1:-}" == "--reset-ip" ]]; then
+    if [[ "$reset" == "-r" || "$reset" == "--reset-ip" ]]; then
         rm -f "$IP_FILE"
     fi
 
-    IP_LOCAL="$(detect_ip)"
+    IP_LOCAL="$(detect_ip 2>/dev/null || true)"
 
-    if ! valid_ipv4 "$IP_LOCAL" 2>/dev/null; then
-        IP_LOCAL=""
+    if [[ -n "$IP_LOCAL" ]]; then
+        printf '%s\n' "$IP_LOCAL" > "$IP_FILE"
+        return
     fi
 
-    if [ -z "$IP_LOCAL" ] && [ -f "$IP_FILE" ]; then
-        local saved
-        saved="$(cat "$IP_FILE" 2>/dev/null || true)"
-        if valid_ipv4 "$saved"; then
-            IP_LOCAL="$saved"
-            echo "⚠️ No se pudo detectar la IP actual. Usando IP guardada: $IP_LOCAL"
-        fi
+    if [[ -f "$IP_FILE" ]]; then
+        IP_LOCAL="$(cat "$IP_FILE" 2>/dev/null || true)"
     fi
 
-    while [ -z "$IP_LOCAL" ]; do
-        echo "⚠️ Android ha bloqueado la detección automática de red."
-        read -r -p "Introduce tu IP local (ej. 192.168.1.59): " IP_LOCAL
-        if ! valid_ipv4 "$IP_LOCAL"; then
-            echo "❌ IP no válida."
-            IP_LOCAL=""
-        fi
-    done
-
-    printf '%s\n' "$IP_LOCAL" > "$IP_FILE"
-}
-
-# ------------------------------------------------------------
-# DEBIAN / PROOT-DISTRO
-# ------------------------------------------------------------
-
-container_installed() {
-    proot-distro list -q 2>/dev/null | grep -Fxq "$DEBIAN_CONTAINER"
-}
-
-ensure_debian_container() {
-    if container_installed; then
-        return 0
-    fi
-
-    echo
-    echo "[+] Instalando Debian ARM64 para VS Code Remote-SSH..."
-    echo "    Contenedor: $DEBIAN_CONTAINER"
-    echo "    Imagen:     $DEBIAN_IMAGE"
-
-    proot-distro install "$DEBIAN_IMAGE" \
-        --architecture aarch64 \
-        --name "$DEBIAN_CONTAINER"
-}
-
-ensure_debian_password() {
-    if [ ! -s "$DEBIAN_PASSWORD_FILE" ]; then
-        random_password > "$DEBIAN_PASSWORD_FILE"
-        chmod 600 "$DEBIAN_PASSWORD_FILE"
+    if [[ -z "$IP_LOCAL" ]]; then
+        echo "⚠️ No he podido detectar automáticamente la IP local."
+        read -r -p "Introduce la IP del S25 (ej. 192.168.1.59): " IP_LOCAL
+        printf '%s\n' "$IP_LOCAL" > "$IP_FILE"
     fi
 }
 
-sync_termux_authorized_keys_to_debian() {
-    local host_keys="$HOME/.ssh/authorized_keys"
-
-    [ -s "$host_keys" ] || return 0
-
-    local encoded
-    encoded="$(base64 < "$host_keys" | tr -d '\n')"
-
-    proot-distro login "$DEBIAN_CONTAINER" -- bash -lc "
-        set -e
-        install -d -m 700 -o '$DEBIAN_USER' -g '$DEBIAN_USER' '/home/$DEBIAN_USER/.ssh'
-        printf '%s' '$encoded' | base64 -d > '/home/$DEBIAN_USER/.ssh/authorized_keys'
-        chown '$DEBIAN_USER:$DEBIAN_USER' '/home/$DEBIAN_USER/.ssh/authorized_keys'
-        chmod 600 '/home/$DEBIAN_USER/.ssh/authorized_keys'
-    " >/dev/null
-}
-
-prepare_debian() {
-    ensure_debian_container
-    ensure_debian_password
-
-    local debian_password
-    debian_password="$(cat "$DEBIAN_PASSWORD_FILE")"
-
-    echo
-    echo "[+] Preparando Debian para VS Code Remote-SSH..."
-
-    proot-distro login "$DEBIAN_CONTAINER" -- bash -s -- "$DEBIAN_USER" "$debian_password" <<'DEBIAN_SETUP'
-set -e
-
-DEV_USER="$1"
-DEV_PASSWORD="$2"
-
-export DEBIAN_FRONTEND=noninteractive
-
-apt-get update
-apt-get install -y \
-    openssh-server \
-    bash \
-    curl \
-    wget \
-    tar \
-    gzip \
-    ca-certificates \
-    git \
-    procps \
-    libstdc++6 \
-    passwd
-
-if ! id "$DEV_USER" >/dev/null 2>&1; then
-    useradd -m -s /bin/bash "$DEV_USER"
-fi
-
-printf '%s:%s\n' "$DEV_USER" "$DEV_PASSWORD" | chpasswd
-
-mkdir -p /run/sshd
-mkdir -p /workspace/AnSysWarden
-mkdir -p "/home/$DEV_USER/.ssh"
-chmod 700 "/home/$DEV_USER/.ssh"
-chown -R "$DEV_USER:$DEV_USER" "/home/$DEV_USER/.ssh"
-
-ssh-keygen -A >/dev/null 2>&1
-
-cat > /etc/ssh/sshd_config.d/99-ansyswarden.conf <<'SSHD_CONFIG'
-PasswordAuthentication yes
-PubkeyAuthentication yes
-PermitRootLogin no
-KbdInteractiveAuthentication no
-UsePAM no
-PrintMotd no
-TCPKeepAlive yes
-ClientAliveInterval 60
-ClientAliveCountMax 3
-SSHD_CONFIG
-
-/usr/sbin/sshd -t
-DEBIAN_SETUP
-
-    sync_termux_authorized_keys_to_debian
-}
-
-start_debian_ssh() {
-    prepare_debian
-
-    if is_running_pidfile "$DEBIAN_PID_FILE"; then
-        echo "ℹ️ Debian SSH ya está ejecutándose."
-        return 0
+port_listening() {
+    local port="$1"
+    if have ss; then
+        ss -ltn 2>/dev/null |
+            awk '{print $4}' |
+            grep -Eq "[:.]${port}$"
+        return $?
     fi
+    return 1
+}
 
-    echo
-    echo "[+] Iniciando Debian ARM64 + SSH en puerto $DEBIAN_SSH_PORT..."
-
-    : > "$DEBIAN_SSH_LOG"
-
-    (
-        exec proot-distro login "$DEBIAN_CONTAINER" \
-            --bind "$PROJECT_DIR:/workspace/AnSysWarden" \
-            -- bash -lc "
-                mkdir -p /run/sshd /workspace/AnSysWarden
-                exec /usr/sbin/sshd -D -e \
-                    -p '$DEBIAN_SSH_PORT' \
-                    -o ListenAddress=0.0.0.0 \
-                    -o PasswordAuthentication=yes \
-                    -o PubkeyAuthentication=yes \
-                    -o PermitRootLogin=no \
-                    -o KbdInteractiveAuthentication=no \
-                    -o UsePAM=no \
-                    -o AllowUsers='$DEBIAN_USER'
-            "
-    ) >> "$DEBIAN_SSH_LOG" 2>&1 &
-
-    local pid=$!
-    printf '%s\n' "$pid" > "$DEBIAN_PID_FILE"
-
-    sleep 2
-
-    if ! kill -0 "$pid" 2>/dev/null; then
-        echo "❌ Debian SSH no ha podido arrancar."
-        echo "---------------------------------------------------"
-        tail -n 30 "$DEBIAN_SSH_LOG" 2>/dev/null || true
-        echo "---------------------------------------------------"
-        rm -f "$DEBIAN_PID_FILE"
+ensure_termux_base() {
+    if ! is_termux; then
+        echo "❌ Este script está pensado para Termux en Android."
         return 1
     fi
 
-    echo "✅ Debian SSH activo."
+    if ! have sshd; then
+        echo "[+] Instalando OpenSSH..."
+        pkg install openssh -y || return 1
+    fi
+
+    if ! have python && ! have python3; then
+        echo "[+] Instalando Python..."
+        pkg install python -y || return 1
+    fi
 }
 
-# ------------------------------------------------------------
-# SSH DIRECTO A TERMUX
-# ------------------------------------------------------------
-
 start_termux_ssh() {
-    if is_running_pidfile "$TERMUX_PID_FILE"; then
-        echo "ℹ️ SSH de Termux ya está ejecutándose."
+    ensure_termux_base || return 1
+
+    local pid_file="$PID_DIR/termux-sshd.pid"
+    local saved_pid
+    saved_pid="$(read_pid "$pid_file")"
+
+    if safe_pid_alive "$saved_pid"; then
+        echo "✅ SSH Termux ya está iniciado por este script (PID $saved_pid)."
         return 0
     fi
 
-    # Si hay un sshd previo fuera de este script, no lo duplicamos.
-    if pgrep -x sshd >/dev/null 2>&1; then
-        echo "ℹ️ Ya existe un sshd de Termux en ejecución."
+    rm -f "$pid_file"
+
+    if port_listening "$SSH_PORT"; then
+        echo "ℹ️ Ya existe un servicio escuchando en :$SSH_PORT."
+        echo "   No lo tocaré al cerrar este script."
         return 0
     fi
 
-    echo
-    echo "[+] Iniciando SSH directo a Termux en puerto $TERMUX_SSH_PORT..."
+    local before after new_pid
+    before="$(pgrep -x sshd 2>/dev/null | tr '\n' ' ' || true)"
 
-    : > "$TERMUX_SSH_LOG"
-    sshd -D -e -p "$TERMUX_SSH_PORT" >> "$TERMUX_SSH_LOG" 2>&1 &
-    local pid=$!
-    printf '%s\n' "$pid" > "$TERMUX_PID_FILE"
+    echo "[+] Iniciando SSH de Termux en :$SSH_PORT..."
+    sshd -p "$SSH_PORT" || {
+        echo "❌ No se pudo iniciar sshd."
+        return 1
+    }
 
     sleep 1
 
-    if ! kill -0 "$pid" 2>/dev/null; then
-        echo "❌ SSH de Termux no ha arrancado."
-        tail -n 20 "$TERMUX_SSH_LOG" 2>/dev/null || true
-        rm -f "$TERMUX_PID_FILE"
-        return 1
+    after="$(pgrep -x sshd 2>/dev/null || true)"
+    new_pid=""
+
+    while read -r p; do
+        [[ -z "$p" ]] && continue
+        if [[ " $before " != *" $p "* ]]; then
+            new_pid="$p"
+            break
+        fi
+    done <<< "$after"
+
+    if [[ -n "$new_pid" ]]; then
+        printf '%s\n' "$new_pid" > "$pid_file"
     fi
 
     echo "✅ SSH Termux activo."
 }
 
-# ------------------------------------------------------------
-# CODE-SERVER EN TERMUX
-# ------------------------------------------------------------
+show_sshfs_info() {
+    start_termux_ssh || return 1
+
+    echo
+    echo "============================================================"
+    echo " ✅ LISTO PARA VS CODE NATIVO + SSH FS"
+    echo "============================================================"
+    echo
+    echo "Configuración SSH FS:"
+    echo
+    echo "  Nombre : AnSysWarden-S25"
+    echo "  Host   : $IP_LOCAL"
+    echo "  Puerto : $SSH_PORT"
+    echo "  Usuario: $USER_NAME"
+    echo "  Root   : $PROJECT_DIR"
+    echo
+    echo "En VS Code Windows:"
+    echo "  Ctrl+Shift+P"
+    echo "  → SSH FS: Connect as Workspace Folder"
+    echo "  → AnSysWarden-S25"
+    echo
+    echo "Prueba SSH manual:"
+    echo "  ssh $USER_NAME@$IP_LOCAL -p $SSH_PORT"
+}
+
+ensure_code_server() {
+    if have code-server; then
+        return 0
+    fi
+
+    echo "[+] Instalando code-server desde TUR..."
+    pkg install tur-repo -y || return 1
+    pkg install code-server -y || return 1
+}
+
+find_termux_exec_lib() {
+    local lib=""
+
+    if [[ -f "$PREFIX/lib/libtermux-exec.so" ]]; then
+        lib="$PREFIX/lib/libtermux-exec.so"
+    elif [[ -f "$PREFIX/lib/libtermux-exec-ld-preload.so" ]]; then
+        lib="$PREFIX/lib/libtermux-exec-ld-preload.so"
+    fi
+
+    if [[ -z "$lib" ]]; then
+        pkg install termux-exec -y >/dev/null 2>&1 || true
+
+        if [[ -f "$PREFIX/lib/libtermux-exec.so" ]]; then
+            lib="$PREFIX/lib/libtermux-exec.so"
+        elif [[ -f "$PREFIX/lib/libtermux-exec-ld-preload.so" ]]; then
+            lib="$PREFIX/lib/libtermux-exec-ld-preload.so"
+        fi
+    fi
+
+    printf '%s' "$lib"
+}
+
+patch_code_server_for_termux() {
+    local termux_exec_lib
+    termux_exec_lib="$(find_termux_exec_lib)"
+
+    export SHELL="$PREFIX/bin/bash"
+    export TMPDIR="$STATE_DIR/tmp"
+    mkdir -p "$TMPDIR"
+
+    if [[ -n "$termux_exec_lib" ]]; then
+        case "${LD_PRELOAD:-}" in
+            *"$termux_exec_lib"*) ;;
+            "") export LD_PRELOAD="$termux_exec_lib" ;;
+            *) export LD_PRELOAD="$termux_exec_lib:$LD_PRELOAD" ;;
+        esac
+        echo "✅ termux-exec: $termux_exec_lib"
+    else
+        echo "⚠️ No encontré libtermux-exec."
+    fi
+
+    local vscode_out="$PREFIX/lib/code-server/lib/vscode/out"
+
+    if [[ ! -d "$vscode_out" ]]; then
+        local server_main
+        server_main="$(
+            find "$PREFIX/lib/code-server" \
+                -type f \
+                -path '*/vscode/out/server-main.js' \
+                2>/dev/null |
+            head -n 1
+        )"
+        [[ -n "$server_main" ]] && vscode_out="$(dirname "$server_main")"
+    fi
+
+    [[ -d "$vscode_out" ]] || {
+        echo "⚠️ No pude localizar el runtime interno de VS Code."
+        return 0
+    }
+
+    local files=(
+        "$vscode_out/server-main.js"
+        "$vscode_out/vs/platform/agentHost/node/agentHostMain.js"
+        "$vscode_out/vs/workbench/api/node/extensionHostProcess.js"
+    )
+
+    local f backup
+    for f in "${files[@]}"; do
+        [[ -f "$f" ]] || continue
+
+        if grep -q '"LD_PRELOAD",' "$f" 2>/dev/null; then
+            backup="$f.ansyswarden.bak"
+            [[ -f "$backup" ]] || cp "$f" "$backup"
+            sed -i 's/"LD_PRELOAD",//g' "$f"
+            echo "🔧 Workaround LD_PRELOAD aplicado: $f"
+        fi
+    done
+}
 
 configure_code_server() {
-    mkdir -p "$(dirname "$CODE_SERVER_CONFIG")"
+    local config_dir="$HOME/.config/code-server"
+    local config="$config_dir/config.yaml"
 
-    if [ ! -f "$CODE_SERVER_CONFIG" ]; then
+    mkdir -p "$config_dir"
+
+    if [[ ! -f "$config" ]]; then
         local password
         password="$(random_password)"
 
-        cat > "$CODE_SERVER_CONFIG" <<EOF
+        cat > "$config" <<EOF
 bind-addr: 0.0.0.0:$CODE_SERVER_PORT
 auth: password
 password: $password
 cert: false
 EOF
+        chmod 600 "$config" 2>/dev/null || true
+        return
+    fi
+
+    if grep -q '^bind-addr:' "$config"; then
+        sed -i "s/^bind-addr:.*/bind-addr: 0.0.0.0:$CODE_SERVER_PORT/" "$config"
     else
-        if grep -q '^bind-addr:' "$CODE_SERVER_CONFIG"; then
-            sed -i "s#^bind-addr:.*#bind-addr: 0.0.0.0:$CODE_SERVER_PORT#" "$CODE_SERVER_CONFIG"
-        else
-            printf 'bind-addr: 0.0.0.0:%s\n' "$CODE_SERVER_PORT" >> "$CODE_SERVER_CONFIG"
-        fi
-
-        if grep -q '^auth: none' "$CODE_SERVER_CONFIG"; then
-            sed -i 's/^auth: none/auth: password/' "$CODE_SERVER_CONFIG"
-        fi
-
-        if ! grep -q '^password:' "$CODE_SERVER_CONFIG"; then
-            printf 'password: %s\n' "$(random_password)" >> "$CODE_SERVER_CONFIG"
-        fi
-    fi
-}
-
-prepare_termux_exec_env() {
-    export SHELL="$PREFIX/bin/bash"
-    export TMPDIR="$TMP_DIR"
-    mkdir -p "$TMPDIR"
-
-    local lib=""
-    if [ -f "$PREFIX/lib/libtermux-exec.so" ]; then
-        lib="$PREFIX/lib/libtermux-exec.so"
-    elif [ -f "$PREFIX/lib/libtermux-exec-ld-preload.so" ]; then
-        lib="$PREFIX/lib/libtermux-exec-ld-preload.so"
+        printf '\nbind-addr: 0.0.0.0:%s\n' "$CODE_SERVER_PORT" >> "$config"
     fi
 
-    if [ -n "$lib" ]; then
-        case ":${LD_PRELOAD:-}:" in
-            *":$lib:"*) ;;
-            *) export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$lib" ;;
-        esac
+    if grep -q '^auth:[[:space:]]*none' "$config"; then
+        sed -i 's/^auth:[[:space:]]*none/auth: password/' "$config"
+    fi
+
+    if ! grep -q '^password:' "$config"; then
+        printf 'password: %s\n' "$(random_password)" >> "$config"
     fi
 }
 
 start_code_server() {
-    configure_code_server
-    prepare_termux_exec_env
+    ensure_termux_base || return 1
+    ensure_code_server || return 1
 
-    if is_running_pidfile "$CODE_SERVER_PID_FILE"; then
-        echo "ℹ️ code-server ya está ejecutándose."
+    local pid_file="$PID_DIR/code-server.pid"
+    local pid
+    pid="$(read_pid "$pid_file")"
+
+    if safe_pid_alive "$pid"; then
+        echo "✅ code-server ya está iniciado por este script (PID $pid)."
         return 0
     fi
 
-    echo
-    echo "[+] Iniciando code-server en puerto $CODE_SERVER_PORT..."
+    rm -f "$pid_file"
 
-    : > "$CODE_SERVER_LOG"
-
-    if have termux-wake-lock; then
-        termux-wake-lock >/dev/null 2>&1 || true
+    if port_listening "$CODE_SERVER_PORT"; then
+        echo "ℹ️ Ya existe un servicio escuchando en :$CODE_SERVER_PORT."
+        echo "   No lo tocaré al cerrar este script."
+        return 0
     fi
 
-    code-server \
-        --config "$CODE_SERVER_CONFIG" \
-        "$PROJECT_DIR" \
-        >> "$CODE_SERVER_LOG" 2>&1 &
+    configure_code_server
+    patch_code_server_for_termux
 
-    local pid=$!
-    printf '%s\n' "$pid" > "$CODE_SERVER_PID_FILE"
+    local config="$HOME/.config/code-server/config.yaml"
+    local log="$LOG_DIR/code-server.log"
 
-    sleep 2
+    echo "[+] Iniciando code-server en :$CODE_SERVER_PORT..."
 
-    if ! kill -0 "$pid" 2>/dev/null; then
-        echo "❌ code-server no ha podido arrancar."
-        echo "---------------------------------------------------"
-        tail -n 30 "$CODE_SERVER_LOG" 2>/dev/null || true
-        echo "---------------------------------------------------"
-        rm -f "$CODE_SERVER_PID_FILE"
+    if have setsid; then
+        setsid code-server --config "$config" "$PROJECT_DIR" > "$log" 2>&1 &
+    else
+        nohup code-server --config "$config" "$PROJECT_DIR" > "$log" 2>&1 &
+    fi
+
+    pid=$!
+    printf '%s\n' "$pid" > "$pid_file"
+
+    sleep 3
+
+    if ! safe_pid_alive "$pid" && ! port_listening "$CODE_SERVER_PORT"; then
+        echo "❌ code-server no ha arrancado."
+        tail -n 25 "$log" 2>/dev/null || true
+        rm -f "$pid_file"
         return 1
     fi
 
+    local password
+    password="$(
+        awk '
+            /^password:/ {
+                sub(/^password:[[:space:]]*/, "")
+                print
+                exit
+            }
+        ' "$config" 2>/dev/null
+    )"
+
     echo "✅ code-server activo."
+    echo "  URL : http://$IP_LOCAL:$CODE_SERVER_PORT"
+    [[ -n "$password" ]] && echo "  Pass: $password"
+    echo "  Log : $log"
 }
 
-# ------------------------------------------------------------
-# INFORMACIÓN PARA WINDOWS / VS CODE
-# ------------------------------------------------------------
+ensure_proot_debian() {
+    if ! have proot-distro; then
+        echo "[+] Instalando proot-distro..."
+        pkg install proot-distro -y || return 1
+    fi
 
-show_remote_ssh_info() {
+    if ! proot-distro login "$DEBIAN_DISTRO" -- true >/dev/null 2>&1; then
+        echo "[+] Instalando Debian en PRoot..."
+        proot-distro install "$DEBIAN_DISTRO" || return 1
+    fi
+}
+
+prepare_debian_ssh() {
+    ensure_proot_debian || return 1
+
+    local password
+    if [[ -f "$DEBIAN_PASSWORD_FILE" ]]; then
+        password="$(cat "$DEBIAN_PASSWORD_FILE")"
+    else
+        password="$(random_password)"
+        printf '%s\n' "$password" > "$DEBIAN_PASSWORD_FILE"
+        chmod 600 "$DEBIAN_PASSWORD_FILE" 2>/dev/null || true
+    fi
+
+    echo "[+] Preparando SSH dentro de Debian..."
+
+    proot-distro login "$DEBIAN_DISTRO" \
+        --bind "$PROJECT_DIR:$DEBIAN_PROJECT" \
+        -- bash -lc "
+            set -e
+            if ! command -v sshd >/dev/null 2>&1; then
+                apt-get update
+                DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                    openssh-server ca-certificates curl git tar gzip xz-utils
+            fi
+
+            mkdir -p /run/sshd /root/.ssh
+            ssh-keygen -A >/dev/null 2>&1 || true
+            printf '%s\n' 'root:$password' | chpasswd
+
+            if grep -q '^#*PermitRootLogin' /etc/ssh/sshd_config; then
+                sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+            else
+                printf '\nPermitRootLogin yes\n' >> /etc/ssh/sshd_config
+            fi
+
+            if grep -q '^#*PasswordAuthentication' /etc/ssh/sshd_config; then
+                sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+            else
+                printf 'PasswordAuthentication yes\n' >> /etc/ssh/sshd_config
+            fi
+        "
+}
+
+start_debian_ssh() {
+    prepare_debian_ssh || return 1
+
+    local pid_file="$PID_DIR/debian-proot-sshd.pid"
+    local pid
+    pid="$(read_pid "$pid_file")"
+
+    if ! safe_pid_alive "$pid"; then
+        rm -f "$pid_file"
+
+        echo "[+] Iniciando Debian/PRoot SSH en :$DEBIAN_SSH_PORT..."
+        nohup proot-distro login "$DEBIAN_DISTRO" \
+            --bind "$PROJECT_DIR:$DEBIAN_PROJECT" \
+            -- bash -lc \
+            "mkdir -p /run/sshd && exec /usr/sbin/sshd -D -e -p $DEBIAN_SSH_PORT" \
+            > "$LOG_DIR/debian-sshd.log" 2>&1 &
+
+        pid=$!
+        printf '%s\n' "$pid" > "$pid_file"
+        sleep 3
+    fi
+
     local password
     password="$(cat "$DEBIAN_PASSWORD_FILE" 2>/dev/null || true)"
 
-    cat <<EOF
-
-===================================================
-💻 VS CODE DEL PC -> DEBIAN DEL S25
-===================================================
-
-Conexión SSH:
-
-  ssh $DEBIAN_USER@$IP_LOCAL -p $DEBIAN_SSH_PORT
-
-Contraseña inicial de Debian:
-
-  $password
-
-Carpeta del proyecto dentro de Debian:
-
-  /workspace/AnSysWarden
-
-Config recomendada en Windows:
-
-  C:\\Users\\nalar\\.ssh\\config
-
-Añade:
-
-Host ansys-s25
-    HostName $IP_LOCAL
-    User $DEBIAN_USER
-    Port $DEBIAN_SSH_PORT
-    IdentityFile ~/.ssh/id_ed25519
-
-Después en VS Code:
-
-  Ctrl+Shift+P
-  Remote-SSH: Connect to Host...
-  ansys-s25
-
-EOF
-
-    if [ -s "$HOME/.ssh/authorized_keys" ]; then
-        echo "🔑 Se han sincronizado las claves autorizadas de Termux con Debian."
-    else
-        cat <<'EOF'
-🔐 Todavía no hay authorized_keys en Termux.
-   Puedes entrar con la contraseña inicial de arriba y después añadir tu clave SSH.
-EOF
-    fi
-}
-
-show_code_server_info() {
-    local password
-    password="$(awk '/^password:/ {sub(/^password:[[:space:]]*/, ""); print; exit}' "$CODE_SERVER_CONFIG" 2>/dev/null || true)"
-
-    cat <<EOF
-
-===================================================
-🌐 VS CODE WEB
-===================================================
-URL:
-  http://$IP_LOCAL:$CODE_SERVER_PORT
-
-Contraseña:
-  $password
-
-Log:
-  $CODE_SERVER_LOG
-EOF
-}
-
-show_termux_ssh_info() {
-    cat <<EOF
-
-===================================================
-📱 SSH DIRECTO A TERMUX
-===================================================
-
-  ssh $(whoami)@$IP_LOCAL -p $TERMUX_SSH_PORT
-
-Úsalo para mantenimiento de Termux, no para VS Code Remote-SSH.
-EOF
-}
-
-# ------------------------------------------------------------
-# CIERRE LIMPIO
-# ------------------------------------------------------------
-
-stop_services() {
     echo
-    echo "[!] Deteniendo servicios iniciados por este script..."
-
-    stop_pidfile "$CODE_SERVER_PID_FILE"
-    stop_pidfile "$DEBIAN_PID_FILE"
-    stop_pidfile "$TERMUX_PID_FILE"
-
-    if have termux-wake-unlock; then
-        termux-wake-unlock >/dev/null 2>&1 || true
-    fi
-
-    echo "✅ Servicios detenidos."
+    echo "============================================================"
+    echo " 🧪 VS CODE REMOTE-SSH VÍA DEBIAN / PROOT"
+    echo "============================================================"
+    echo "Host     : $IP_LOCAL"
+    echo "Puerto   : $DEBIAN_SSH_PORT"
+    echo "Usuario  : root"
+    echo "Proyecto : $DEBIAN_PROJECT"
+    [[ -n "$password" ]] && echo "Password : $password"
+    echo
+    echo "Desde Windows:"
+    echo "  ssh root@$IP_LOCAL -p $DEBIAN_SSH_PORT"
 }
 
-trap 'stop_services; exit 130' INT TERM
+service_state() {
+    local label="$1"
+    local port="$2"
+    local pid_file="${3:-}"
+    local pid=""
 
-# ------------------------------------------------------------
-# EJECUCIÓN
-# ------------------------------------------------------------
+    [[ -n "$pid_file" ]] && pid="$(read_pid "$pid_file")"
 
-clear
-ensure_base_dependencies
-get_ip "${1:-}"
+    if safe_pid_alive "$pid"; then
+        printf "✅ %-24s :%s  PID %s\n" "$label" "$port" "$pid"
+    elif port_listening "$port"; then
+        printf "✅ %-24s :%s  externo/no gestionado\n" "$label" "$port"
+    else
+        printf "⏸  %-24s :%s\n" "$label" "$port"
+    fi
+}
 
-clear
-cat <<EOF
-===================================================
- 🚀 Entorno AnSysWarden (S25 Ultra <-> nar-devops)
-===================================================
-📡 IP actual : $IP_LOCAL
-📁 Proyecto  : $PROJECT_DIR
-📱 Host      : Termux / Android
-===================================================
+show_status() {
+    echo
+    echo "============================================================"
+    echo " ESTADO DEL ENTORNO DEV"
+    echo "============================================================"
+    echo "Proyecto: $PROJECT_DIR"
+    echo "IP      : $IP_LOCAL"
+    echo
 
-1) VS Code nativo del PC (Remote-SSH)
-   └─ Debian ARM64/glibc dentro del S25
-   └─ Puerto $DEBIAN_SSH_PORT
+    service_state "SSH Termux / SSH FS" "$SSH_PORT" "$PID_DIR/termux-sshd.pid"
+    service_state "code-server" "$CODE_SERVER_PORT" "$PID_DIR/code-server.pid"
+    service_state "Debian/PRoot SSH" "$DEBIAN_SSH_PORT" "$PID_DIR/debian-proot-sshd.pid"
 
-2) VS Code en navegador (code-server)
-   └─ Termux
-   └─ Puerto $CODE_SERVER_PORT
+    echo
+    echo "Ollama/Gemma: FUERA DE ESTE SCRIPT"
+}
 
-3) Levantar VS Code Remote-SSH + code-server
+stop_managed_pid() {
+    local name="$1"
+    local pid_file="$2"
+    local pid
 
-4) SSH directo a Termux
-   └─ Mantenimiento
-   └─ Puerto $TERMUX_SSH_PORT
+    pid="$(read_pid "$pid_file")"
 
-5) Salir
-===================================================
-EOF
+    if ! safe_pid_alive "$pid"; then
+        rm -f "$pid_file"
+        echo "ℹ️ $name no estaba gestionado por este script."
+        return
+    fi
 
-read -r -p "Selecciona una opción [1-5]: " OPTION
+    echo "[+] Deteniendo $name (PID $pid)..."
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
 
-case "$OPTION" in
-    1)
-        start_debian_ssh && show_remote_ssh_info
-        ;;
-    2)
-        start_code_server && show_code_server_info
-        ;;
-    3)
-        start_debian_ssh
-        start_code_server
-        show_remote_ssh_info
-        show_code_server_info
-        ;;
-    4)
-        start_termux_ssh && show_termux_ssh_info
-        ;;
-    5)
-        exit 0
-        ;;
-    *)
-        echo "❌ Opción no válida."
-        exit 1
-        ;;
-esac
+    if safe_pid_alive "$pid"; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
 
-cat <<EOF
+    rm -f "$pid_file"
+}
 
-===================================================
-🟢 SERVICIOS EN EJECUCIÓN
-===================================================
+stop_dev_services() {
+    echo
+    echo "Detendré únicamente servicios DEV iniciados por este script."
+    echo "No se toca Ollama/Gemma."
+    echo
 
-Proyecto Termux:
-  $PROJECT_DIR
+    stop_managed_pid "code-server" "$PID_DIR/code-server.pid"
+    stop_managed_pid "Debian/PRoot SSH" "$PID_DIR/debian-proot-sshd.pid"
+    stop_managed_pid "SSH Termux" "$PID_DIR/termux-sshd.pid"
 
-Proyecto desde Debian/VS Code:
-  /workspace/AnSysWarden
+    echo
+    echo "✅ Limpieza DEV terminada."
+}
 
-Si cambias de Wi-Fi:
-  ./start_dev.sh -r
+main_menu() {
+    while true; do
+        clear
 
-EOF
+        echo "============================================================"
+        echo " 🚀 AnSysWarden · ENTORNO DE DESARROLLO"
+        echo "    S25 Ultra <-> VS Code Windows"
+        echo "============================================================"
+        echo
+        echo "📡 IP       : $IP_LOCAL"
+        echo "👤 Usuario  : $USER_NAME"
+        echo "📁 Proyecto : $PROJECT_DIR"
+        echo
+        echo "1) VS Code Windows + SSH FS        [RECOMENDADO]"
+        echo "   └─ SSH Termux :$SSH_PORT"
+        echo
+        echo "2) VS Code Web / code-server       [FALLBACK]"
+        echo "   └─ http://$IP_LOCAL:$CODE_SERVER_PORT"
+        echo
+        echo "3) SSH directo a Termux"
+        echo "   └─ ssh $USER_NAME@$IP_LOCAL -p $SSH_PORT"
+        echo
+        echo "4) VS Code Remote-SSH vía Debian   [EXPERIMENTAL]"
+        echo "   └─ Debian/PRoot :$DEBIAN_SSH_PORT"
+        echo
+        echo "5) Levantar SSH + code-server"
+        echo
+        echo "6) Ver estado del entorno DEV"
+        echo
+        echo "7) Detener servicios DEV iniciados por este script"
+        echo
+        echo "0) Salir"
+        echo
+        echo "============================================================"
+        echo "Este script NO gestiona Ollama, Gemma ni inferencia."
+        echo "============================================================"
+        echo
 
-read -r -p "🛑 Presiona [ENTER] para apagar los servicios iniciados por este script..."
-stop_services
+        read -r -p "Selecciona una opción [0-7]: " option
+
+        case "$option" in
+            1)
+                show_sshfs_info
+                pause_screen
+                ;;
+            2)
+                start_code_server
+                pause_screen
+                ;;
+            3)
+                start_termux_ssh
+                echo
+                echo "SSH:"
+                echo "  ssh $USER_NAME@$IP_LOCAL -p $SSH_PORT"
+                pause_screen
+                ;;
+            4)
+                start_debian_ssh
+                pause_screen
+                ;;
+            5)
+                start_termux_ssh
+                echo
+                start_code_server
+                pause_screen
+                ;;
+            6)
+                show_status
+                pause_screen
+                ;;
+            7)
+                stop_dev_services
+                pause_screen
+                ;;
+            0)
+                echo
+                echo "Saliendo."
+                echo "Los servicios siguen activos salvo que uses la opción 7."
+                exit 0
+                ;;
+            *)
+                echo
+                echo "❌ Opción no válida."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+if ! is_termux; then
+    echo "❌ Ejecuta este script dentro de Termux en el S25 Ultra."
+    exit 1
+fi
+
+ensure_termux_base || exit 1
+load_ip "${1:-}"
+
+if [[ ! -d "$PROJECT_DIR" ]]; then
+    echo "❌ No existe el directorio del proyecto:"
+    echo "   $PROJECT_DIR"
+    exit 1
+fi
+
+main_menu
