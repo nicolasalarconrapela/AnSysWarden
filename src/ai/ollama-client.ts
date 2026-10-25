@@ -70,6 +70,8 @@ function profileLines(profile?: ArtifactProfile): string[] {
     ? profile.extensions.map((item) => `${item.extension}:${item.files} archivos/${item.bytes} bytes`).join(', ')
     : 'sin extensiones detectadas';
 
+  const profileComplete = profile.profileComplete === false ? 'no' : 'sí/desconocido';
+
   return [
     'PERFIL LOCAL OBJETIVO (solo lectura):',
     `- tamaño_bytes: ${profile.sizeBytes}`,
@@ -79,8 +81,13 @@ function profileLines(profile?: ArtifactProfile): string[] {
     `- mtime_mas_nuevo_ms: ${profile.newestMtimeMs ?? 'desconocido'}`,
     `- mtime_mas_antiguo_ms: ${profile.oldestMtimeMs ?? 'desconocido'}`,
     `- extensiones_principales: ${extensionSummary}`,
+    `- perfil_completo: ${profileComplete}`,
+    `- limite_perfil: ${profile.limitReason ?? 'ninguno/desconocido'}`,
     '- El tamaño sirve para PRIORIDAD de revisión, nunca demuestra que algo sea borrable.',
     '- Este perfil no demuestra por sí solo que el artefacto sea regenerable ni que contenga datos únicos.',
+    ...(profile.profileComplete === false
+      ? ['- PERFIL PARCIAL: faltan entradas por observar; aumenta la incertidumbre y no infieras ausencia de datos.']
+      : []),
   ];
 }
 
@@ -234,6 +241,8 @@ export class OllamaClient {
       structured_output: gemma4,
       thinking_disabled: gemma4,
       num_ctx: gemma4 ? this.numCtx : null,
+      profile_complete: profile?.profileComplete ?? null,
+      profile_limit_reason: profile?.limitReason ?? null,
     });
 
     let response: Response;
