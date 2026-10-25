@@ -1,0 +1,214 @@
+{
+  "info": {
+    "_postman_id": "7c6af84b-bb62-4ad4-949a-ansyswarden-postman",
+    "name": "AnSysWarden API",
+    "description": "Colección Postman para el backend PC de AnSysWarden. Variables: baseUrl, token y scanId. Todos los endpoints requieren Authorization: Bearer {{token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8787",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "scanId",
+      "value": "dust-20261024173230-be00e960",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Comprueba que el backend PC está activo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scans",
+      "item": [
+        {
+          "name": "GET List Scans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans"
+              ]
+            },
+            "description": "Lista los scans persistidos en el PC."
+          }
+        },
+        {
+          "name": "GET Latest Scan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scans/latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans",
+                "latest"
+              ]
+            },
+            "description": "Devuelve el último scan generado/persistido."
+          }
+        },
+        {
+          "name": "GET Scan By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scans/{{scanId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans",
+                "{{scanId}}"
+              ]
+            },
+            "description": "Devuelve un scan concreto usando {{scanId}}."
+          }
+        },
+        {
+          "name": "POST Create Scan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema\": \"ansyswarden.scan.v1\",\n  \"id\": \"scan-postman-001\",\n  \"createdAt\": \"2026-10-25T08:00:00.000Z\",\n  \"source\": \"postman\",\n  \"computer\": \"nar-devops\",\n  \"entries\": [\n    {\n      \"entryId\": \"entry-001\",\n      \"depth\": 0,\n      \"path\": \"C:\\\\Users\\\\nalar\\\\.gradle\",\n      \"sizeBytes\": 7146599464\n    },\n    {\n      \"entryId\": \"entry-002\",\n      \"parentId\": \"entry-001\",\n      \"depth\": 1,\n      \"path\": \"C:\\\\Users\\\\nalar\\\\.gradle\\\\caches\",\n      \"sizeBytes\": 4789125181\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans"
+              ]
+            },
+            "description": "Guarda/importa un documento ansyswarden.scan.v1."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Results",
+      "item": [
+        {
+          "name": "GET Results By Scan ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scans/{{scanId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans",
+                "{{scanId}}",
+                "results"
+              ]
+            },
+            "description": "Obtiene el resultado almacenado para {{scanId}}."
+          }
+        },
+        {
+          "name": "POST Results By Scan ID",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema\": \"ansyswarden.result.v1\",\n  \"scanId\": \"{{scanId}}\",\n  \"worker\": \"postman-test\",\n  \"model\": \"gemma3:1b\",\n  \"createdAt\": \"2026-10-25T08:00:00.000Z\",\n  \"results\": [\n    {\n      \"path\": \"C:\\\\Users\\\\nalar\\\\.gradle\\\\caches\",\n      \"classification\": \"REVIEW_REQUIRED\",\n      \"confidence\": 0.95,\n      \"reason\": \"Resultado de prueba enviado desde Postman.\",\n      \"source\": \"ai\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scans/{{scanId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scans",
+                "{{scanId}}",
+                "results"
+              ]
+            },
+            "description": "Envía un documento ansyswarden.result.v1 para {{scanId}}."
+          }
+        }
+      ]
+    }
+  ]
+}
