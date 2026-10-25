@@ -196,3 +196,6 @@ $RECYCLE.BIN/
 
 /.ansyswarden/backend/data/scans
 /.ansyswarden/tools/dust/bin
+/docs/postman/postman/**
+/docs/postman/.postman/**
+.ansyswarden/**
