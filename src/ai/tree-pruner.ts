@@ -144,8 +144,12 @@ export class AiTreePruner {
     await walk(root, 0, '');
 
     // Las entradas grandes de Dust pasan por el mismo router antes de poder
-    // convertirse en candidatos para Gemma.
+    // convertirse en candidatos para Gemma. Una raíz de proyecto conocida es
+    // estructural y nunca se propone completa; un directorio grande desconocido
+    // sí puede ser candidato aunque esté directamente bajo la raíz del scan.
     for (const entry of scan.entries) {
+      if (samePath(entry.path, root)) continue;
+
       const local = classifyByRules(entry.path);
       if (local) {
         resolvedLocally.push({ ...entry, ...local, path: entry.path, sizeBytes: entry.sizeBytes });
@@ -161,15 +165,20 @@ export class AiTreePruner {
       const parentEcosystems = await ecosystemsFor(dirname(entry.path));
       if (decideByEcosystem(entry.path, true, parentEcosystems)) continue;
 
-      if (isActionableScanEntry(entry, root)) {
-        candidates.push({
-          ...(entry.entryId ? { entryId: entry.entryId } : {}),
-          ...(entry.parentId ? { parentId: entry.parentId } : {}),
-          ...(entry.depth !== undefined ? { depth: entry.depth } : {}),
-          path: entry.path,
-          sizeBytes: entry.sizeBytes,
-        });
-      }
+      // Si el propio directorio contiene manifests reconocibles, es una raíz
+      // de proyecto (Node, Rust, Python, etc.), no un candidato de limpieza.
+      const ownEcosystems = await ecosystemsFor(entry.path);
+      if (ownEcosystems.length > 0) continue;
+
+      candidates.push({
+        ...(entry.entryId ? { entryId: entry.entryId } : {}),
+        ...(entry.parentId ? { parentId: entry.parentId } : {}),
+        ...(entry.depth !== undefined ? { depth: entry.depth } : {}),
+        path: entry.path,
+        sizeBytes: entry.sizeBytes,
+        reason: 'Directorio grande detectado por Dust que ninguna regla local ni contexto de proyecto ha podido explicar.',
+        ecosystems: parentEcosystems.map((item) => item.ecosystem),
+      });
     }
 
     const [ecosystems, enry] = await Promise.all([
@@ -220,19 +229,8 @@ function normalizePath(path: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-function isActionableScanEntry(entry: ScanEntry, root: string): boolean {
-  const normalized = normalizePath(entry.path);
-  const rootNormalized = normalizePath(root);
-  if (normalized === rootNormalized) return false;
-
-  const relative = normalized.startsWith(`${rootNormalized}/`)
-    ? normalized.slice(rootNormalized.length + 1)
-    : normalized;
-  const segments = relative.split('/').filter(Boolean);
-
-  // Los contenedores superiores sirven para calcular tamaño/jerarquía, no son
-  // una pregunta útil para Gemma (por ejemplo AppData o el propio HOME).
-  return segments.length >= 2;
+function samePath(a: string, b: string): boolean {
+  return normalizePath(resolve(a)) === normalizePath(resolve(b));
 }
 
 function clampPositive(value: number, min: number, max: number): number {
