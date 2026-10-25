@@ -33,6 +33,7 @@ Uso:
   ./ansys test safety
   ./ansys test rules
   ./ansys test benchmark [--offset N] [--limit N]
+  ./ansys test models [--models modelo1,modelo2] [--timeout-ms N]
   ./ansys review export <ruta>
   ./ansys logs [--raw]
 
@@ -156,7 +157,8 @@ ai_models() {
   printf 'qwen3:1.7b    ~1.4 GB   más calidad / aún ligero\n'
   printf 'gemma2:2b     actual    referencia\n'
   printf '\nDescargar:\n  ./ansys ai pull qwen3:0.6b\n'
-  printf '\nProbar temporalmente:\n  ANSYSWARDEN_MODEL=qwen3:0.6b ./ansys test benchmark --offset 0 --limit 10\n'
+  printf '\nComparar modelos instalados:\n  ./ansys test models\n'
+  printf '\nComparar una selección:\n  ./ansys test models --models gemma3:1b,gemma2:2b\n'
 }
 
 ai_pull() {
@@ -278,6 +280,10 @@ main() {
         benchmark)
           shift 2
           run_ts "$ROOT_DIR/src/tests/cache-benchmark-runner.ts" "$@"
+          ;;
+        models)
+          shift 2
+          run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" "$@"
           ;;
         *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
       esac
