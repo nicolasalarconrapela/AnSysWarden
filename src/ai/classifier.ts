@@ -2,7 +2,7 @@ import { OllamaClient } from './ollama-client';
 import { classifyByRules } from './rules';
 import type { AiEvidencePayload, ClassificationResult } from './types';
 import { TraceLogger } from '../observability/logger';
-import { ArtifactProfiler } from '../profiler/artifact-profiler';
+import { ArtifactProfiler, type ArtifactProfile } from '../profiler/artifact-profiler';
 
 export class PathClassifier {
   constructor(
@@ -12,7 +12,11 @@ export class PathClassifier {
   ) {}
 
   async classify(inputPath: string): Promise<ClassificationResult> {
-    await this.logger.info('classifier.start', 'Clasificando ruta', { input_path: inputPath });
+    return this.classifyLocalPath(inputPath);
+  }
+
+  async classifyLocalPath(inputPath: string): Promise<ClassificationResult> {
+    await this.logger.info('classifier.start', 'Clasificando ruta local', { input_path: inputPath });
 
     const ruleResult = classifyByRules(inputPath);
     if (ruleResult) {
@@ -29,7 +33,7 @@ export class PathClassifier {
       input_path: inputPath,
     });
 
-    let profile;
+    let profile: ArtifactProfile;
     try {
       profile = await this.profiler.profile(inputPath);
       await this.logger.info('classifier.profile_ready', 'Perfil objetivo disponible para la IA', {
@@ -39,6 +43,8 @@ export class PathClassifier {
         directory_count: profile.directoryCount,
         skipped_entries: profile.skippedEntries,
         extensions: profile.extensions,
+        profile_complete: profile.profileComplete ?? null,
+        limit_reason: profile.limitReason ?? null,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -59,9 +65,43 @@ export class PathClassifier {
       return fallback;
     }
 
-    await this.logger.info('classifier.ai_required', 'Perfil real disponible: Gemma puede analizar la evidencia', {
+    return this.classifyProfile(profile, { rulesAlreadyChecked: true });
+  }
+
+  async classifyProfile(
+    profile: ArtifactProfile,
+    options: { rulesAlreadyChecked?: boolean } = {},
+  ): Promise<ClassificationResult> {
+    this.validateProfile(profile);
+    const inputPath = profile.path;
+
+    await this.logger.info('classifier.profile_received', 'Clasificando perfil de artefacto recibido', {
+      input_path: inputPath,
+      size_bytes: profile.sizeBytes,
+      file_count: profile.fileCount,
+      directory_count: profile.directoryCount,
+      skipped_entries: profile.skippedEntries,
+      profile_complete: profile.profileComplete ?? null,
+      limit_reason: profile.limitReason ?? null,
+    });
+
+    if (!options.rulesAlreadyChecked) {
+      const ruleResult = classifyByRules(inputPath);
+      if (ruleResult) {
+        await this.logger.info('classifier.rule_match', 'Clasificación resuelta por regla local sobre perfil recibido', {
+          input_path: inputPath,
+          classification: ruleResult.classification,
+          confidence: ruleResult.confidence,
+          reason: ruleResult.reason,
+        });
+        return ruleResult;
+      }
+    }
+
+    await this.logger.info('classifier.ai_required', 'Perfil disponible: Gemma puede analizar la evidencia', {
       input_path: inputPath,
       model: this.ollama.getModel(),
+      profile_complete: profile.profileComplete ?? null,
     });
 
     try {
@@ -72,14 +112,35 @@ export class PathClassifier {
     }
   }
 
+  private validateProfile(profile: ArtifactProfile): void {
+    if (typeof profile.path !== 'string' || profile.path.trim().length === 0) {
+      throw new Error('Perfil inválido: path vacío.');
+    }
+
+    const fields = [
+      ['sizeBytes', profile.sizeBytes],
+      ['fileCount', profile.fileCount],
+      ['directoryCount', profile.directoryCount],
+      ['skippedEntries', profile.skippedEntries],
+    ] as const;
+
+    for (const [name, value] of fields) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(`Perfil inválido: ${name} debe ser un número no negativo.`);
+      }
+    }
+
+    if (!Array.isArray(profile.extensions)) {
+      throw new Error('Perfil inválido: extensions debe ser una lista.');
+    }
+  }
+
   async applyAiEvidence(
     inputPath: string,
     ai: AiEvidencePayload,
   ): Promise<ClassificationResult> {
     const evidenceText = ai.evidence.join('; ');
 
-    // Gemma nunca puede autorizar SAFE_CACHE. Solo puede elevar protección
-    // a USER_DATA cuando detecta señales suficientemente fuertes.
     if (
       ai.userDataRisk === 'high'
       || (ai.regenerability === 'unlikely' && ai.confidence >= 0.7)
