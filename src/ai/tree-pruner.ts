@@ -1,7 +1,10 @@
 import { opendir } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { classifyByRules } from './rules';
 import { decideAiTreeEntry } from './tree-policy';
+import { ProjectContextEngine } from './project-context';
+import { collectEcosystemLabels, decideByEcosystem, detectEcosystems, type EcosystemDetection } from './ecosystem-detector';
+import { detectLanguagesWithEnry } from './enry-client';
 import { AI_INPUT_SCHEMA, type AiCandidateEntry, type AiInputDocument, type AiOmittedEntry, type AiResolvedEntry } from './tree-types';
 import type { ScanDocument, ScanEntry } from '../backend/types';
 
@@ -25,17 +28,41 @@ export class AiTreePruner {
     const resolvedLocally: AiResolvedEntry[] = [];
     const candidates: AiCandidateEntry[] = [];
     const lines: string[] = [basename(root) || root];
+    const context = new ProjectContextEngine(root);
+    const ecosystemCache = new Map<string, EcosystemDetection[]>();
     let visibleEntries = 0;
     let omittedEntries = 0;
     let skippedEntries = 0;
     let truncated = false;
     let omittedListTruncated = false;
 
+    const ecosystemsFor = async (directory: string): Promise<EcosystemDetection[]> => {
+      const key = normalizePath(directory);
+      const cached = ecosystemCache.get(key);
+      if (cached) return cached;
+      const detected = await detectEcosystems(directory);
+      ecosystemCache.set(key, detected);
+      return detected;
+    };
+
     const recordOmitted = (entry: AiOmittedEntry): void => {
       omittedEntries += 1;
       omittedByKind[entry.kind] = (omittedByKind[entry.kind] ?? 0) + 1;
       if (omitted.length < MAX_OMITTED_DETAILS) omitted.push(entry);
       else omittedListTruncated = true;
+    };
+
+    const omit = (fullPath: string, name: string, kind: AiOmittedEntry['kind'], reason: string): void => {
+      const local = classifyByRules(fullPath);
+      const scanEntry = findScanEntry(sizeIndex, fullPath);
+      recordOmitted({
+        path: fullPath,
+        name,
+        kind,
+        reason,
+        ...(scanEntry ? { sizeBytes: scanEntry.sizeBytes } : {}),
+        ...(local ? { classification: local.classification, classificationSource: local.source } : {}),
+      });
     };
 
     const walk = async (directory: string, depth: number, prefix: string): Promise<void> => {
@@ -59,6 +86,7 @@ export class AiTreePruner {
         return;
       }
 
+      const directoryEcosystems = await ecosystemsFor(directory);
       const entries = [];
       for await (const entry of handle) entries.push(entry);
       entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
@@ -82,30 +110,41 @@ export class AiTreePruner {
         }
 
         const isDirectory = entry.isDirectory();
-        const decision = decideAiTreeEntry(fullPath, isDirectory);
-        if (decision.policy === 'DROP') {
-          const local = classifyByRules(fullPath);
-          const scanEntry = findScanEntry(sizeIndex, fullPath);
-          recordOmitted({
-            path: fullPath,
-            name: entry.name,
-            kind: decision.kind,
-            reason: decision.reason,
-            ...(scanEntry ? { sizeBytes: scanEntry.sizeBytes } : {}),
-            ...(local ? { classification: local.classification, classificationSource: local.source } : {}),
-          });
+
+        // Seguridad explícita y conocimiento local de AnSysWarden tienen la
+        // prioridad más alta. Esto incluye secretos y reglas conservadoras.
+        const localTreeDecision = decideAiTreeEntry(fullPath, isDirectory);
+        if (localTreeDecision.policy === 'DROP') {
+          omit(fullPath, entry.name, localTreeDecision.kind, localTreeDecision.reason);
+          continue;
+        }
+
+        // El propio proyecto es la siguiente fuente de verdad: .gitattributes
+        // (Linguist) y .gitignore. Ignorar para IA nunca equivale a borrar.
+        const projectDecision = await context.decide(fullPath, isDirectory);
+        if (projectDecision) {
+          omit(fullPath, entry.name, projectDecision.kind, `${projectDecision.reason} No concede permiso de borrado.`);
+          continue;
+        }
+
+        // Los manifests del directorio dan contexto: target dentro de Rust,
+        // vendor dentro de Go/PHP, etc. Evita depender solo del nombre.
+        const ecosystemDecision = decideByEcosystem(fullPath, isDirectory, directoryEcosystems);
+        if (ecosystemDecision) {
+          omit(fullPath, entry.name, ecosystemDecision.kind, `${ecosystemDecision.reason} No concede permiso de borrado.`);
           continue;
         }
 
         visibleEntries += 1;
         lines.push(`${prefix}${branch}${entry.name}${isDirectory ? '/' : ''}`);
-
         if (isDirectory) await walk(fullPath, depth + 1, childPrefix);
       }
     };
 
     await walk(root, 0, '');
 
+    // Las entradas grandes de Dust pasan por el mismo router antes de poder
+    // convertirse en candidatos para Gemma.
     for (const entry of scan.entries) {
       const local = classifyByRules(entry.path);
       if (local) {
@@ -113,11 +152,14 @@ export class AiTreePruner {
         continue;
       }
 
-      // Dust se ejecuta con -D, por lo que estas entradas son directorios. Si
-      // la política del árbol ya conoce el directorio (dist, .venv, .git...),
-      // tampoco debe reaparecer por la puerta trasera como candidato de Gemma.
       const treeDecision = decideAiTreeEntry(entry.path, true);
       if (treeDecision.policy === 'DROP') continue;
+
+      const projectDecision = await context.decide(entry.path, true);
+      if (projectDecision) continue;
+
+      const parentEcosystems = await ecosystemsFor(dirname(entry.path));
+      if (decideByEcosystem(entry.path, true, parentEcosystems)) continue;
 
       if (isActionableScanEntry(entry, root)) {
         candidates.push({
@@ -129,6 +171,11 @@ export class AiTreePruner {
         });
       }
     }
+
+    const [ecosystems, enry] = await Promise.all([
+      collectEcosystemLabels(root),
+      detectLanguagesWithEnry(root),
+    ]);
 
     return {
       schema: AI_INPUT_SCHEMA,
@@ -147,6 +194,9 @@ export class AiTreePruner {
         omittedByKind,
         resolvedLocally: resolvedLocally.length,
         aiCandidates: candidates.length,
+        ecosystems,
+        languages: enry.languages,
+        enryAvailable: enry.available,
       },
       resolvedLocally,
       candidates,
