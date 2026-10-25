@@ -1,25 +1,31 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { AiInputDocument } from '../ai/tree-types';
-import type { ScanDocument, ScanResultDocument } from './types';
+import type { AiJobDocument, AiJobResultDocument, ScanDocument, ScanResultDocument } from './types';
 
 export class BackendStorage {
   readonly root: string;
   readonly scansDir: string;
   readonly resultsDir: string;
   readonly aiInputsDir: string;
+  readonly aiJobsPendingDir: string;
+  readonly aiJobsResultsDir: string;
 
   constructor(root = process.env.ANSYSWARDEN_BACKEND_DATA_DIR ?? '.ansyswarden/backend/data') {
     this.root = resolve(root);
     this.scansDir = join(this.root, 'scans');
     this.resultsDir = join(this.root, 'results');
     this.aiInputsDir = join(this.root, 'ai-inputs');
+    this.aiJobsPendingDir = join(this.root, 'ai-jobs', 'pending');
+    this.aiJobsResultsDir = join(this.root, 'ai-jobs', 'results');
   }
 
   async init(): Promise<void> {
     await mkdir(this.scansDir, { recursive: true });
     await mkdir(this.resultsDir, { recursive: true });
     await mkdir(this.aiInputsDir, { recursive: true });
+    await mkdir(this.aiJobsPendingDir, { recursive: true });
+    await mkdir(this.aiJobsResultsDir, { recursive: true });
   }
 
   async saveScan(scan: ScanDocument): Promise<void> {
@@ -69,6 +75,40 @@ export class BackendStorage {
 
   async getResult(scanId: string): Promise<ScanResultDocument | null> {
     return readJsonOrNull<ScanResultDocument>(join(this.resultsDir, `${scanId}.result.json`));
+  }
+
+  async enqueueAiJob(job: AiJobDocument): Promise<void> {
+    await this.init();
+    await atomicWriteJson(join(this.aiJobsPendingDir, `${job.id}.json`), job);
+  }
+
+  async getNextAiJob(): Promise<AiJobDocument | null> {
+    await this.init();
+    const files = (await readdir(this.aiJobsPendingDir))
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+
+    for (const file of files) {
+      const job = await readJsonOrNull<AiJobDocument>(join(this.aiJobsPendingDir, file));
+      if (job) return job;
+    }
+    return null;
+  }
+
+  async getAiJob(id: string): Promise<AiJobDocument | null> {
+    return readJsonOrNull<AiJobDocument>(join(this.aiJobsPendingDir, `${id}.json`));
+  }
+
+  async saveAiJobResult(result: AiJobResultDocument): Promise<void> {
+    await this.init();
+    await atomicWriteJson(join(this.aiJobsResultsDir, `${result.jobId}.json`), result);
+    await unlink(join(this.aiJobsPendingDir, `${result.jobId}.json`)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+
+  async getAiJobResult(id: string): Promise<AiJobResultDocument | null> {
+    return readJsonOrNull<AiJobResultDocument>(join(this.aiJobsResultsDir, `${id}.json`));
   }
 }
 
