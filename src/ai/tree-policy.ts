@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { decideByRepomixPolicy } from './repomix-policy';
 import type { AiTreeKind, AiTreePolicy } from './tree-types';
 
 export interface AiTreeDecision {
@@ -70,6 +71,15 @@ export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTre
         return { policy: 'DROP', kind: rule.kind, reason: rule.reason };
       }
     }
+  }
+
+  const repomix = decideByRepomixPolicy(fullPath, isDirectory);
+  if (repomix) {
+    return {
+      policy: 'DROP',
+      kind: repomix.kind,
+      reason: `${repomix.reason} Esta decisión solo afecta a visibilidad IA, no autoriza borrado.`,
+    };
   }
 
   return {
