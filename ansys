@@ -8,6 +8,8 @@ OLLAMA_PID_FILE="$STATE_DIR/ollama.pid"
 OLLAMA_LOG_FILE="$LOG_DIR/ollama.log"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
 MODEL="${ANSYSWARDEN_MODEL:-gemma4:e2b}"
+AI_NUM_CTX="${ANSYSWARDEN_AI_NUM_CTX:-1024}"
+AI_KEEP_ALIVE="${ANSYSWARDEN_AI_KEEP_ALIVE:-45s}"
 
 mkdir -p "$LOG_DIR"
 
@@ -37,6 +39,7 @@ Uso:
   ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
   ./ansys test rules
+  ./ansys test overlap
   ./ansys test tree
   ./ansys test context
   ./ansys test candidates
@@ -214,12 +217,17 @@ ai_test() {
   fi
 
   local payload response text
-  payload="$(jq -n --arg model "$MODEL" '{model:$model,prompt:"Responde exactamente: ANSYSWARDEN_OK",stream:false}')"
+  payload="$(jq -n \
+    --arg model "$MODEL" \
+    --arg keep "$AI_KEEP_ALIVE" \
+    --argjson ctx "$AI_NUM_CTX" \
+    '{model:$model,prompt:"Responde exactamente: ANSYSWARDEN_OK",stream:false,think:false,keep_alive:$keep,options:{temperature:0,num_ctx:$ctx,num_predict:16}}')"
   response="$(curl -fsS -H 'Content-Type: application/json' -d "$payload" "$OLLAMA_HOST_URL/api/generate")"
   text="$(jq -r '.response // empty' <<<"$response" | tr -d '\r' | xargs)"
 
   if [[ "$text" == *"ANSYSWARDEN_OK"* ]]; then
     info "Inferencia correcta"
+    printf 'Perfil móvil: ctx=%s keep_alive=%s\n' "$AI_NUM_CTX" "$AI_KEEP_ALIVE"
     printf '\nRespuesta:\n%s\n' "$text"
   else
     err "La inferencia respondió de forma inesperada: $text"
@@ -305,6 +313,7 @@ main() {
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
         rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
+        overlap) run_ts "$ROOT_DIR/src/tests/scanner-overlap-cli.ts" ;;
         tree) run_ts "$ROOT_DIR/src/tests/tree-policy-cli.ts" ;;
         context) run_ts "$ROOT_DIR/src/tests/project-context-cli.ts" ;;
         candidates) run_ts "$ROOT_DIR/src/tests/ai-candidate-cli.ts" ;;

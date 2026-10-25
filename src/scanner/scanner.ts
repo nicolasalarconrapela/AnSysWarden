@@ -31,6 +31,71 @@ interface DirectoryMeasure {
 const DEFAULT_MIN_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CANDIDATES = 20;
 
+function normalizedOverlapPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return normalized || '/';
+}
+
+function isDescendantPath(parent: string, child: string): boolean {
+  const normalizedParent = normalizedOverlapPath(parent);
+  const normalizedChild = normalizedOverlapPath(child);
+  if (normalizedParent === '/') return normalizedChild !== '/';
+  return normalizedChild !== normalizedParent && normalizedChild.startsWith(`${normalizedParent}/`);
+}
+
+/**
+ * Selecciona únicamente candidatos SAFE_CACHE cuyos bytes se pueden sumar sin
+ * solapamientos ni atravesar un descendiente conocido que requiera revisión o
+ * esté protegido como datos de usuario.
+ *
+ * Política conservadora:
+ * - SAFE padre + SAFE hijo: se cuenta el padre una sola vez.
+ * - SAFE padre + REVIEW/USER_DATA descendiente: el padre NO se cuenta.
+ * - REVIEW/USER_DATA padre + SAFE hijo: el hijo sí puede contarse.
+ * - Si un padre SAFE queda bloqueado, otros descendientes SAFE independientes
+ *   pueden seguir contando sus propios bytes.
+ */
+export function selectRecoverableSafeCandidates(candidates: ScanCandidate[]): ScanCandidate[] {
+  const safeCandidates = candidates
+    .filter((candidate) => candidate.classification === 'SAFE_CACHE')
+    .sort((a, b) => normalizedOverlapPath(a.path).length - normalizedOverlapPath(b.path).length);
+
+  const selected: ScanCandidate[] = [];
+
+  for (const candidate of safeCandidates) {
+    const hasNonSafeDescendant = candidates.some(
+      (other) => other.classification !== 'SAFE_CACHE'
+        && isDescendantPath(candidate.path, other.path),
+    );
+
+    if (hasNonSafeDescendant) continue;
+
+    const alreadyCoveredBySelectedAncestor = selected.some(
+      (ancestor) => normalizedOverlapPath(ancestor.path) === normalizedOverlapPath(candidate.path)
+        || isDescendantPath(ancestor.path, candidate.path),
+    );
+
+    if (!alreadyCoveredBySelectedAncestor) selected.push(candidate);
+  }
+
+  return selected;
+}
+
+/**
+ * Compatibilidad con llamadas anteriores: devuelve solo los SAFE_CACHE que
+ * pueden contarse de forma conservadora. No usar para ocultar candidatos de UI.
+ */
+export function removeOverlappingSafeCandidates(candidates: ScanCandidate[]): ScanCandidate[] {
+  const recoverableSafePaths = new Set(
+    selectRecoverableSafeCandidates(candidates).map((candidate) => normalizedOverlapPath(candidate.path)),
+  );
+
+  return candidates.filter((candidate) => (
+    candidate.classification !== 'SAFE_CACHE'
+    || recoverableSafePaths.has(normalizedOverlapPath(candidate.path))
+  ));
+}
+
 export class LocalScanner {
   private scannedFiles = 0;
   private scannedDirectories = 0;
@@ -83,14 +148,14 @@ export class LocalScanner {
       largest: candidateDirs.slice(0, 5),
     });
 
-    const candidates: ScanCandidate[] = [];
+    const classifiedCandidates: ScanCandidate[] = [];
     for (const candidate of candidateDirs) {
       const classification = await this.classifier.classify(candidate.path);
       const result: ScanCandidate = {
         ...classification,
         sizeBytes: candidate.sizeBytes,
       };
-      candidates.push(result);
+      classifiedCandidates.push(result);
       await this.logger.info('scan.candidate.result', 'Candidato clasificado', {
         path: result.path,
         size_bytes: result.sizeBytes,
@@ -101,9 +166,22 @@ export class LocalScanner {
       });
     }
 
-    const recoverableBytes = candidates
-      .filter((candidate) => candidate.classification === 'SAFE_CACHE')
+    const recoverableCandidates = selectRecoverableSafeCandidates(classifiedCandidates);
+    const recoverableBytes = recoverableCandidates
       .reduce((sum, candidate) => sum + candidate.sizeBytes, 0);
+
+    const safeCandidateCount = classifiedCandidates
+      .filter((candidate) => candidate.classification === 'SAFE_CACHE').length;
+    const blockedOrOverlappedSafeCount = safeCandidateCount - recoverableCandidates.length;
+
+    if (blockedOrOverlappedSafeCount > 0) {
+      await this.logger.info('scan.recoverable.filtered', 'SAFE_CACHE excluidos del total recuperable por solapamiento o descendientes no seguros', {
+        safe_candidate_count: safeCandidateCount,
+        recoverable_candidate_count: recoverableCandidates.length,
+        excluded_safe_count: blockedOrOverlappedSafeCount,
+        recoverable_paths: recoverableCandidates.map((candidate) => candidate.path),
+      });
+    }
 
     const summary: ScanSummary = {
       root,
@@ -111,7 +189,7 @@ export class LocalScanner {
       scannedDirectories: this.scannedDirectories,
       skippedEntries: this.skippedEntries,
       totalBytes,
-      candidates,
+      candidates: classifiedCandidates,
       recoverableBytes,
     };
 
@@ -122,6 +200,7 @@ export class LocalScanner {
       skipped_entries: summary.skippedEntries,
       total_bytes: summary.totalBytes,
       candidate_count: summary.candidates.length,
+      recoverable_candidate_count: recoverableCandidates.length,
       recoverable_bytes: summary.recoverableBytes,
     });
 

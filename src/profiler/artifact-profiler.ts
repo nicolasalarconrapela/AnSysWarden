@@ -2,6 +2,8 @@ import { opendir, lstat } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { TraceLogger } from '../observability/logger';
 
+export type ProfileLimitReason = 'MAX_FILES' | 'MAX_DIRECTORIES' | 'MAX_DURATION';
+
 export interface ArtifactProfile {
   path: string;
   sizeBytes: number;
@@ -11,7 +13,23 @@ export interface ArtifactProfile {
   newestMtimeMs: number | null;
   oldestMtimeMs: number | null;
   extensions: Array<{ extension: string; files: number; bytes: number }>;
+  /**
+   * Opcional para mantener compatibilidad con datasets sintéticos anteriores.
+   * Los perfiles nuevos generados por ArtifactProfiler siempre lo informan.
+   */
+  profileComplete?: boolean;
+  limitReason?: ProfileLimitReason | null;
 }
+
+export interface ArtifactProfilerOptions {
+  maxFiles?: number;
+  maxDirectories?: number;
+  maxDurationMs?: number;
+}
+
+const DEFAULT_MAX_FILES = 20_000;
+const DEFAULT_MAX_DIRECTORIES = 5_000;
+const DEFAULT_MAX_DURATION_MS = 5_000;
 
 function toLogMetadata(profile: ArtifactProfile): Record<string, unknown> {
   return {
@@ -23,15 +41,23 @@ function toLogMetadata(profile: ArtifactProfile): Record<string, unknown> {
     newestMtimeMs: profile.newestMtimeMs,
     oldestMtimeMs: profile.oldestMtimeMs,
     extensions: profile.extensions,
+    profileComplete: profile.profileComplete ?? null,
+    limitReason: profile.limitReason ?? null,
   };
 }
 
 export class ArtifactProfiler {
-  constructor(private readonly logger: TraceLogger) {}
+  constructor(
+    private readonly logger: TraceLogger,
+    private readonly options: ArtifactProfilerOptions = {},
+  ) {}
 
   async profile(inputPath: string): Promise<ArtifactProfile> {
     const root = resolve(inputPath);
     const rootStat = await lstat(root);
+    const maxFiles = this.options.maxFiles ?? DEFAULT_MAX_FILES;
+    const maxDirectories = this.options.maxDirectories ?? DEFAULT_MAX_DIRECTORIES;
+    const maxDurationMs = this.options.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
 
     if (rootStat.isSymbolicLink()) {
       throw new Error(`No se perfilan enlaces simbólicos: ${root}`);
@@ -48,6 +74,8 @@ export class ArtifactProfiler {
         newestMtimeMs: rootStat.mtimeMs,
         oldestMtimeMs: rootStat.mtimeMs,
         extensions: [{ extension, files: 1, bytes: rootStat.size }],
+        profileComplete: true,
+        limitReason: null,
       };
 
       await this.logger.info('profile.complete', 'Perfil local generado', toLogMetadata(profile));
@@ -64,10 +92,46 @@ export class ArtifactProfiler {
     let sizeBytes = 0;
     let newestMtimeMs: number | null = null;
     let oldestMtimeMs: number | null = null;
+    let limitReason: ProfileLimitReason | null = null;
     const extensions = new Map<string, { files: number; bytes: number }>();
+    const startedAt = performance.now();
+
+    const markLimit = async (reason: ProfileLimitReason, atPath: string): Promise<void> => {
+      if (limitReason) return;
+      limitReason = reason;
+      await this.logger.warn('profile.limit_reached', 'Perfilado detenido por presupuesto de seguridad', {
+        root,
+        at_path: atPath,
+        limit_reason: reason,
+        max_files: maxFiles,
+        max_directories: maxDirectories,
+        max_duration_ms: maxDurationMs,
+        observed_files: fileCount,
+        observed_directories: directoryCount,
+      });
+    };
+
+    const shouldStop = async (atPath: string): Promise<boolean> => {
+      if (limitReason) return true;
+      if (fileCount >= maxFiles) {
+        await markLimit('MAX_FILES', atPath);
+        return true;
+      }
+      if (directoryCount >= maxDirectories) {
+        await markLimit('MAX_DIRECTORIES', atPath);
+        return true;
+      }
+      if (performance.now() - startedAt >= maxDurationMs) {
+        await markLimit('MAX_DURATION', atPath);
+        return true;
+      }
+      return false;
+    };
 
     const walk = async (directoryPath: string): Promise<void> => {
+      if (await shouldStop(directoryPath)) return;
       directoryCount += 1;
+
       let directory;
       try {
         directory = await opendir(directoryPath);
@@ -82,6 +146,8 @@ export class ArtifactProfiler {
 
       for await (const entry of directory) {
         const fullPath = join(directoryPath, entry.name);
+        if (await shouldStop(fullPath)) break;
+
         try {
           if (entry.isSymbolicLink()) {
             skippedEntries += 1;
@@ -89,6 +155,7 @@ export class ArtifactProfiler {
           }
           if (entry.isDirectory()) {
             await walk(fullPath);
+            if (limitReason) break;
             continue;
           }
           if (!entry.isFile()) {
@@ -117,7 +184,12 @@ export class ArtifactProfiler {
       }
     };
 
-    await this.logger.span('profile.walk', 'Perfilando artefacto local', () => walk(root), { root });
+    await this.logger.span('profile.walk', 'Perfilando artefacto local', () => walk(root), {
+      root,
+      max_files: maxFiles,
+      max_directories: maxDirectories,
+      max_duration_ms: maxDurationMs,
+    });
 
     const extensionRows = [...extensions.entries()]
       .map(([extension, value]) => ({ extension, ...value }))
@@ -133,6 +205,8 @@ export class ArtifactProfiler {
       newestMtimeMs,
       oldestMtimeMs,
       extensions: extensionRows,
+      profileComplete: limitReason === null,
+      limitReason,
     };
 
     await this.logger.info('profile.complete', 'Perfil local generado', toLogMetadata(profile));

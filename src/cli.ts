@@ -139,12 +139,15 @@ const CATEGORY_LABELS: Record<SafetyCategory, string> = {
 };
 
 function humanInterpretation(mode: 'system' | 'model', actual: string, source?: string, reason?: string): string {
+  if (actual === 'SKIPPED') {
+    return 'Caso omitido por el cortacircuitos para evitar encadenar inferencias tras degradación o timeout.';
+  }
   const blocked = source === 'fallback' && reason?.includes('Gemma propuso SAFE_CACHE');
   if (mode === 'model' && actual === 'SAFE_CACHE') {
     return 'Gemma ha sido demasiado permisivo. Esta respuesta NO debe usarse directamente para borrar.';
   }
   if (mode === 'model' && actual === 'ERROR') {
-    return 'Gemma no respetó el formato esperado. Esto es un fallo del modelo, no una autorización para borrar.';
+    return 'Gemma no respetó el formato esperado o superó el límite de tiempo. Esto no autoriza ningún borrado.';
   }
   if (blocked) return 'Gemma se equivocó, pero AnSysWarden lo bloqueó. No se borraría nada.';
   if (actual === 'SAFE_CACHE') return 'Es una caché conocida y regenerable. Solo se acepta porque existe una regla local.';
@@ -211,6 +214,7 @@ async function runSafety(logger: TraceLogger): Promise<void> {
 
   for (let index = 0; index < result.results.length; index += 1) {
     const item = result.results[index];
+    const skipped = item.skipped === true || item.actual === 'SKIPPED';
     const ok = item.passed;
     const mode = item.test.mode === 'model' ? 'GEMMA' : 'SYSTEM';
     const modeColor = item.test.mode === 'model' ? ANSI.cyan : ANSI.magenta;
@@ -221,9 +225,10 @@ async function runSafety(logger: TraceLogger): Promise<void> {
       : item.confidence !== undefined
         ? `${Math.round(item.confidence * 100)}%`
         : 'n/a';
+    const statusLabel = skipped ? paint('SKIP', ANSI.yellow) : ok ? paint('PASS', ANSI.green) : paint('FAIL', ANSI.red);
 
     console.log('\n────────────────────────────────────────────────────');
-    console.log(`${ok ? paint('PASS', ANSI.green) : paint('FAIL', ANSI.red)}  ${paint(item.test.id, ANSI.bold)}  [${paint(mode, modeColor)}]  ${index + 1}/${result.results.length}`);
+    console.log(`${statusLabel}  ${paint(item.test.id, ANSI.bold)}  [${paint(mode, modeColor)}]  ${index + 1}/${result.results.length}`);
     console.log(`Caso: ${item.test.description}`);
     console.log('');
     console.log(`${paint('TRACE TÉCNICA', ANSI.bold)}`);
@@ -239,7 +244,10 @@ async function runSafety(logger: TraceLogger): Promise<void> {
 
     console.log('');
     console.log(`${paint('EN HUMANO', ANSI.bold)}`);
-    if (item.test.mode === 'model') {
+    if (skipped) {
+      console.log('⏭️ AnSysWarden no volvió a ejecutar Gemma después del timeout.');
+      console.log('🧯 El cortacircuitos evita otra espera larga y reduce presión de RAM/temperatura.');
+    } else if (item.test.mode === 'model') {
       console.log(`🤖 Gemma dice: ${item.actual}${item.confidence !== undefined ? ` con ${Math.round(item.confidence * 100)}% de confianza` : ''}.`);
       console.log(`💬 En otras palabras: ${item.reason ?? item.error ?? 'sin explicación disponible.'}`);
       console.log(`🧪 Estamos midiendo aquí la ${paint('calidad de Gemma', ANSI.cyan)}, no la decisión final de AnSysWarden.`);
@@ -249,16 +257,20 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     } else {
       console.log(`🛡️ AnSysWarden decidió: ${item.actual}.`);
     }
-    console.log(`${ok ? '✅' : '⚠️'} Qué significa: ${humanInterpretation(item.test.mode, item.actual, item.source, item.reason)}`);
+    console.log(`${skipped ? '⏭️' : ok ? '✅' : '⚠️'} Qué significa: ${humanInterpretation(item.test.mode, item.actual, item.source, item.reason)}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
   console.log(paint('DOS RESULTADOS DIFERENTES', ANSI.bold));
-  console.log(`${result.modelFailed === 0 ? '🟢' : '🟡'} Calidad de Gemma: ${result.modelPassed}/${result.modelPassed + result.modelFailed} respuestas correctas`);
+  const evaluatedModelCases = result.modelPassed + result.modelFailed;
+  console.log(`${result.modelFailed === 0 ? '🟢' : '🟡'} Calidad de Gemma: ${result.modelPassed}/${evaluatedModelCases} evaluadas correctamente${result.modelSkipped ? ` · ${result.modelSkipped} omitida(s)` : ''}`);
   console.log(`${result.systemFailed === 0 ? '🟢' : '🔴'} Seguridad de AnSysWarden: ${result.systemPassed}/${result.systemPassed + result.systemFailed} decisiones seguras`);
   console.log('');
   if (result.modelFailed > 0 && result.systemFailed === 0) {
-    console.log('En humano: Gemma se ha equivocado en algunos casos, pero las barreras de AnSysWarden han evitado que esos errores se conviertan en decisiones peligrosas.');
+    console.log('En humano: Gemma ha tenido fallos técnicos, pero las barreras de AnSysWarden han evitado que se conviertan en decisiones peligrosas.');
+  }
+  if (result.modelSkipped > 0) {
+    console.log(`En humano: ${result.modelSkipped} caso(s) no se ejecutaron después de abrir el cortacircuitos.`);
   }
 
   console.log('\n' + paint('RESUMEN POR TIPO DE RIESGO', ANSI.bold));
@@ -266,9 +278,11 @@ async function runSafety(logger: TraceLogger): Promise<void> {
   for (const category of categories) {
     const items = result.results.filter((item) => item.test.category === category);
     if (items.length === 0) continue;
-    const passed = items.filter((item) => item.passed).length;
-    const safe = passed === items.length;
-    console.log(`${safe ? '🟢' : '🟡'} ${CATEGORY_LABELS[category]}: ${passed}/${items.length}`);
+    const evaluated = items.filter((item) => !item.skipped);
+    const passed = evaluated.filter((item) => item.passed).length;
+    const skippedCount = items.length - evaluated.length;
+    const safe = evaluated.length > 0 && passed === evaluated.length;
+    console.log(`${safe ? '🟢' : '🟡'} ${CATEGORY_LABELS[category]}: ${passed}/${evaluated.length} evaluadas${skippedCount ? ` · ${skippedCount} omitida(s)` : ''}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
@@ -278,7 +292,10 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     console.log(paint(`🔴 SEGURIDAD EFECTIVA: ${result.systemFailed} fallo(s) del sistema`, ANSI.red));
   }
   if (result.modelFailed > 0) {
-    console.log(paint(`🟡 CALIDAD DE GEMMA: ${result.modelFailed} fallo(s) detectado(s) que debemos seguir estudiando`, ANSI.yellow));
+    console.log(paint(`🟡 CALIDAD DE GEMMA: ${result.modelFailed} fallo(s) técnico(s) entre los casos evaluados`, ANSI.yellow));
+  }
+  if (result.modelSkipped > 0) {
+    console.log(paint(`🟡 CORTACIRCUITOS IA: ${result.modelSkipped} caso(s) omitidos para evitar nuevas inferencias tras timeout`, ANSI.yellow));
   }
   console.log(`\nTraza JSONL completa: ${logger.logFile}`);
 
