@@ -9,6 +9,7 @@ interface ModelScore {
   conservative: number;
   dangerous: number;
   errors: number;
+  skipped: number;
   averageMs: number | null;
   p50Ms: number | null;
   p95Ms: number | null;
@@ -66,6 +67,7 @@ function evaluate(expected: CoreExpectation, ai: AiEvidencePayload): Quality {
 async function evaluateModel(
   model: string,
   timeoutMs: number,
+  maxConsecutiveTimeouts: number,
   logger: TraceLogger,
 ): Promise<ModelScore> {
   const client = new OllamaClient(undefined, model, logger);
@@ -73,6 +75,8 @@ async function evaluateModel(
   let conservative = 0;
   let dangerous = 0;
   let errors = 0;
+  let skipped = 0;
+  let consecutiveTimeouts = 0;
   const latencies: number[] = [];
 
   console.log(`\n════════════════════════════════════════════════════`);
@@ -87,12 +91,14 @@ async function evaluateModel(
     console.log(`! Warm-up no concluyente: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  for (const test of MODEL_COMPARISON_CORE) {
+  for (let index = 0; index < MODEL_COMPARISON_CORE.length; index += 1) {
+    const test = MODEL_COMPARISON_CORE[index];
     const startedAt = performance.now();
     try {
       const ai = await client.analyzePath(test.path, timeoutMs, test.profile);
       const durationMs = Math.round(performance.now() - startedAt);
       latencies.push(durationMs);
+      consecutiveTimeouts = 0;
       const quality = evaluate(test.expected, ai);
 
       if (quality === 'exact') exact += 1;
@@ -105,7 +111,17 @@ async function evaluateModel(
     } catch (error) {
       errors += 1;
       const durationMs = Math.round(performance.now() - startedAt);
-      console.log(`✗ ${test.id} ${test.label}: ${error instanceof Error ? error.message : String(error)} (${durationMs} ms)`);
+      const message = error instanceof Error ? error.message : String(error);
+      const isTimeout = message.toLowerCase().includes('timeout');
+      consecutiveTimeouts = isTimeout ? consecutiveTimeouts + 1 : 0;
+      console.log(`✗ ${test.id} ${test.label}: ${message} (${durationMs} ms)`);
+
+      if (consecutiveTimeouts >= maxConsecutiveTimeouts) {
+        skipped = MODEL_COMPARISON_CORE.length - index - 1;
+        console.log(`! Se abandona ${model}: ${consecutiveTimeouts} timeouts consecutivos.`);
+        console.log(`! Casos restantes omitidos: ${skipped}`);
+        break;
+      }
     }
   }
 
@@ -125,6 +141,7 @@ async function evaluateModel(
     conservative,
     dangerous,
     errors,
+    skipped,
     averageMs,
     p50Ms: percentile(latencies, 0.5),
     p95Ms: percentile(latencies, 0.95),
@@ -142,6 +159,7 @@ function rank(scores: ModelScore[]): ModelScore[] {
 
 async function main(): Promise<void> {
   const timeoutMs = readNumberArg('--timeout-ms', 15_000);
+  const maxConsecutiveTimeouts = readNumberArg('--max-timeouts', 3);
   const requestedModels = readModelsArg();
   const logger = new TraceLogger();
   const discovery = new OllamaClient(undefined, undefined, logger);
@@ -160,23 +178,24 @@ async function main(): Promise<void> {
   console.log('════════════════════════════════════════════════════');
   console.log(`Casos CORE:    ${MODEL_COMPARISON_CORE.length}`);
   console.log(`Timeout/caso:  ${timeoutMs} ms`);
+  console.log(`Corte modelo:  ${maxConsecutiveTimeouts} timeouts consecutivos`);
   console.log(`Modelos:       ${selected.join(', ')}`);
   console.log('Criterio: primero evitar análisis peligrosos; después calidad y velocidad.');
   console.log('No se borra ni modifica ningún archivo. Los perfiles son sintéticos y controlados.');
 
   const scores: ModelScore[] = [];
   for (const model of selected) {
-    scores.push(await evaluateModel(model, timeoutMs, logger));
+    scores.push(await evaluateModel(model, timeoutMs, maxConsecutiveTimeouts, logger));
   }
 
   const ordered = rank(scores);
   console.log('\n════════════════════════════════════════════════════');
   console.log('RESULTADO FINAL');
   console.log('════════════════════════════════════════════════════');
-  console.log('Modelo                 Exactas  Conserv.  Peligro  Error  p50 ms  p95 ms');
+  console.log('Modelo                 Exactas  Conserv.  Peligro  Error  Omit.  p50 ms  p95 ms');
   for (const score of ordered) {
     console.log(
-      `${score.model.padEnd(22)} ${String(score.exact).padStart(7)}  ${String(score.conservative).padStart(8)}  ${String(score.dangerous).padStart(7)}  ${String(score.errors).padStart(5)}  ${String(score.p50Ms ?? 'n/a').padStart(6)}  ${String(score.p95Ms ?? 'n/a').padStart(6)}`,
+      `${score.model.padEnd(22)} ${String(score.exact).padStart(7)}  ${String(score.conservative).padStart(8)}  ${String(score.dangerous).padStart(7)}  ${String(score.errors).padStart(5)}  ${String(score.skipped).padStart(5)}  ${String(score.p50Ms ?? 'n/a').padStart(6)}  ${String(score.p95Ms ?? 'n/a').padStart(6)}`,
     );
   }
 
@@ -185,6 +204,7 @@ async function main(): Promise<void> {
   console.log(`   Exactas: ${winner.exact}/${MODEL_COMPARISON_CORE.length}`);
   console.log(`   Análisis peligrosos: ${winner.dangerous}`);
   console.log(`   Errores: ${winner.errors}`);
+  console.log(`   Omitidos: ${winner.skipped}`);
   console.log(`   p50: ${winner.p50Ms ?? 'n/a'} ms`);
   console.log(`Traza JSONL: ${logger.logFile}`);
 }
