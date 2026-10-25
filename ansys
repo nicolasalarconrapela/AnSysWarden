@@ -29,6 +29,7 @@ Uso:
   ./ansys ai models
   ./ansys ai pull <modelo>
   ./ansys ai pull-mobile-candidate
+  ./ansys worker mobile --backend http://IP_PC:8787 [--once] [--poll-ms N]
   ./ansys doctor
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
@@ -283,6 +284,15 @@ main() {
         pull) ai_pull "${3:-}" ;;
         pull-mobile-candidate) ai_pull_mobile_candidate ;;
         *) usage; exit 1 ;;
+      esac
+      ;;
+    worker)
+      case "${2:-}" in
+        mobile)
+          shift 2
+          run_ts "$ROOT_DIR/src/worker/mobile-worker.ts" "$@"
+          ;;
+        *) err "Worker desconocido: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
     doctor)
