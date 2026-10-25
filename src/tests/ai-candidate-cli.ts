@@ -32,6 +32,7 @@ async function main(): Promise<void> {
 
     const result = await new AiTreePruner().build(scan, root, { maxDepth: 6, maxEntries: 2000 });
     const paths = new Set(result.candidates.map((item) => item.path));
+    const unknownCandidate = result.candidates.find((item) => item.path === unknown);
 
     const checks = [
       {
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
       },
       {
         name: 'candidato incluye razón explicativa',
-        ok: result.candidates.find((item) => item.path === unknown)?.reason.length > 0,
+        ok: Boolean(unknownCandidate?.reason && unknownCandidate.reason.length > 0),
       },
     ];
 
