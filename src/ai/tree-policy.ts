@@ -16,7 +16,13 @@ const DROP_DIRECTORIES: Array<{ pattern: RegExp; kind: AiTreeKind; reason: strin
   { pattern: /^(\.gradle|\.m2)$/i, kind: 'TOOL_CACHE', reason: 'Estado local de herramientas de build: se corta antes de expandirlo para la IA.' },
   { pattern: /^(\.cache|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox)$/i, kind: 'TOOL_CACHE', reason: 'Caché local conocida: no se expande en el árbol IA.' },
   { pattern: /^(coverage|\.coverage|htmlcov|\.nyc_output)$/i, kind: 'TEST_OUTPUT', reason: 'Salida de cobertura/pruebas: no aporta estructura fuente a la IA.' },
-  { pattern: /^(\.idea|\.vscode)$/i, kind: 'IDE_INTERNAL', reason: 'Metadatos del IDE: se omiten del árbol IA.' },
+  { pattern: /^(\.idea|\.vscode|\.aistudio)$/i, kind: 'IDE_INTERNAL', reason: 'Metadatos internos del IDE o asistente: se omiten del árbol IA.' },
+];
+
+const SAFE_ENV_TEMPLATES = [
+  /^\.env\.example$/i,
+  /^\.env\.sample$/i,
+  /^\.env\.template$/i,
 ];
 
 const SENSITIVE_FILES = [
@@ -32,12 +38,29 @@ const SENSITIVE_FILES = [
 
 export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTreeDecision {
   const name = basename(fullPath);
+  const normalized = fullPath.replace(/\\/g, '/');
+
+  if (!isDirectory && SAFE_ENV_TEMPLATES.some((pattern) => pattern.test(name))) {
+    return {
+      policy: 'KEEP',
+      kind: 'SOURCE',
+      reason: 'Plantilla de variables de entorno: se conserva solo su nombre como contexto estructural.',
+    };
+  }
 
   if (!isDirectory && SENSITIVE_FILES.some((pattern) => pattern.test(name))) {
     return {
       policy: 'DROP',
       kind: 'SENSITIVE_FILE',
       reason: 'Archivo potencialmente sensible: el nombre puede registrarse como omitido, pero nunca se envía en el árbol para IA.',
+    };
+  }
+
+  if (isDirectory && /(^|\/)bin\/ctags$/i.test(normalized)) {
+    return {
+      policy: 'DROP',
+      kind: 'TOOL_BUNDLE',
+      reason: 'Bundle local de Universal Ctags: documentación y binarios empaquetados no aportan contexto del proyecto para la IA.',
     };
   }
 
