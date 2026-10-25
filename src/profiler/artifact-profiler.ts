@@ -13,6 +13,19 @@ export interface ArtifactProfile {
   extensions: Array<{ extension: string; files: number; bytes: number }>;
 }
 
+function toLogMetadata(profile: ArtifactProfile): Record<string, unknown> {
+  return {
+    path: profile.path,
+    sizeBytes: profile.sizeBytes,
+    fileCount: profile.fileCount,
+    directoryCount: profile.directoryCount,
+    skippedEntries: profile.skippedEntries,
+    newestMtimeMs: profile.newestMtimeMs,
+    oldestMtimeMs: profile.oldestMtimeMs,
+    extensions: profile.extensions,
+  };
+}
+
 export class ArtifactProfiler {
   constructor(private readonly logger: TraceLogger) {}
 
@@ -37,7 +50,7 @@ export class ArtifactProfiler {
         extensions: [{ extension, files: 1, bytes: rootStat.size }],
       };
 
-      await this.logger.info('profile.complete', 'Perfil local generado', { ...profile });
+      await this.logger.info('profile.complete', 'Perfil local generado', toLogMetadata(profile));
       return profile;
     }
 
@@ -122,7 +135,7 @@ export class ArtifactProfiler {
       extensions: extensionRows,
     };
 
-    await this.logger.info('profile.complete', 'Perfil local generado', { ...profile });
+    await this.logger.info('profile.complete', 'Perfil local generado', toLogMetadata(profile));
     return profile;
   }
 }
