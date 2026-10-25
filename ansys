@@ -39,6 +39,7 @@ Uso:
   ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
   ./ansys test rules
+  ./ansys test overlap
   ./ansys test tree
   ./ansys test context
   ./ansys test candidates
@@ -312,6 +313,7 @@ main() {
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
         rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
+        overlap) run_ts "$ROOT_DIR/src/tests/scanner-overlap-cli.ts" ;;
         tree) run_ts "$ROOT_DIR/src/tests/tree-policy-cli.ts" ;;
         context) run_ts "$ROOT_DIR/src/tests/project-context-cli.ts" ;;
         candidates) run_ts "$ROOT_DIR/src/tests/ai-candidate-cli.ts" ;;
