@@ -100,9 +100,7 @@ export class AiTreePruner {
         visibleEntries += 1;
         lines.push(`${prefix}${branch}${entry.name}${isDirectory ? '/' : ''}`);
 
-        if (isDirectory) {
-          await walk(fullPath, depth + 1, childPrefix);
-        }
+        if (isDirectory) await walk(fullPath, depth + 1, childPrefix);
       }
     };
 
@@ -112,7 +110,16 @@ export class AiTreePruner {
       const local = classifyByRules(entry.path);
       if (local) {
         resolvedLocally.push({ ...entry, ...local, path: entry.path, sizeBytes: entry.sizeBytes });
-      } else if (isActionableScanEntry(entry, root)) {
+        continue;
+      }
+
+      // Dust se ejecuta con -D, por lo que estas entradas son directorios. Si
+      // la política del árbol ya conoce el directorio (dist, .venv, .git...),
+      // tampoco debe reaparecer por la puerta trasera como candidato de Gemma.
+      const treeDecision = decideAiTreeEntry(entry.path, true);
+      if (treeDecision.policy === 'DROP') continue;
+
+      if (isActionableScanEntry(entry, root)) {
         candidates.push({
           ...(entry.entryId ? { entryId: entry.entryId } : {}),
           ...(entry.parentId ? { parentId: entry.parentId } : {}),
