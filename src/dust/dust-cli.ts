@@ -5,13 +5,21 @@ function usage(): never {
   console.log('Uso:');
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
-  console.log('  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE]');
+  console.log('  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]');
   process.exit(1);
 }
 
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function readIntegerOption(args: string[], name: string): number | undefined {
+  const raw = readOption(args, name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) throw new Error(`Valor inválido para ${name}: ${raw}`);
+  return value;
 }
 
 function formatElapsed(milliseconds: number): string {
@@ -41,7 +49,7 @@ function startScanProgress(): () => void {
     return () => {
       clearInterval(timer);
       const elapsed = formatElapsed(Date.now() - startedAt);
-      process.stdout.write(`\r✓ Escaneo de Dust finalizado en ${elapsed}${' '.repeat(32)}\n`);
+      process.stdout.write(`\r✓ Dust finalizado; preparando árbol seguro para IA · ${elapsed}${' '.repeat(18)}\n`);
     };
   }
 
@@ -55,7 +63,7 @@ function startScanProgress(): () => void {
   return () => {
     clearInterval(timer);
     const elapsed = formatElapsed(Date.now() - startedAt);
-    console.log(`Progreso:   finalizado tras ${elapsed}`);
+    console.log(`Progreso:   Dust finalizado tras ${elapsed}; preparando árbol IA`);
   };
 }
 
@@ -99,12 +107,9 @@ async function run(): Promise<void> {
     const inputPath = args[0];
     if (!inputPath || inputPath.startsWith('--')) usage();
 
-    const rawDepth = readOption(args, '--depth');
-    const depth = rawDepth === undefined ? undefined : Number(rawDepth);
-    if (rawDepth !== undefined && (!Number.isInteger(depth) || (depth ?? 0) < 1)) {
-      throw new Error(`Valor inválido para --depth: ${rawDepth}`);
-    }
-
+    const depth = readIntegerOption(args, '--depth');
+    const aiTreeDepth = readIntegerOption(args, '--ai-depth');
+    const aiTreeMaxEntries = readIntegerOption(args, '--ai-max-entries');
     const minSize = readOption(args, '--min-size');
 
     console.log('\nAnSysWarden · Dust Scan');
@@ -112,12 +117,13 @@ async function run(): Promise<void> {
     console.log(`Origen:     ${inputPath}`);
     console.log(`Profundidad:${depth === undefined ? ' por defecto' : String(depth).padStart(2, ' ')}`);
     console.log(`Tamaño mín: ${minSize ?? 'por defecto'}`);
+    console.log(`Árbol IA:   profundidad ${aiTreeDepth ?? 6} · máximo ${aiTreeMaxEntries ?? 2000} entradas visibles`);
     console.log('Progreso:   tiempo vivo; Dust no expone un porcentaje fiable');
 
     const stopProgress = startScanProgress();
     let result: Awaited<ReturnType<DustScanner['scan']>>;
     try {
-      result = await dust.scan(inputPath, { depth, minSize });
+      result = await dust.scan(inputPath, { depth, minSize, aiTreeDepth, aiTreeMaxEntries });
     } finally {
       stopProgress();
     }
@@ -128,7 +134,12 @@ async function run(): Promise<void> {
     console.log(`Profundidad:${String(result.depth).padStart(2, ' ')}`);
     console.log(`Tamaño mín: ${result.minSize}`);
     console.log(`Guardado:   ${result.filePath}`);
-    console.log('Estado:     scan.v1 persistido en el backend del PC');
+    console.log(`Árbol IA:   ${result.aiInputPath}`);
+    console.log(`  visibles: ${result.aiInput.summary.visibleEntries}`);
+    console.log(`  omitidas: ${result.aiInput.summary.omittedEntries}`);
+    console.log(`  locales:  ${result.aiInput.summary.resolvedLocally}`);
+    console.log(`  a Gemma:  ${result.aiInput.summary.aiCandidates}`);
+    console.log('Estado:     scan completo + ai-input.v1 persistidos en el backend del PC');
     return;
   }
 
