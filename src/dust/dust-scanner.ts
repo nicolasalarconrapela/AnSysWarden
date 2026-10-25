@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -126,22 +126,35 @@ function parseDustNode(value: unknown): DustJsonNode {
 function flattenDustTree(root: DustJsonNode): ScanEntry[] {
   const entries = new Map<string, ScanEntry>();
 
-  const visit = (node: DustJsonNode): void => {
+  const visit = (node: DustJsonNode, parentId: string | undefined, depth: number): void => {
+    let currentParentId = parentId;
+
     if (node.name !== '(total)') {
+      const entryId = createEntryId(node.name);
       entries.set(node.name, {
+        entryId,
+        ...(parentId === undefined ? {} : { parentId }),
+        depth,
         path: node.name,
         sizeBytes: parseDustSize(node.size),
       });
+      currentParentId = entryId;
+
       if (entries.size > MAX_ENTRIES) {
         throw new Error(`Dust produjo más de ${MAX_ENTRIES} entradas; reduce --depth o aumenta --min-size.`);
       }
     }
 
-    for (const child of node.children) visit(child);
+    const childDepth = node.name === '(total)' ? depth : depth + 1;
+    for (const child of node.children) visit(child, currentParentId, childDepth);
   };
 
-  visit(root);
+  visit(root, undefined, 0);
   return [...entries.values()].sort((a, b) => b.sizeBytes - a.sizeBytes);
+}
+
+function createEntryId(path: string): string {
+  return `entry-${createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 16)}`;
 }
 
 export function parseDustSize(value: string | number): number {
