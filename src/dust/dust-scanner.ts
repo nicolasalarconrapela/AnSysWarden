@@ -71,7 +71,9 @@ export class DustScanner {
     }
 
     const target = resolve(inputPath);
-    const args = ['-j', '-p', '-P', '-o', 'b', '-d', String(depth), '-z', minSize, target];
+    // AnSysWarden decide sobre directorios. -D evita convertir archivos grandes
+    // aislados (VHDX, instaladores, bases SQLite...) en candidatos para Gemma.
+    const args = ['-j', '-p', '-P', '-D', '-o', 'b', '-d', String(depth), '-z', minSize, target];
     const bin = this.getBinary();
     const result = await runProcess(bin.path, args, this.maxOutputBytes);
 
@@ -98,8 +100,8 @@ export class DustScanner {
       entries,
     };
 
-    // El scan Dust es la fuente completa de tamaños. El árbol IA se deriva
-    // después y nunca sustituye ni modifica el inventario original.
+    // El scan Dust es la fuente completa de tamaños de directorios. El árbol IA
+    // se deriva después y nunca sustituye ni modifica el inventario original.
     await this.storage.saveScan(scan);
     const aiInput = await this.treePruner.build(scan, target, {
       ...(options.aiTreeDepth === undefined ? {} : { maxDepth: options.aiTreeDepth }),
