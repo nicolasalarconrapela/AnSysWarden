@@ -1,21 +1,25 @@
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { AiInputDocument } from '../ai/tree-types';
 import type { ScanDocument, ScanResultDocument } from './types';
 
 export class BackendStorage {
   readonly root: string;
   readonly scansDir: string;
   readonly resultsDir: string;
+  readonly aiInputsDir: string;
 
   constructor(root = process.env.ANSYSWARDEN_BACKEND_DATA_DIR ?? '.ansyswarden/backend/data') {
     this.root = resolve(root);
     this.scansDir = join(this.root, 'scans');
     this.resultsDir = join(this.root, 'results');
+    this.aiInputsDir = join(this.root, 'ai-inputs');
   }
 
   async init(): Promise<void> {
     await mkdir(this.scansDir, { recursive: true });
     await mkdir(this.resultsDir, { recursive: true });
+    await mkdir(this.aiInputsDir, { recursive: true });
   }
 
   async saveScan(scan: ScanDocument): Promise<void> {
@@ -42,6 +46,20 @@ export class BackendStorage {
       rows.push({ id: scan.id, createdAt: scan.createdAt, source: scan.source, computer: scan.computer, entries: scan.entries.length });
     }
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async saveAiInput(input: AiInputDocument): Promise<void> {
+    await this.init();
+    await atomicWriteJson(join(this.aiInputsDir, `${input.scanId}.ai.json`), input);
+    await atomicWriteJson(join(this.aiInputsDir, 'latest.ai.json'), input);
+  }
+
+  async getAiInput(scanId: string): Promise<AiInputDocument | null> {
+    return readJsonOrNull<AiInputDocument>(join(this.aiInputsDir, `${scanId}.ai.json`));
+  }
+
+  async getLatestAiInput(): Promise<AiInputDocument | null> {
+    return readJsonOrNull<AiInputDocument>(join(this.aiInputsDir, 'latest.ai.json'));
   }
 
   async saveResult(result: ScanResultDocument): Promise<void> {
