@@ -175,6 +175,7 @@ export class OllamaClient {
     const requestTimeoutMs = timeoutOverrideMs && timeoutOverrideMs > 0
       ? timeoutOverrideMs
       : this.classifyTimeoutMs;
+    const gemma4 = this.isGemma4();
 
     const systemPrompt = [
       'Eres el analista local de evidencia de AnSysWarden.',
@@ -189,7 +190,7 @@ export class OllamaClient {
       'Tu trabajo es describir riesgo y regenerabilidad usando únicamente la evidencia disponible.',
       '',
       'CONTRATO DE SALIDA OBLIGATORIO:',
-      '- Devuelve exactamente UN objeto JSON que cumpla el esquema solicitado por Ollama.',
+      `- Devuelve exactamente UN objeto JSON${gemma4 ? ' que cumpla el esquema solicitado por Ollama' : ''}.`,
       '- NO devuelvas classification.',
       '- NO devuelvas SAFE_CACHE, USER_DATA ni REVIEW_REQUIRED.',
       '- regenerability debe ser exactamente: likely, unlikely o unknown.',
@@ -230,31 +231,45 @@ export class OllamaClient {
       input_path: inputPath,
       timeout_ms: requestTimeoutMs,
       has_artifact_profile: Boolean(profile),
-      structured_output: true,
-      thinking_disabled: this.isGemma4(),
-      num_ctx: this.numCtx,
+      structured_output: gemma4,
+      thinking_disabled: gemma4,
+      num_ctx: gemma4 ? this.numCtx : null,
     });
 
     let response: Response;
     try {
-      response = await fetch(`${this.host}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(requestTimeoutMs),
-        body: JSON.stringify({
+      const requestBody = gemma4
+        ? {
           model: this.model,
           system: systemPrompt,
           prompt,
           stream: false,
           format: EVIDENCE_JSON_SCHEMA,
-          ...(this.isGemma4() ? { think: false } : {}),
+          think: false,
           keep_alive: '10m',
           options: {
             temperature: 0,
             num_ctx: this.numCtx,
             num_predict: DEFAULT_NUM_PREDICT,
           },
-        }),
+        }
+        : {
+          model: this.model,
+          prompt,
+          stream: false,
+          format: 'json',
+          keep_alive: '10m',
+          options: {
+            temperature: 0,
+            num_predict: DEFAULT_NUM_PREDICT,
+          },
+        };
+
+      response = await fetch(`${this.host}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(requestTimeoutMs),
+        body: JSON.stringify(requestBody),
       });
     } catch (error) {
       const durationMs = Math.round(performance.now() - startedAt);
