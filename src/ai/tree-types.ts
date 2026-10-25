@@ -12,11 +12,15 @@ export type AiTreeKind =
   | 'VCS_INTERNAL'
   | 'TOOL_CACHE'
   | 'TOOL_BUNDLE'
+  | 'VENDORED'
+  | 'GENERATED'
+  | 'DOCUMENTATION'
   | 'TEST_OUTPUT'
   | 'IDE_INTERNAL'
   | 'SYSTEM_APP_DATA'
   | 'PROTECTED_USER_DATA'
   | 'SENSITIVE_FILE'
+  | 'GIT_IGNORED'
   | 'SYMLINK'
   | 'ACCESS_ERROR'
   | 'DEPTH_LIMIT'
@@ -63,6 +67,7 @@ export interface AiTreeSummary {
   omittedByKind: Record<string, number>;
   resolvedLocally: number;
   aiCandidates: number;
+  ecosystems: string[];
 }
 
 export interface AiInputDocument {
