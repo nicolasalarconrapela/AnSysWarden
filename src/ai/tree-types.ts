@@ -11,6 +11,7 @@ export type AiTreeKind =
   | 'BUILD_OUTPUT'
   | 'VCS_INTERNAL'
   | 'TOOL_CACHE'
+  | 'TOOL_BUNDLE'
   | 'TEST_OUTPUT'
   | 'IDE_INTERNAL'
   | 'SYSTEM_APP_DATA'
