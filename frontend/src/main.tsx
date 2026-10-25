@@ -29,7 +29,7 @@ type ScanResultDocument = {
   results: ScanResultItem[];
 };
 
-const API_BASE = import.meta.env.VITE_ANSYSWARDEN_API_BASE ?? 'http://127.0.0.1:8787';
+const API_BASE = import.meta.env.VITE_ANSYSWARDEN_API_BASE ?? '';
 const API_TOKEN = import.meta.env.VITE_ANSYSWARDEN_API_TOKEN ?? '';
 
 function formatBytes(value: number): string {
@@ -70,6 +70,7 @@ function App() {
   async function load() {
     setLoading(true);
     setError(null);
+    setSelected(new Set());
     try {
       const latest = await api<ScanDocument>('/api/scans/latest');
       setScan(latest);
