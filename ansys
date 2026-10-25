@@ -30,9 +30,16 @@ Uso:
   ./ansys doctor
   ./ansys classify <ruta>
   ./ansys scan <ruta> [--min-mb N]
+  ./ansys dust status
+  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE]
   ./ansys inspect <ruta>
+  ./ansys backend token
+  ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
   ./ansys test rules
+  ./ansys test tree
+  ./ansys test context
+  ./ansys test candidates
   ./ansys test benchmark [--offset N] [--limit N]
   ./ansys test models [--models modelo1,modelo2] [--timeout-ms N]
   ./ansys test mobile-models [--timeout-ms N]
@@ -282,14 +289,25 @@ main() {
       shift
       run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
       ;;
+    dust)
+      shift
+      run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@"
+      ;;
     inspect)
       [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
+      ;;
+    backend)
+      shift
+      run_ts "$ROOT_DIR/src/backend/backend-cli.ts" "$@"
       ;;
     test)
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
         rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
+        tree) run_ts "$ROOT_DIR/src/tests/tree-policy-cli.ts" ;;
+        context) run_ts "$ROOT_DIR/src/tests/project-context-cli.ts" ;;
+        candidates) run_ts "$ROOT_DIR/src/tests/ai-candidate-cli.ts" ;;
         benchmark)
           shift 2
           run_ts "$ROOT_DIR/src/tests/cache-benchmark-runner.ts" "$@"
