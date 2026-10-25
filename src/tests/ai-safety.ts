@@ -227,6 +227,18 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     }
   }
 
+  try {
+    await ollama.unloadModel();
+    await logger.info('safety.model.released', 'Modelo descargado tras la batería para devolver memoria al sistema', {
+      model: ollama.getModel(),
+    });
+  } catch (error) {
+    await logger.warn('safety.model.release_failed', 'No se pudo descargar el modelo tras la batería', {
+      model: ollama.getModel(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const passed = results.filter((result) => result.passed).length;
   const failed = results.length - passed;
   const modelResults = results.filter((result) => result.test.mode === 'model');
