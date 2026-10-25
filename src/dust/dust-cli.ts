@@ -128,6 +128,13 @@ async function run(): Promise<void> {
       stopProgress();
     }
 
+    const ecosystems = result.aiInput.summary.ecosystems.length > 0
+      ? result.aiInput.summary.ecosystems.join(', ')
+      : '(no detectados)';
+    const languages = result.aiInput.summary.languages.length > 0
+      ? result.aiInput.summary.languages.join(', ')
+      : '(sin datos)';
+
     console.log('────────────────────────────────────────');
     console.log(`Scan ID:    ${result.scan.id}`);
     console.log(`Entradas:   ${result.scan.entries.length}`);
@@ -139,7 +146,10 @@ async function run(): Promise<void> {
     console.log(`  omitidas: ${result.aiInput.summary.omittedEntries}`);
     console.log(`  locales:  ${result.aiInput.summary.resolvedLocally}`);
     console.log(`  a Gemma:  ${result.aiInput.summary.aiCandidates}`);
-    console.log('Estado:     scan completo + ai-input.v1 persistidos en el backend del PC');
+    console.log(`  ecosist.: ${ecosystems}`);
+    console.log(`  Enry:     ${result.aiInput.summary.enryAvailable ? 'activo' : 'fallback por manifests'}`);
+    console.log(`  lenguajes:${languages === '(sin datos)' ? ' ' : ' '}${languages}`);
+    console.log('Estado:     scan completo + contexto de proyecto + ai-input.v1 persistidos en el backend del PC');
     return;
   }
 
