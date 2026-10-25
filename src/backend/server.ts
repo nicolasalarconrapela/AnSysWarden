@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { BackendStorage } from './storage';
-import { isSafeId, isScanDocument, isScanResultDocument } from './types';
+import {
+  isAiJobDocument,
+  isAiJobResultDocument,
+  isSafeId,
+  isScanDocument,
+  isScanResultDocument,
+} from './types';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -37,6 +43,66 @@ export async function startBackendServer(options: BackendServerOptions): Promise
           timestamp: new Date().toISOString(),
         });
         return;
+      }
+
+      if (req.method === 'POST' && path === '/api/ai/jobs') {
+        const body = await readJsonBody(req);
+        if (!isAiJobDocument(body)) return sendJson(res, 400, { error: 'INVALID_AI_JOB' });
+        const existing = await storage.getAiJob(body.id);
+        const existingResult = await storage.getAiJobResult(body.id);
+        if (existing || existingResult) return sendJson(res, 409, { error: 'AI_JOB_ALREADY_EXISTS' });
+        await storage.enqueueAiJob(body);
+        sendJson(res, 201, { ok: true, id: body.id });
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/api/ai/jobs/next') {
+        const job = await storage.getNextAiJob();
+        if (!job) {
+          res.writeHead(204, { 'Cache-Control': 'no-store' });
+          res.end();
+          return;
+        }
+        sendJson(res, 200, job);
+        return;
+      }
+
+      const aiJobResultMatch = path.match(/^\/api\/ai\/jobs\/([^/]+)\/result$/);
+      if (aiJobResultMatch) {
+        const jobId = decodeURIComponent(aiJobResultMatch[1]);
+        if (!isSafeId(jobId)) return sendJson(res, 400, { error: 'INVALID_AI_JOB_ID' });
+
+        if (req.method === 'GET') {
+          const result = await storage.getAiJobResult(jobId);
+          if (!result) return sendJson(res, 404, { error: 'AI_JOB_RESULT_NOT_FOUND' });
+          sendJson(res, 200, result);
+          return;
+        }
+
+        if (req.method === 'POST') {
+          const job = await storage.getAiJob(jobId);
+          if (!job) {
+            const existingResult = await storage.getAiJobResult(jobId);
+            if (existingResult) return sendJson(res, 409, { error: 'AI_JOB_ALREADY_COMPLETED' });
+            return sendJson(res, 404, { error: 'AI_JOB_NOT_FOUND' });
+          }
+
+          const body = await readJsonBody(req);
+          if (!isAiJobResultDocument(body) || body.jobId !== jobId) {
+            return sendJson(res, 400, { error: 'INVALID_AI_JOB_RESULT' });
+          }
+          if (body.result.path !== job.profile.path) {
+            return sendJson(res, 400, { error: 'AI_JOB_PATH_MISMATCH' });
+          }
+
+          await storage.saveAiJobResult(body);
+          sendJson(res, 201, {
+            ok: true,
+            jobId,
+            classification: body.result.classification,
+          });
+          return;
+        }
       }
 
       if (req.method === 'GET' && path === '/api/scans') {
@@ -127,7 +193,7 @@ export async function startBackendServer(options: BackendServerOptions): Promise
     console.log(`Escuchando: http://${host}:${port}`);
     console.log(`Datos:      ${storage.root}`);
     console.log('Seguridad:  Bearer token obligatorio');
-    console.log('Rol:        fuente de verdad de scans/results');
+    console.log('Rol:        fuente de verdad de scans/results y cola IA');
   });
 }
 
