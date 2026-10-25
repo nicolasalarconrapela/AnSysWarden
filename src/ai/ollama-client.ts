@@ -97,7 +97,7 @@ export class OllamaClient {
 
   constructor(
     private readonly host = process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
-    private readonly model = process.env.ANSYSWARDEN_MODEL ?? 'gemma2:2b',
+    private readonly model = process.env.ANSYSWARDEN_MODEL ?? 'gemma4:e2b',
     private readonly logger?: TraceLogger,
   ) {}
 
