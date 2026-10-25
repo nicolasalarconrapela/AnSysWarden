@@ -36,6 +36,7 @@ Uso:
   ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
   ./ansys test rules
+  ./ansys test tree
   ./ansys test benchmark [--offset N] [--limit N]
   ./ansys review export <ruta>
   ./ansys logs [--raw]
@@ -287,6 +288,7 @@ main() {
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
         rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
+        tree) run_ts "$ROOT_DIR/src/tests/tree-policy-cli.ts" ;;
         benchmark)
           shift 2
           run_ts "$ROOT_DIR/src/tests/cache-benchmark-runner.ts" "$@"
