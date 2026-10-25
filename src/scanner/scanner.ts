@@ -31,6 +31,36 @@ interface DirectoryMeasure {
 const DEFAULT_MIN_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CANDIDATES = 20;
 
+function normalizedOverlapPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function isDescendantPath(parent: string, child: string): boolean {
+  const normalizedParent = normalizedOverlapPath(parent);
+  const normalizedChild = normalizedOverlapPath(child);
+  return normalizedChild !== normalizedParent && normalizedChild.startsWith(`${normalizedParent}/`);
+}
+
+export function removeOverlappingSafeCandidates(candidates: ScanCandidate[]): ScanCandidate[] {
+  const safeCandidates = candidates
+    .filter((candidate) => candidate.classification === 'SAFE_CACHE')
+    .sort((a, b) => normalizedOverlapPath(a.path).length - normalizedOverlapPath(b.path).length);
+
+  const keptSafePaths: string[] = [];
+  for (const candidate of safeCandidates) {
+    const normalized = normalizedOverlapPath(candidate.path);
+    const alreadyCovered = keptSafePaths.some(
+      (parent) => parent === normalized || isDescendantPath(parent, normalized),
+    );
+    if (!alreadyCovered) keptSafePaths.push(normalized);
+  }
+
+  return candidates.filter((candidate) => {
+    if (candidate.classification !== 'SAFE_CACHE') return true;
+    return keptSafePaths.includes(normalizedOverlapPath(candidate.path));
+  });
+}
+
 export class LocalScanner {
   private scannedFiles = 0;
   private scannedDirectories = 0;
@@ -83,14 +113,14 @@ export class LocalScanner {
       largest: candidateDirs.slice(0, 5),
     });
 
-    const candidates: ScanCandidate[] = [];
+    const classifiedCandidates: ScanCandidate[] = [];
     for (const candidate of candidateDirs) {
       const classification = await this.classifier.classify(candidate.path);
       const result: ScanCandidate = {
         ...classification,
         sizeBytes: candidate.sizeBytes,
       };
-      candidates.push(result);
+      classifiedCandidates.push(result);
       await this.logger.info('scan.candidate.result', 'Candidato clasificado', {
         path: result.path,
         size_bytes: result.sizeBytes,
@@ -98,6 +128,14 @@ export class LocalScanner {
         confidence: result.confidence,
         source: result.source,
         reason: result.reason,
+      });
+    }
+
+    const candidates = removeOverlappingSafeCandidates(classifiedCandidates);
+    const removedOverlaps = classifiedCandidates.length - candidates.length;
+    if (removedOverlaps > 0) {
+      await this.logger.info('scan.overlap.filtered', 'Candidatos SAFE_CACHE solapados omitidos', {
+        removed_count: removedOverlaps,
       });
     }
 
