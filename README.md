@@ -7,12 +7,13 @@ AnSysWarden es un clasificador local y conservador para identificar cachés y ar
 La clasificación sigue este orden:
 
 1. Reglas deterministas para rutas conocidas.
-2. Gemma mediante Ollama solo para casos ambiguos.
-3. Si la IA falla o devuelve una respuesta inválida, el resultado es `REVIEW_REQUIRED`.
+2. Gemma mediante Ollama aporta evidencia solo para casos ambiguos.
+3. Solo las reglas locales pueden autorizar `SAFE_CACHE`; la IA puede terminar en protección o revisión.
+4. Si la IA falla o devuelve una respuesta inválida, el resultado es `REVIEW_REQUIRED`.
 
 Clasificaciones:
 
-- `SAFE_CACHE`: candidato regenerable.
+- `SAFE_CACHE`: candidato regenerable autorizado por reglas locales.
 - `REVIEW_REQUIRED`: requiere revisión humana.
 - `USER_DATA`: datos potencialmente únicos o personales.
 
@@ -35,7 +36,7 @@ backend HTTP del PC
         ↓
 móvil consume el JSON
         ↓
-Gemma / Ollama analiza
+Gemma / Ollama aporta evidencia
         ↓
 resultado devuelto por API
         ↓
@@ -51,11 +52,14 @@ Los datos persistidos viven por defecto en:
 ├── scans/
 │   ├── latest.json
 │   └── <scan-id>.json
+├── ai-inputs/
+│   ├── latest.ai.json
+│   └── <scan-id>.ai.json
 └── results/
     └── <scan-id>.result.json
 ```
 
-El formato se versiona mediante `schema`, empezando por `ansyswarden.scan.v1`.
+Los contratos se versionan mediante `schema`, empezando por `ansyswarden.scan.v1`, `ansyswarden.ai-input.v1` y `ansyswarden.result.v1`.
 
 ### Backend del PC
 
@@ -75,6 +79,8 @@ GET  /api/health
 GET  /api/scans
 GET  /api/scans/latest
 GET  /api/scans/:id
+GET  /api/scans/:id/ai-input
+GET  /api/ai-inputs/latest
 POST /api/scans
 POST /api/scans/:id/results
 GET  /api/scans/:id/results
@@ -95,7 +101,7 @@ Ejemplo:
   "schema": "ansyswarden.scan.v1",
   "id": "scan-a81f",
   "createdAt": "2026-10-24T12:47:00+02:00",
-  "source": "drup",
+  "source": "dust",
   "computer": "NICO-PC",
   "entries": [
     {
@@ -108,7 +114,7 @@ Ejemplo:
 }
 ```
 
-La salida de la herramienta externa (por ejemplo `drup`) debe transformarse primero a este contrato; el backend no depende de esa herramienta concreta.
+La salida de una herramienta externa debe transformarse al contrato de AnSysWarden; el backend no depende de una fuente concreta.
 
 ## Interfaz principal
 
@@ -120,11 +126,20 @@ Comandos principales:
 ./ansys ai start
 ./ansys ai status
 ./ansys ai test
+./ansys ai models
+./ansys ai pull-mobile-candidate
 ./ansys doctor
 ./ansys classify ~/.gradle/caches
 ./ansys inspect ~/.gradle/caches
 ./ansys scan ~ --min-mb 50
+./ansys dust status
+./ansys dust scan ~ --depth 5 --min-size 50M
 ./ansys backend serve
+./ansys test tree
+./ansys test context
+./ansys test candidates
+./ansys test models
+./ansys test mobile-models
 ./ansys logs
 ./ansys logs --raw
 ./ansys ai stop
@@ -156,6 +171,13 @@ Prueba de inferencia:
 
 ```bash
 ./ansys ai test
+```
+
+Modelo móvil principal:
+
+```bash
+./ansys ai models
+./ansys ai pull-mobile-candidate
 ```
 
 Detener:
@@ -193,7 +215,7 @@ El escaneo identifica candidatos pesados para revisión; no elimina nada.
 Variables opcionales:
 
 ```bash
-ANSYSWARDEN_MODEL=gemma3:1b
+ANSYSWARDEN_MODEL=gemma4:e2b
 OLLAMA_HOST_URL=http://127.0.0.1:11434
 ANSYSWARDEN_LOG_FILE=/ruta/personalizada/traza.jsonl
 ANSYSWARDEN_API_TOKEN=clave-larga
@@ -210,14 +232,20 @@ Las trazas estructuradas se escriben en:
 .ansyswarden/logs/<run-id>.jsonl
 ```
 
-## Validación pendiente
+## Validación
 
-Antes de considerar esta rama validada en ejecución:
+Antes de considerar la integración validada en ejecución:
 
 ```bash
 npm install
 npm run typecheck
+./ansys test rules
+./ansys test tree
+./ansys test context
+./ansys test candidates
+./ansys test safety
+./ansys ai models
 ./ansys backend serve
 ```
 
-Después debe comprobarse desde otro dispositivo que `/api/health`, `/api/scans/latest` y el envío de resultados funcionan correctamente.
+Después debe comprobarse desde el otro dispositivo que `/api/health`, `/api/scans/latest`, `/api/ai-inputs/latest` y el envío de resultados funcionan correctamente.
