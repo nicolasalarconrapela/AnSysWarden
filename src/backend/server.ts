@@ -51,11 +51,28 @@ export async function startBackendServer(options: BackendServerOptions): Promise
         return;
       }
 
+      if (req.method === 'GET' && path === '/api/ai-inputs/latest') {
+        const input = await storage.getLatestAiInput();
+        if (!input) return sendJson(res, 404, { error: 'AI_INPUT_NOT_FOUND' });
+        sendJson(res, 200, input);
+        return;
+      }
+
       if (req.method === 'POST' && path === '/api/scans') {
         const body = await readJsonBody(req);
         if (!isScanDocument(body)) return sendJson(res, 400, { error: 'INVALID_SCAN_DOCUMENT' });
         await storage.saveScan(body);
         sendJson(res, 201, { ok: true, id: body.id, entries: body.entries.length });
+        return;
+      }
+
+      const aiInputMatch = path.match(/^\/api\/scans\/([^/]+)\/ai-input$/);
+      if (req.method === 'GET' && aiInputMatch) {
+        const scanId = decodeURIComponent(aiInputMatch[1]);
+        if (!isSafeId(scanId)) return sendJson(res, 400, { error: 'INVALID_SCAN_ID' });
+        const input = await storage.getAiInput(scanId);
+        if (!input) return sendJson(res, 404, { error: 'AI_INPUT_NOT_FOUND' });
+        sendJson(res, 200, input);
         return;
       }
 
