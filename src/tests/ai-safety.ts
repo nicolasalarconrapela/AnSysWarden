@@ -106,11 +106,11 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
   await logger.info('safety.suite.start', 'Inicio de batería de seguridad IA', {
     total: CASES.length,
     model: ollama.getModel(),
+    inference: ollama.getInferenceConfig(),
   });
 
   const firstModelCase = CASES.find((test) => test.mode === 'model');
   if (firstModelCase) {
-    const warmupPath = '/ansyswarden/safety/warmup/unknown-artifact';
     const warmupStartedAt = performance.now();
     await logger.info('safety.model.warmup.start', 'Calentando modelo antes de los casos directos de IA', {
       model: ollama.getModel(),
@@ -118,14 +118,10 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     });
 
     try {
-      await ollama.analyzePath(
-        warmupPath,
-        MODEL_WARMUP_TIMEOUT_MS,
-        syntheticModelProfile(warmupPath),
-      );
+      const warmup = await ollama.warmup(MODEL_WARMUP_TIMEOUT_MS);
       await logger.info('safety.model.warmup.ready', 'Modelo listo para batería directa de IA', {
         model: ollama.getModel(),
-        duration_ms: Math.round(performance.now() - warmupStartedAt),
+        duration_ms: warmup.durationMs,
       });
     } catch (error) {
       modelReady = false;
