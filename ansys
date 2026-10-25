@@ -207,7 +207,7 @@ ai_test() {
 
   local tags
   tags="$(curl -fsS "$OLLAMA_HOST_URL/api/tags")"
-  if jq -e --arg model "$MODEL" '.models[]?.name | startswith($model)' <<<"$tags" >/dev/null 2>&1; then
+  if jq -e --arg model "$MODEL" 'any(.models[]?; ((.name // "") | startswith($model)))' <<<"$tags" >/dev/null 2>&1; then
     info "Modelo $MODEL disponible"
   else
     warn "El modelo $MODEL no aparece entre los modelos instalados."
