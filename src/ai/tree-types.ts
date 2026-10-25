@@ -44,6 +44,8 @@ export interface AiCandidateEntry {
   depth?: number;
   path: string;
   sizeBytes: number;
+  reason: string;
+  ecosystems: string[];
 }
 
 export interface AiOmittedEntry {
