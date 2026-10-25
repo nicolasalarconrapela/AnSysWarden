@@ -13,9 +13,9 @@ const DEFAULT_CLASSIFY_TIMEOUT_MS = 30_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 5_000;
 const DEFAULT_UNLOAD_TIMEOUT_MS = 15_000;
 const DEFAULT_WARMUP_TIMEOUT_MS = 120_000;
-const DEFAULT_NUM_CTX = 2_048;
-const DEFAULT_NUM_PREDICT = 96;
-const DEFAULT_KEEP_ALIVE = '10m';
+const DEFAULT_NUM_CTX = 1_024;
+const DEFAULT_NUM_PREDICT = 64;
+const DEFAULT_KEEP_ALIVE = '45s';
 
 const EVIDENCE_JSON_SCHEMA = {
   type: 'object',
@@ -65,6 +65,11 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function readString(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
 function profileLines(profile?: ArtifactProfile): string[] {
   if (!profile) return ['PERFIL: no disponible; conserva incertidumbre.'];
 
@@ -99,6 +104,11 @@ export class OllamaClient {
     DEFAULT_NUM_PREDICT,
   );
 
+  private readonly keepAlive = readString(
+    process.env.ANSYSWARDEN_AI_KEEP_ALIVE,
+    DEFAULT_KEEP_ALIVE,
+  );
+
   constructor(
     private readonly host = process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
     private readonly model = process.env.ANSYSWARDEN_MODEL ?? 'gemma4:e2b',
@@ -121,7 +131,7 @@ export class OllamaClient {
     return {
       numCtx: this.numCtx,
       numPredict: this.numPredict,
-      keepAlive: DEFAULT_KEEP_ALIVE,
+      keepAlive: this.keepAlive,
     };
   }
 
@@ -155,7 +165,7 @@ export class OllamaClient {
       model: this.model,
       timeout_ms: timeoutMs,
       num_ctx: this.numCtx,
-      keep_alive: DEFAULT_KEEP_ALIVE,
+      keep_alive: this.keepAlive,
     });
 
     const requestBody = gemma4
@@ -164,7 +174,7 @@ export class OllamaClient {
         prompt: 'Responde exactamente OK',
         stream: false,
         think: false,
-        keep_alive: DEFAULT_KEEP_ALIVE,
+        keep_alive: this.keepAlive,
         options: {
           temperature: 0,
           num_ctx: this.numCtx,
@@ -175,7 +185,7 @@ export class OllamaClient {
         model: this.model,
         prompt: 'Responde exactamente OK',
         stream: false,
-        keep_alive: DEFAULT_KEEP_ALIVE,
+        keep_alive: this.keepAlive,
         options: {
           temperature: 0,
           num_predict: 4,
@@ -210,7 +220,7 @@ export class OllamaClient {
       host: this.host,
       model: this.model,
       duration_ms: durationMs,
-      keep_alive: DEFAULT_KEEP_ALIVE,
+      keep_alive: this.keepAlive,
     });
 
     return { durationMs };
@@ -289,10 +299,10 @@ export class OllamaClient {
       has_artifact_profile: Boolean(profile),
       structured_output: gemma4,
       thinking_disabled: gemma4,
-      prompt_mode: 'compact-v1',
+      prompt_mode: 'compact-v1-ram-safe',
       num_ctx: gemma4 ? this.numCtx : null,
       num_predict: this.numPredict,
-      keep_alive: DEFAULT_KEEP_ALIVE,
+      keep_alive: this.keepAlive,
       profile_complete: profile?.profileComplete ?? null,
       profile_limit_reason: profile?.limitReason ?? null,
     });
@@ -307,7 +317,7 @@ export class OllamaClient {
           stream: false,
           format: EVIDENCE_JSON_SCHEMA,
           think: false,
-          keep_alive: DEFAULT_KEEP_ALIVE,
+          keep_alive: this.keepAlive,
           options: {
             temperature: 0,
             num_ctx: this.numCtx,
@@ -319,7 +329,7 @@ export class OllamaClient {
           prompt,
           stream: false,
           format: 'json',
-          keep_alive: DEFAULT_KEEP_ALIVE,
+          keep_alive: this.keepAlive,
           options: {
             temperature: 0,
             num_predict: this.numPredict,
