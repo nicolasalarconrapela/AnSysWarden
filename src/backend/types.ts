@@ -4,6 +4,9 @@ export const SCAN_SCHEMA = 'ansyswarden.scan.v1' as const;
 export const RESULT_SCHEMA = 'ansyswarden.result.v1' as const;
 
 export interface ScanEntry {
+  entryId?: string;
+  parentId?: string;
+  depth?: number;
   path: string;
   sizeBytes: number;
   files?: number;
@@ -39,7 +42,8 @@ export function isScanDocument(value: unknown): value is ScanDocument {
   if (typeof doc.source !== 'string' || doc.source.length === 0 || doc.source.length > 128) return false;
   if (typeof doc.computer !== 'string' || doc.computer.length === 0 || doc.computer.length > 256) return false;
   if (!Array.isArray(doc.entries) || doc.entries.length === 0 || doc.entries.length > 100_000) return false;
-  return doc.entries.every(isScanEntry);
+  if (!doc.entries.every(isScanEntry)) return false;
+  return hasValidOptionalHierarchy(doc.entries as ScanEntry[]);
 }
 
 export function isScanResultDocument(value: unknown): value is ScanResultDocument {
@@ -77,7 +81,37 @@ function isScanEntry(value: unknown): value is ScanEntry {
     && entry.path.length <= 16_384
     && isNonNegative(entry.sizeBytes)
     && isOptionalNonNegative(entry.files)
-    && isOptionalNonNegative(entry.directories);
+    && isOptionalNonNegative(entry.directories)
+    && isOptionalSafeId(entry.entryId)
+    && isOptionalSafeId(entry.parentId)
+    && isOptionalDepth(entry.depth);
+}
+
+function hasValidOptionalHierarchy(entries: ScanEntry[]): boolean {
+  const entriesWithId = entries.filter((entry) => entry.entryId !== undefined);
+  if (entriesWithId.length === 0) return true;
+  if (entriesWithId.length !== entries.length) return false;
+
+  const ids = new Set<string>();
+  for (const entry of entriesWithId) {
+    if (!entry.entryId || ids.has(entry.entryId)) return false;
+    ids.add(entry.entryId);
+  }
+
+  for (const entry of entriesWithId) {
+    if (entry.parentId !== undefined && !ids.has(entry.parentId)) return false;
+    if (entry.parentId === entry.entryId) return false;
+  }
+
+  return true;
+}
+
+function isOptionalSafeId(value: unknown): boolean {
+  return value === undefined || isSafeId(value);
+}
+
+function isOptionalDepth(value: unknown): boolean {
+  return value === undefined || (Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 1024);
 }
 
 function isOptionalNonNegative(value: unknown): boolean {
