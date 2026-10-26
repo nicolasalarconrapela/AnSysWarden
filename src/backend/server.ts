@@ -190,10 +190,10 @@ export async function startBackendServer(options: BackendServerOptions): Promise
   server.listen(port, host, () => {
     console.log('\nAnSysWarden · PC Backend');
     console.log('────────────────────────────────────────');
-    console.log(`Escuchando: http://${host}:${port}`);
-    console.log(`Datos:      ${storage.root}`);
-    console.log('Seguridad:  Bearer token obligatorio');
-    console.log('Rol:        fuente de verdad de scans/results y cola IA');
+    console.log(`Listening:  http://${host}:${port}`);
+    console.log(`Data:       ${storage.root}`);
+    console.log('Security:   Bearer token required');
+    console.log('Role:       source of truth for scans/results and AI job queue');
   });
 }
 
