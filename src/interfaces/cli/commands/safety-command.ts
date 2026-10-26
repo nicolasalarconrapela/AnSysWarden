@@ -1,4 +1,4 @@
-import { OllamaClient } from '../../../ai/ollama-client';
+import { OllamaClient } from '../../../infrastructure/ollama/ollama-client';
 import type { TraceLogger } from '../../../observability/logger';
 import { runAiSafetySuite } from '../../../tests/ai-safety';
 import {
