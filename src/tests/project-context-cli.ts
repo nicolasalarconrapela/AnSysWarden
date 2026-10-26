@@ -4,11 +4,17 @@ import { join } from 'node:path';
 import { ProjectContextEngine } from '../ai/project-context';
 import { decideByEcosystem, detectEcosystems } from '../ai/ecosystem-detector';
 import { decideByRepomixPolicy } from '../ai/repomix-policy';
+import { getLanguage } from '../i18n';
 
 interface Check {
-  name: string;
+  nameEn: string;
+  nameEs: string;
   ok: boolean;
   detail: string;
+}
+
+function pick(en: string, es: string): string {
+  return getLanguage() === 'es' ? es : en;
 }
 
 async function main(): Promise<void> {
@@ -30,14 +36,16 @@ async function main(): Promise<void> {
     const ecosystems = await detectEcosystems(rust);
     const rustDetection = ecosystems.find((item) => item.ecosystem === 'rust');
     checks.push({
-      name: 'detects Rust through Cargo.toml/Cargo.lock',
+      nameEn: 'detects Rust through Cargo.toml/Cargo.lock',
+      nameEs: 'detecta Rust mediante Cargo.toml/Cargo.lock',
       ok: Boolean(rustDetection && rustDetection.confidence >= 0.8),
       detail: JSON.stringify(ecosystems),
     });
 
     const targetDecision = decideByEcosystem(join(rust, 'target'), true, ecosystems);
     checks.push({
-      name: 'target is recognized as build output from Rust context',
+      nameEn: 'target is recognized as build output from Rust context',
+      nameEs: 'target se reconoce como salida de build por el contexto Rust',
       ok: targetDecision?.kind === 'BUILD_OUTPUT',
       detail: JSON.stringify(targetDecision),
     });
@@ -45,49 +53,52 @@ async function main(): Promise<void> {
     const context = new ProjectContextEngine(root);
     const ignored = await context.decide(join(rust, 'scratch'), true);
     checks.push({
-      name: 'project .gitignore filters scratch',
+      nameEn: 'project .gitignore filters scratch',
+      nameEs: 'el .gitignore del proyecto filtra scratch',
       ok: ignored?.kind === 'GIT_IGNORED',
       detail: JSON.stringify(ignored),
     });
 
-    // Attribute patterns with /** apply to subtree contents.
     await writeFile(join(rust, 'generated', 'bindings.rs'), '// generated\n');
     await writeFile(join(rust, 'third_party', 'lib.rs'), '// vendor\n');
     const generated = await context.decide(join(rust, 'generated', 'bindings.rs'), false);
     checks.push({
-      name: '.gitattributes recognizes linguist-generated',
+      nameEn: '.gitattributes recognizes linguist-generated',
+      nameEs: '.gitattributes reconoce linguist-generated',
       ok: generated?.kind === 'GENERATED',
       detail: JSON.stringify(generated),
     });
 
     const vendored = await context.decide(join(rust, 'third_party', 'lib.rs'), false);
     checks.push({
-      name: '.gitattributes recognizes linguist-vendored',
+      nameEn: '.gitattributes recognizes linguist-vendored',
+      nameEs: '.gitattributes reconoce linguist-vendored',
       ok: vendored?.kind === 'VENDORED',
       detail: JSON.stringify(vendored),
     });
 
     const repomix = decideByRepomixPolicy(join(root, 'node-app', 'node_modules'), true);
     checks.push({
-      name: 'Repomix policy filters installed dependencies',
+      nameEn: 'Repomix policy filters installed dependencies',
+      nameEs: 'la política Repomix filtra dependencias instaladas',
       ok: repomix?.kind === 'NODE_DEPENDENCIES',
       detail: JSON.stringify(repomix),
     });
 
     let failed = 0;
     for (const check of checks) {
-      console.log(`${check.ok ? 'PASS' : 'FAIL'} ${check.name}`);
+      console.log(`${check.ok ? 'PASS' : 'FAIL'} ${pick(check.nameEn, check.nameEs)}`);
       if (!check.ok) {
         failed += 1;
-        console.log(`  actual: ${check.detail}`);
+        console.log(`  ${pick('actual', 'real')}: ${check.detail}`);
       }
     }
 
     if (failed > 0) {
-      console.error(`\nFAIL: ${failed} incorrect context check(s).`);
+      console.error(`\nFAIL: ${failed} ${pick('incorrect context check(s).', 'comprobación(es) de contexto incorrecta(s).')}`);
       process.exitCode = 1;
     } else {
-      console.log(`\nPASS: ${checks.length} context checks are correct.`);
+      console.log(`\nPASS: ${checks.length} ${pick('context checks are correct.', 'comprobaciones de contexto correctas.')}`);
     }
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -96,6 +107,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[AnSysWarden Context Test] ${message}`);
+  console.error(`[AnSysWarden ${pick('Context Test', 'Prueba de contexto')}] ${message}`);
   process.exitCode = 1;
 });

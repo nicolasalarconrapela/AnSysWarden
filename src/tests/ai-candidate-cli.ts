@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AiTreePruner } from '../ai/tree-pruner';
 import { SCAN_SCHEMA, type ScanDocument } from '../backend/types';
+import { getLanguage } from '../i18n';
+
+function pick(en: string, es: string): string {
+  return getLanguage() === 'es' ? es : en;
+}
 
 async function main(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'ansyswarden-candidates-'));
@@ -35,23 +40,23 @@ async function main(): Promise<void> {
     const unknownCandidate = result.candidates.find((item) => item.path === unknown);
 
     const checks = [
-      { name: 'unknown large top-level directory reaches Gemma', ok: paths.has(unknown) },
-      { name: 'Rust project root is not proposed wholesale to Gemma', ok: !paths.has(rust) },
-      { name: 'global scan root is never proposed to Gemma', ok: !paths.has(root) },
-      { name: 'candidate includes an explanatory reason', ok: Boolean(unknownCandidate?.reason && unknownCandidate.reason.length > 0) },
+      { en: 'unknown large top-level directory reaches Gemma', es: 'un directorio grande desconocido de primer nivel llega a Gemma', ok: paths.has(unknown) },
+      { en: 'Rust project root is not proposed wholesale to Gemma', es: 'la raíz de un proyecto Rust no se propone completa a Gemma', ok: !paths.has(rust) },
+      { en: 'global scan root is never proposed to Gemma', es: 'la raíz global del escaneo nunca se propone a Gemma', ok: !paths.has(root) },
+      { en: 'candidate includes an explanatory reason', es: 'el candidato incluye un motivo explicativo', ok: Boolean(unknownCandidate?.reason && unknownCandidate.reason.length > 0) },
     ];
 
     let failed = 0;
     for (const check of checks) {
-      console.log(`${check.ok ? 'PASS' : 'FAIL'} ${check.name}`);
+      console.log(`${check.ok ? 'PASS' : 'FAIL'} ${pick(check.en, check.es)}`);
       if (!check.ok) failed += 1;
     }
 
     if (failed > 0) {
-      console.error(`\nFAIL: ${failed} incorrect candidate check(s).`);
+      console.error(`\nFAIL: ${failed} ${pick('incorrect candidate check(s).', 'comprobación(es) de candidatos incorrecta(s).')}`);
       process.exitCode = 1;
     } else {
-      console.log(`\nPASS: ${checks.length} candidate checks are correct.`);
+      console.log(`\nPASS: ${checks.length} ${pick('candidate checks are correct.', 'comprobaciones de candidatos correctas.')}`);
     }
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -60,6 +65,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[AnSysWarden Candidate Test] ${message}`);
+  console.error(`[AnSysWarden ${pick('Candidate Test', 'Prueba de candidatos')}] ${message}`);
   process.exitCode = 1;
 });
