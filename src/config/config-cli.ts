@@ -3,11 +3,23 @@ import {
   normalizeConfigLanguage,
   readAppConfig,
   writeConfiguredLanguage,
+  type ConfigLanguage,
 } from './app-config';
 import { setLanguage } from '../i18n';
 
+function currentLanguage(): ConfigLanguage {
+  return normalizeConfigLanguage(process.env.ANSYSWARDEN_LANG)
+    ?? readAppConfig().language
+    ?? 'en';
+}
+
+function pick(en: string, es: string, language = currentLanguage()): string {
+  return language === 'es' ? es : en;
+}
+
 function usage(): never {
-  console.log('Usage:');
+  const language = currentLanguage();
+  console.log(pick('Usage:', 'Uso:', language));
   console.log('  ./ansys config show');
   console.log('  ./ansys config path');
   console.log('  ./ansys config language <en|es>');
@@ -24,10 +36,13 @@ async function main(): Promise<void> {
 
   if (command === 'show') {
     const config = readAppConfig();
-    console.log('AnSysWarden · Configuration');
+    const language = currentLanguage();
+    setLanguage(language);
+
+    console.log(pick('AnSysWarden · Configuration', 'AnSysWarden · Configuración', language));
     console.log('────────────────────────────────────────');
-    console.log(`File:     ${getConfigPath()}`);
-    console.log(`Language: ${config.language ?? 'en (default)'}`);
+    console.log(`${pick('File', 'Archivo', language)}:     ${getConfigPath()}`);
+    console.log(`${pick('Language', 'Idioma', language)}: ${config.language ?? pick('en (default)', 'en (predeterminado)', language)}`);
     console.log(`Schema:   ${config.schema}`);
     return;
   }
@@ -35,7 +50,12 @@ async function main(): Promise<void> {
   if (command === 'language') {
     const language = normalizeConfigLanguage(value);
     if (!language) {
-      throw new Error(`Unsupported language: ${String(value)}. Use en or es.`);
+      throw new Error(
+        pick(
+          `Unsupported language: ${String(value)}. Use en or es.`,
+          `Idioma no compatible: ${String(value)}. Usa en o es.`,
+        ),
+      );
     }
 
     writeConfiguredLanguage(language);
