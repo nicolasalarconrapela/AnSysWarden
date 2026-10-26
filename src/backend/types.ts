@@ -97,7 +97,7 @@ export function isAiJobResultDocument(value: unknown): value is AiJobResultDocum
   if (typeof doc.createdAt !== 'string' || Number.isNaN(Date.parse(doc.createdAt))) return false;
   if (!isClassificationResult(doc.result)) return false;
 
-  // El worker móvil nunca tiene autoridad para aprobar borrado.
+  // The mobile worker never has authority to approve deletion.
   return doc.result.classification !== 'SAFE_CACHE'
     && (doc.result.source === 'ai' || doc.result.source === 'fallback');
 }
