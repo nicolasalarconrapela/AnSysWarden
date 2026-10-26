@@ -142,7 +142,7 @@ function humanInterpretation(mode: 'system' | 'model', actual: string, source?: 
   if (actual === 'SKIPPED') {
     return 'Case skipped by the circuit breaker to avoid chained inference after degradation or timeout.';
   }
-  const blocked = source === 'fallback' && reason?.includes('Gemma propuso SAFE_CACHE');
+  const blocked = source === 'fallback' && reason?.includes('SAFE_CACHE');
   if (mode === 'model' && actual === 'SAFE_CACHE') {
     return 'Gemma was too permissive. This response must NOT be used directly for deletion.';
   }
@@ -219,7 +219,7 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     const mode = item.test.mode === 'model' ? 'GEMMA' : 'SYSTEM';
     const modeColor = item.test.mode === 'model' ? ANSI.cyan : ANSI.magenta;
     const expected = item.test.allowed.join(' | ');
-    const blocked = item.source === 'fallback' && item.reason?.includes('Gemma propuso SAFE_CACHE');
+    const blocked = item.source === 'fallback' && item.reason?.includes('SAFE_CACHE');
     const confidence = item.source === 'fallback'
       ? 'N/A — safety decision'
       : item.confidence !== undefined
