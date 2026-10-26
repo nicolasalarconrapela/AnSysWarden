@@ -6,6 +6,7 @@ STATE_DIR="$ROOT_DIR/.ansyswarden"
 LOG_DIR="$STATE_DIR/logs"
 OLLAMA_PID_FILE="$STATE_DIR/ollama.pid"
 OLLAMA_LOG_FILE="$LOG_DIR/ollama.log"
+CONFIG_FILE="${ANSYSWARDEN_CONFIG_FILE:-${HOME:-$ROOT_DIR}/.ansyswarden/config.json}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
 MODEL="${ANSYSWARDEN_MODEL:-gemma4:e2b}"
 AI_NUM_CTX="${ANSYSWARDEN_AI_NUM_CTX:-1024}"
@@ -23,6 +24,35 @@ normalize_language() {
     es|es-*|es_*) printf 'es' ;;
     *) return 1 ;;
   esac
+}
+
+load_language_from_config() {
+  local lang
+
+  if [[ -n "${ANSYSWARDEN_LANG:-}" ]]; then
+    if lang="$(normalize_language "$ANSYSWARDEN_LANG")"; then
+      export ANSYSWARDEN_LANG="$lang"
+      return
+    fi
+    warn "Ignoring unsupported ANSYSWARDEN_LANG='$ANSYSWARDEN_LANG'."
+    unset ANSYSWARDEN_LANG
+  fi
+
+  [[ -f "$CONFIG_FILE" ]] || return
+  command -v node >/dev/null 2>&1 || return
+
+  lang="$(node -e '
+    const fs = require("fs");
+    try {
+      const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const lang = typeof cfg.language === "string" ? cfg.language.toLowerCase() : "";
+      if (lang === "en" || lang === "es") process.stdout.write(lang);
+    } catch {}
+  ' "$CONFIG_FILE" 2>/dev/null || true)"
+
+  if [[ "$lang" == "en" || "$lang" == "es" ]]; then
+    export ANSYSWARDEN_LANG="$lang"
+  fi
 }
 
 apply_global_options() {
@@ -199,6 +229,8 @@ usage() {
 AnSysWarden CLI
 
 Uso:
+  ./ansys config show|path
+  ./ansys config language <en|es>
   ./ansys [--lang en|es] ai start|stop|status|test|models
   ./ansys [--lang en|es] ai pull <modelo>
   ./ansys [--lang en|es] ai pull-mobile-candidate
@@ -219,13 +251,16 @@ Uso:
   ./ansys [--lang en|es] review export <ruta>
   ./ansys [--lang en|es] logs [--raw]
 
-También puedes fijar ANSYSWARDEN_LANG=es o ANSYSWARDEN_LANG=en.
+Idioma persistente: ./ansys config language es
+Override temporal: ./ansys --lang en <comando>
 EOF
   else
     cat <<'EOF'
 AnSysWarden CLI
 
 Usage:
+  ./ansys config show|path
+  ./ansys config language <en|es>
   ./ansys [--lang en|es] ai start|stop|status|test|models
   ./ansys [--lang en|es] ai pull <model>
   ./ansys [--lang en|es] ai pull-mobile-candidate
@@ -246,7 +281,8 @@ Usage:
   ./ansys [--lang en|es] review export <path>
   ./ansys [--lang en|es] logs [--raw]
 
-You can also set ANSYSWARDEN_LANG=es or ANSYSWARDEN_LANG=en.
+Persistent language: ./ansys config language en
+Temporary override: ./ansys --lang es <command>
 EOF
   fi
 }
@@ -448,6 +484,7 @@ show_logs() {
 main() {
   local command="${1:-}"
   case "$command" in
+    config) shift; run_ts "$ROOT_DIR/src/config/config-cli.ts" "$@" ;;
     ai)
       case "${2:-}" in
         start) ai_start ;;
@@ -500,5 +537,6 @@ main() {
 }
 
 GLOBAL_ARGS=()
+load_language_from_config
 apply_global_options "$@"
 main "${GLOBAL_ARGS[@]}"
