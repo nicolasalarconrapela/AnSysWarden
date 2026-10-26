@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { BackendStorage } from './storage';
+import { BackendStorage } from '../infrastructure/persistence/backend-storage';
 import { getLanguage } from '../i18n';
 import {
   isAiJobDocument,
@@ -8,7 +8,7 @@ import {
   isSafeId,
   isScanDocument,
   isScanResultDocument,
-} from './types';
+} from '../core/contracts/backend-protocol';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
