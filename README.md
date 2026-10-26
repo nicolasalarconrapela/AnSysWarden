@@ -2,6 +2,24 @@
 
 AnSysWarden is a local, conservative classifier for identifying potentially reclaimable development caches and artifacts without allowing AI to delete files.
 
+## Languages / Idiomas
+
+The CLI supports English and Spanish user-facing output without changing machine-readable contracts.
+
+```bash
+# Persistent language
+./ansys config language es
+./ansys config language en
+
+# Temporary one-command override
+./ansys --lang es doctor
+./ansys --lang en test safety
+```
+
+PC and mobile may use different display languages while keeping the same API schemas, classifications and endpoints. Values such as `SAFE_CACHE`, `REVIEW_REQUIRED`, `USER_DATA`, schema identifiers, JSON fields and API routes are never translated.
+
+See [`docs/i18n.md`](docs/i18n.md) for language priority, PC/mobile examples and validation commands.
+
 ## Safety principle
 
 Classification follows this order:
@@ -217,79 +235,3 @@ Inference test:
 ```
 
 Primary mobile model:
-
-```bash
-./ansys ai models
-./ansys ai pull-mobile-candidate
-```
-
-Stop:
-
-```bash
-./ansys ai stop
-```
-
-## Diagnostics
-
-```bash
-./ansys doctor
-```
-
-## Classifying a path
-
-```bash
-./ansys classify ~/.gradle/caches
-```
-
-## Context inspection
-
-```bash
-./ansys inspect ~/.gradle/caches
-```
-
-## Scanning
-
-```bash
-./ansys scan ~ --min-mb 50
-```
-
-Scanning identifies large candidates for review; it does not delete anything.
-
-Optional environment variables:
-
-```bash
-ANSYSWARDEN_MODEL=gemma4:e2b
-OLLAMA_HOST_URL=http://127.0.0.1:11434
-ANSYSWARDEN_LOG_FILE=/custom/path/trace.jsonl
-ANSYSWARDEN_API_TOKEN=a-long-local-token
-ANSYSWARDEN_BACKEND_HOST=0.0.0.0
-ANSYSWARDEN_BACKEND_PORT=8787
-ANSYSWARDEN_BACKEND_DATA_DIR=/path/to/backend/data
-```
-
-## Traceability
-
-Structured traces are written to:
-
-```text
-.ansyswarden/logs/<run-id>.jsonl
-```
-
-## Validation
-
-Before considering the integration validated:
-
-```bash
-npm install
-npm run typecheck
-./ansys test rules
-./ansys test overlap
-./ansys test tree
-./ansys test context
-./ansys test candidates
-./ansys test safety
-./ansys ai models
-./ansys backend serve
-```
-
-Then verify from the second device that `/api/health`, the AI job queue, result submission, and the E2E path work correctly.
