@@ -2,7 +2,7 @@ import { OllamaClient } from '../infrastructure/ollama/ollama-client';
 import { classifyByRules } from '../core/classification/rules';
 import type { AiEvidencePayload, ClassificationResult } from '../core/classification/types';
 import { TraceLogger } from '../observability/logger';
-import { ArtifactProfiler, type ArtifactProfile } from '../profiler/artifact-profiler';
+import { ArtifactProfiler, type ArtifactProfile } from '../infrastructure/filesystem/artifact-profiler';
 
 export class PathClassifier {
   constructor(
