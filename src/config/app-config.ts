@@ -35,8 +35,10 @@ export function readAppConfig(): AppConfig {
 
     const object = parsed as Record<string, unknown>;
     const language = normalizeConfigLanguage(object.language);
+    const { language: _discardedLanguage, schema: _discardedSchema, ...rest } = object;
+
     return {
-      ...object,
+      ...rest,
       schema: APP_CONFIG_SCHEMA,
       ...(language ? { language } : {}),
     };
