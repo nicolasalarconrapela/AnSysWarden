@@ -48,22 +48,22 @@ export class ProjectContextEngine {
         const attrs = new Set(rule.attributes.map((item) => item.toLowerCase()));
 
         if (attrs.has('linguist-generated')) {
-          return { kind: 'GENERATED', reason: 'La ruta está marcada como linguist-generated en .gitattributes.' };
+          return { kind: 'GENERATED', reason: 'The path is marked as linguist-generated in .gitattributes.' };
         }
         if (attrs.has('linguist-vendored')) {
-          return { kind: 'VENDORED', reason: 'La ruta está marcada como linguist-vendored en .gitattributes.' };
+          return { kind: 'VENDORED', reason: 'The path is marked as linguist-vendored in .gitattributes.' };
         }
         if (attrs.has('linguist-documentation')) {
-          return { kind: 'DOCUMENTATION', reason: 'La ruta está marcada como linguist-documentation en .gitattributes.' };
+          return { kind: 'DOCUMENTATION', reason: 'The path is marked as linguist-documentation in .gitattributes.' };
         }
         if (attrs.has('-linguist-detectable') || attrs.has('linguist-detectable=false')) {
-          return { kind: 'OTHER', reason: 'La ruta está excluida de la detección Linguist mediante .gitattributes.' };
+          return { kind: 'OTHER', reason: 'The path is excluded from Linguist detection through .gitattributes.' };
         }
       }
     }
 
     if (ignored) {
-      return { kind: 'GIT_IGNORED', reason: 'La ruta coincide con una regla activa de .gitignore del propio proyecto.' };
+      return { kind: 'GIT_IGNORED', reason: 'The path matches an active .gitignore rule from the project itself.' };
     }
 
     return null;
