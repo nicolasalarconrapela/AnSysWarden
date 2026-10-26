@@ -1,5 +1,5 @@
 import type { ClassificationResult } from '../classification/types';
-import type { ArtifactProfile } from '../../infrastructure/filesystem/artifact-profiler';
+import type { ArtifactProfile } from './artifact-profile';
 
 export const SCAN_SCHEMA = 'ansyswarden.scan.v1' as const;
 export const RESULT_SCHEMA = 'ansyswarden.result.v1' as const;
