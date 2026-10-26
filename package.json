@@ -6,7 +6,8 @@
   "scripts": {
     "doctor": "tsx src/cli.ts doctor",
     "classify": "tsx src/cli.ts classify",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:i18n": "tsx src/tests/i18n-core-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
