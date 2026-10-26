@@ -1,13 +1,13 @@
 import { hostname } from 'node:os';
 import { PathClassifier } from '../ai/classifier';
-import { OllamaClient } from '../ai/ollama-client';
+import { OllamaClient } from '../infrastructure/ollama/ollama-client';
 import { TraceLogger } from '../observability/logger';
 import { t } from '../i18n';
 import {
   AI_JOB_RESULT_SCHEMA,
   type AiJobDocument,
   type AiJobResultDocument,
-} from '../backend/types';
+} from '../core/contracts/backend-protocol';
 
 const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8787';
 const DEFAULT_POLL_MS = 2_000;
