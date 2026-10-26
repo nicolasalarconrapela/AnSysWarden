@@ -1,11 +1,16 @@
 import { installDust } from './dust-installer';
 import { DustScanner } from './dust-scanner';
+import { getLanguage } from '../i18n';
+
+function pick(en: string, es: string): string {
+  return getLanguage() === 'es' ? es : en;
+}
 
 function usage(): never {
-  console.log('Usage:');
+  console.log(pick('Usage:', 'Uso:'));
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
-  console.log('  ./ansys dust scan <path> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]');
+  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]`);
   process.exit(1);
 }
 
@@ -18,7 +23,9 @@ function readIntegerOption(args: string[], name: string): number | undefined {
   const raw = readOption(args, name);
   if (raw === undefined) return undefined;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid value for ${name}: ${raw}`);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(pick(`Invalid value for ${name}: ${raw}`, `Valor inválido para ${name}: ${raw}`));
+  }
   return value;
 }
 
@@ -37,7 +44,7 @@ function startScanProgress(): () => void {
   if (process.stdout.isTTY) {
     const render = (): void => {
       const elapsed = formatElapsed(Date.now() - startedAt);
-      const text = `${frames[frame % frames.length]} Scanning with Dust... ${elapsed} · process active`;
+      const text = `${frames[frame % frames.length]} ${pick('Scanning with Dust...', 'Escaneando con Dust...')} ${elapsed} · ${pick('process active', 'proceso activo')}`;
       frame += 1;
       process.stdout.write(`\r${text.padEnd(72, ' ')}`);
     };
@@ -49,21 +56,21 @@ function startScanProgress(): () => void {
     return () => {
       clearInterval(timer);
       const elapsed = formatElapsed(Date.now() - startedAt);
-      process.stdout.write(`\r✓ Dust finished; preparing a safe AI tree · ${elapsed}${' '.repeat(18)}\n`);
+      process.stdout.write(`\r✓ ${pick('Dust finished; preparing a safe AI tree', 'Dust terminó; preparando un árbol IA seguro')} · ${elapsed}${' '.repeat(18)}\n`);
     };
   }
 
-  console.log('Status:      Scanning with Dust...');
+  console.log(`${pick('Status', 'Estado')}:      ${pick('Scanning with Dust...', 'Escaneando con Dust...')}`);
   const timer = setInterval(() => {
     const elapsed = formatElapsed(Date.now() - startedAt);
-    console.log(`Progress:    ${elapsed} elapsed · Dust is still running`);
+    console.log(`${pick('Progress', 'Progreso')}:    ${elapsed} ${pick('elapsed · Dust is still running', 'transcurrido · Dust sigue ejecutándose')}`);
   }, 10_000);
   timer.unref();
 
   return () => {
     clearInterval(timer);
     const elapsed = formatElapsed(Date.now() - startedAt);
-    console.log(`Progress:    Dust finished after ${elapsed}; preparing AI tree`);
+    console.log(`${pick('Progress', 'Progreso')}:    ${pick(`Dust finished after ${elapsed}; preparing AI tree`, `Dust terminó tras ${elapsed}; preparando árbol IA`)}`);
   };
 }
 
@@ -72,21 +79,21 @@ async function run(): Promise<void> {
   const dust = new DustScanner();
 
   if (command === 'install') {
-    console.log('\nAnSysWarden · Dust Installation');
+    console.log(`\nAnSysWarden · ${pick('Dust Installation', 'Instalación de Dust')}`);
     console.log('────────────────────────────────────────');
-    console.log('Source:     official bootandy/dust release');
-    console.log('Target:     local installation managed by AnSysWarden');
-    console.log('Security:   mandatory SHA-256 verification');
+    console.log(`${pick('Source', 'Fuente')}:     ${pick('official bootandy/dust release', 'release oficial de bootandy/dust')}`);
+    console.log(`${pick('Target', 'Destino')}:     ${pick('local installation managed by AnSysWarden', 'instalación local gestionada por AnSysWarden')}`);
+    console.log(`${pick('Security', 'Seguridad')}:   ${pick('mandatory SHA-256 verification', 'verificación SHA-256 obligatoria')}`);
 
     const result = await installDust();
-    console.log(`Version:      ${result.version}`);
-    console.log(`Architecture: ${result.architecture}`);
-    console.log(`Binary:       ${result.binPath}`);
+    console.log(`${pick('Version', 'Versión')}:      ${result.version}`);
+    console.log(`${pick('Architecture', 'Arquitectura')}: ${result.architecture}`);
+    console.log(`${pick('Binary', 'Binario')}:       ${result.binPath}`);
     console.log(`SHA-256:      ${result.sha256}`);
 
     const version = await dust.version();
-    console.log(`Verification: ${version}`);
-    console.log('Status:       OK');
+    console.log(`${pick('Verification', 'Verificación')}: ${version}`);
+    console.log(`${pick('Status', 'Estado')}:       OK`);
     return;
   }
 
@@ -95,11 +102,11 @@ async function run(): Promise<void> {
     const version = await dust.version();
     console.log('\nAnSysWarden · Dust');
     console.log('────────────────────────────────────────');
-    console.log('Status:  OK');
-    console.log(`Version: ${version || '(no version)'}`);
-    console.log(`Binary:  ${bin.path}`);
-    console.log(`Source:  ${bin.source}`);
-    console.log('Mode:    external read-only engine');
+    console.log(`${pick('Status', 'Estado')}:  OK`);
+    console.log(`${pick('Version', 'Versión')}: ${version || pick('(no version)', '(sin versión)')}`);
+    console.log(`${pick('Binary', 'Binario')}:  ${bin.path}`);
+    console.log(`${pick('Source', 'Fuente')}:  ${bin.source}`);
+    console.log(`${pick('Mode', 'Modo')}:    ${pick('external read-only engine', 'motor externo de solo lectura')}`);
     return;
   }
 
@@ -112,13 +119,13 @@ async function run(): Promise<void> {
     const aiTreeMaxEntries = readIntegerOption(args, '--ai-max-entries');
     const minSize = readOption(args, '--min-size');
 
-    console.log('\nAnSysWarden · Dust Scan');
+    console.log(`\nAnSysWarden · ${pick('Dust Scan', 'Escaneo Dust')}`);
     console.log('────────────────────────────────────────');
-    console.log(`Source:      ${inputPath}`);
-    console.log(`Depth:       ${depth === undefined ? 'default' : String(depth)}`);
-    console.log(`Min size:    ${minSize ?? 'default'}`);
-    console.log(`AI tree:     depth ${aiTreeDepth ?? 6} · max ${aiTreeMaxEntries ?? 2000} visible entries`);
-    console.log('Progress:    live elapsed time; Dust does not expose a reliable percentage');
+    console.log(`${pick('Source', 'Fuente')}:      ${inputPath}`);
+    console.log(`${pick('Depth', 'Profundidad')}:       ${depth === undefined ? pick('default', 'por defecto') : String(depth)}`);
+    console.log(`${pick('Min size', 'Tamaño mínimo')}:    ${minSize ?? pick('default', 'por defecto')}`);
+    console.log(`${pick('AI tree', 'Árbol IA')}:     ${pick('depth', 'profundidad')} ${aiTreeDepth ?? 6} · max ${aiTreeMaxEntries ?? 2000} ${pick('visible entries', 'entradas visibles')}`);
+    console.log(`${pick('Progress', 'Progreso')}:    ${pick('live elapsed time; Dust does not expose a reliable percentage', 'tiempo transcurrido en vivo; Dust no expone un porcentaje fiable')}`);
 
     const stopProgress = startScanProgress();
     let result: Awaited<ReturnType<DustScanner['scan']>>;
@@ -130,26 +137,26 @@ async function run(): Promise<void> {
 
     const ecosystems = result.aiInput.summary.ecosystems.length > 0
       ? result.aiInput.summary.ecosystems.join(', ')
-      : '(none detected)';
+      : pick('(none detected)', '(ninguno detectado)');
     const languages = result.aiInput.summary.languages.length > 0
       ? result.aiInput.summary.languages.join(', ')
-      : '(no data)';
+      : pick('(no data)', '(sin datos)');
 
     console.log('────────────────────────────────────────');
     console.log(`Scan ID:      ${result.scan.id}`);
-    console.log(`Entries:      ${result.scan.entries.length}`);
-    console.log(`Depth:        ${result.depth}`);
-    console.log(`Min size:     ${result.minSize}`);
-    console.log(`Saved:        ${result.filePath}`);
-    console.log(`AI tree:      ${result.aiInputPath}`);
-    console.log(`  visible:    ${result.aiInput.summary.visibleEntries}`);
-    console.log(`  omitted:    ${result.aiInput.summary.omittedEntries}`);
+    console.log(`${pick('Entries', 'Entradas')}:      ${result.scan.entries.length}`);
+    console.log(`${pick('Depth', 'Profundidad')}:        ${result.depth}`);
+    console.log(`${pick('Min size', 'Tamaño mínimo')}:     ${result.minSize}`);
+    console.log(`${pick('Saved', 'Guardado')}:        ${result.filePath}`);
+    console.log(`${pick('AI tree', 'Árbol IA')}:      ${result.aiInputPath}`);
+    console.log(`  ${pick('visible', 'visibles')}:    ${result.aiInput.summary.visibleEntries}`);
+    console.log(`  ${pick('omitted', 'omitidas')}:    ${result.aiInput.summary.omittedEntries}`);
     console.log(`  local:      ${result.aiInput.summary.resolvedLocally}`);
-    console.log(`  to Gemma:   ${result.aiInput.summary.aiCandidates}`);
-    console.log(`  ecosystems: ${ecosystems}`);
-    console.log(`  Enry:       ${result.aiInput.summary.enryAvailable ? 'active' : 'manifest fallback'}`);
-    console.log(`  languages:  ${languages}`);
-    console.log('Status:       full scan + project context + ai-input.v1 persisted on the PC backend');
+    console.log(`  ${pick('to Gemma', 'a Gemma')}:   ${result.aiInput.summary.aiCandidates}`);
+    console.log(`  ${pick('ecosystems', 'ecosistemas')}: ${ecosystems}`);
+    console.log(`  Enry:       ${result.aiInput.summary.enryAvailable ? pick('active', 'activo') : pick('manifest fallback', 'fallback por manifiestos')}`);
+    console.log(`  ${pick('languages', 'lenguajes')}:  ${languages}`);
+    console.log(`${pick('Status', 'Estado')}:       ${pick('full scan + project context + ai-input.v1 persisted on the PC backend', 'escaneo completo + contexto de proyecto + ai-input.v1 persistidos en el backend del PC')}`);
     return;
   }
 
