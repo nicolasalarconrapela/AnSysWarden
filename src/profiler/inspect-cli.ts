@@ -11,7 +11,7 @@ function formatDate(ms: number | null): string {
 async function main(): Promise<void> {
   const input = process.argv[2];
   if (!input) {
-    console.error('Uso: inspect-cli <ruta>');
+    console.error('Usage: inspect-cli <path>');
     process.exitCode = 1;
     return;
   }
@@ -22,34 +22,34 @@ async function main(): Promise<void> {
 
   console.log('\nAnSysWarden · Artifact Inspect');
   console.log('════════════════════════════════════════════════════');
-  console.log(`Nombre:       ${basename(profile.path) || profile.path}`);
-  console.log(`Ruta:         ${profile.path}`);
-  console.log(`Tamaño:       ${formatBytes(profile.sizeBytes)}`);
-  console.log(`Archivos:     ${profile.fileCount}`);
-  console.log(`Directorios:  ${profile.directoryCount}`);
-  console.log(`Omitidos:     ${profile.skippedEntries}`);
-  console.log(`Más antiguo:  ${formatDate(profile.oldestMtimeMs)}`);
-  console.log(`Más reciente: ${formatDate(profile.newestMtimeMs)}`);
+  console.log(`Name:        ${basename(profile.path) || profile.path}`);
+  console.log(`Path:        ${profile.path}`);
+  console.log(`Size:        ${formatBytes(profile.sizeBytes)}`);
+  console.log(`Files:       ${profile.fileCount}`);
+  console.log(`Directories: ${profile.directoryCount}`);
+  console.log(`Skipped:     ${profile.skippedEntries}`);
+  console.log(`Oldest:      ${formatDate(profile.oldestMtimeMs)}`);
+  console.log(`Newest:      ${formatDate(profile.newestMtimeMs)}`);
 
-  console.log('\nTIPOS DE ARCHIVO DOMINANTES');
+  console.log('\nDOMINANT FILE TYPES');
   console.log('────────────────────────────────────────────────────');
   if (profile.extensions.length === 0) {
-    console.log('(sin archivos detectados)');
+    console.log('(no files detected)');
   } else {
     for (const row of profile.extensions) {
       const pct = profile.sizeBytes > 0 ? Math.round((row.bytes / profile.sizeBytes) * 100) : 0;
-      console.log(`${row.extension.padEnd(18)} ${String(row.files).padStart(7)} archivos   ${formatBytes(row.bytes).padStart(10)}   ${String(pct).padStart(3)}%`);
+      console.log(`${row.extension.padEnd(18)} ${String(row.files).padStart(7)} files   ${formatBytes(row.bytes).padStart(10)}   ${String(pct).padStart(3)}%`);
     }
   }
 
-  console.log('\nEN HUMANO');
-  console.log('🧭 Esto describe qué hay realmente dentro de la carpeta.');
-  console.log('🤖 Todavía no estamos preguntando a Gemma si es caché o no.');
-  console.log('🛡️ No se ha borrado ni modificado ningún archivo.');
-  console.log(`\nTraza: ${logger.logFile}`);
+  console.log('\nIN PLAIN ENGLISH');
+  console.log('🧭 This describes what is actually inside the folder.');
+  console.log('🤖 Gemma has not been asked yet whether it is cache or not.');
+  console.log('🛡️ No file has been deleted or modified.');
+  console.log(`\nTrace: ${logger.logFile}`);
 }
 
 main().catch((error: unknown) => {
-  console.error('[AnSysWarden] Error al inspeccionar:', error);
+  console.error('[AnSysWarden] Inspection failed:', error);
   process.exitCode = 1;
 });
