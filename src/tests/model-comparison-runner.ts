@@ -1,5 +1,6 @@
 import { OllamaClient } from '../ai/ollama-client';
 import type { AiEvidencePayload } from '../ai/types';
+import { getLanguage } from '../i18n';
 import { TraceLogger } from '../observability/logger';
 import { MODEL_COMPARISON_CORE, type CoreExpectation } from './model-comparison-dataset';
 
@@ -18,11 +19,17 @@ interface ModelScore {
 
 type Quality = 'exact' | 'conservative' | 'dangerous';
 
+function pick(en: string, es: string): string {
+  return getLanguage() === 'es' ? es : en;
+}
+
 function readNumberArg(name: string, fallback: number): number {
   const index = process.argv.indexOf(name);
   if (index === -1) return fallback;
   const parsed = Number.parseInt(process.argv[index + 1] ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`Invalid value for ${name}`);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(pick(`Invalid value for ${name}`, `Valor inválido para ${name}`));
+  }
   return parsed;
 }
 
@@ -31,7 +38,9 @@ function readModelsArg(): string[] | null {
   if (index === -1) return null;
   const value = process.argv[index + 1] ?? '';
   const models = value.split(',').map((item) => item.trim()).filter(Boolean);
-  if (models.length === 0) throw new Error('Use --models model1,model2');
+  if (models.length === 0) {
+    throw new Error(pick('Use --models model1,model2', 'Usa --models modelo1,modelo2'));
+  }
   return models;
 }
 
@@ -74,7 +83,7 @@ async function evaluateModel(
   const latencies: number[] = [];
 
   console.log('\n════════════════════════════════════════════════════');
-  console.log(`MODEL: ${model}`);
+  console.log(`${pick('MODEL', 'MODELO')}: ${model}`);
   console.log('════════════════════════════════════════════════════');
 
   const warmupCase = MODEL_COMPARISON_CORE[0];
@@ -82,14 +91,20 @@ async function evaluateModel(
   try {
     await client.analyzePath(warmupCase.path, warmupTimeoutMs, warmupCase.profile);
     coldStartMs = Math.round(performance.now() - warmupStartedAt);
-    console.log(`✓ Warm-up succeeded: ${coldStartMs} ms`);
-    console.log('  From this point on, latency measures the already-loaded model.');
+    console.log(`✓ ${pick('Warm-up succeeded', 'Calentamiento correcto')}: ${coldStartMs} ms`);
+    console.log(pick(
+      '  From this point on, latency measures the already-loaded model.',
+      '  A partir de aquí, la latencia mide el modelo ya cargado.',
+    ));
   } catch (error) {
     coldStartMs = Math.round(performance.now() - warmupStartedAt);
     errors = 1;
     skipped = MODEL_COMPARISON_CORE.length;
-    console.log(`✗ Warm-up failed after ${coldStartMs} ms: ${error instanceof Error ? error.message : String(error)}`);
-    console.log(`! Skipping all ${skipped} CORE cases to avoid queueing requests behind a model that failed to load.`);
+    console.log(`✗ ${pick('Warm-up failed after', 'El calentamiento falló tras')} ${coldStartMs} ms: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(`! ${pick(
+      `Skipping all ${skipped} CORE cases to avoid queueing requests behind a model that failed to load.`,
+      `Se omiten los ${skipped} casos CORE para evitar encolar peticiones tras un modelo que no pudo cargar.`,
+    )}`);
     try { await client.unloadModel(); } catch { /* Warm-up already failed; unload failure does not count as a second quality error. */ }
     return { model, exact, conservative, dangerous, errors, skipped, coldStartMs, averageMs: null, p50Ms: null, p95Ms: null };
   }
@@ -120,8 +135,8 @@ async function evaluateModel(
 
       if (consecutiveTimeouts >= maxConsecutiveTimeouts) {
         skipped = MODEL_COMPARISON_CORE.length - index - 1;
-        console.log(`! Stopping ${model}: ${consecutiveTimeouts} consecutive timeouts.`);
-        console.log(`! Remaining cases skipped: ${skipped}`);
+        console.log(`! ${pick('Stopping', 'Deteniendo')} ${model}: ${consecutiveTimeouts} ${pick('consecutive timeouts', 'timeouts consecutivos')}.`);
+        console.log(`! ${pick('Remaining cases skipped', 'Casos restantes omitidos')}: ${skipped}`);
         break;
       }
     }
@@ -133,7 +148,18 @@ async function evaluateModel(
     ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length)
     : null;
 
-  return { model, exact, conservative, dangerous, errors, skipped, coldStartMs, averageMs, p50Ms: percentile(latencies, 0.5), p95Ms: percentile(latencies, 0.95) };
+  return {
+    model,
+    exact,
+    conservative,
+    dangerous,
+    errors,
+    skipped,
+    coldStartMs,
+    averageMs,
+    p50Ms: percentile(latencies, 0.5),
+    p95Ms: percentile(latencies, 0.95),
+  };
 }
 
 function rank(scores: ModelScore[]): ModelScore[] {
@@ -156,44 +182,62 @@ async function main(): Promise<void> {
   const status = await discovery.health();
   const installed = [...new Set(status.models)].sort();
 
-  if (installed.length === 0) throw new Error('No models are installed in Ollama.');
+  if (installed.length === 0) {
+    throw new Error(pick('No models are installed in Ollama.', 'No hay modelos instalados en Ollama.'));
+  }
 
   const selected = requestedModels ?? installed;
   const missing = selected.filter((model) => !installed.some((name) => name === model || name.startsWith(`${model}:`)));
-  if (missing.length > 0) throw new Error(`Models not installed: ${missing.join(', ')}`);
+  if (missing.length > 0) {
+    throw new Error(pick(`Models not installed: ${missing.join(', ')}`, `Modelos no instalados: ${missing.join(', ')}`));
+  }
 
-  console.log('\nAnSysWarden · Mobile Model Comparison');
+  console.log(`\n${pick('AnSysWarden · Mobile Model Comparison', 'AnSysWarden · Comparación de modelos móviles')}`);
   console.log('════════════════════════════════════════════════════');
-  console.log(`CORE cases:        ${MODEL_COMPARISON_CORE.length}`);
-  console.log(`Max warm-up:       ${warmupTimeoutMs} ms`);
-  console.log(`Timeout/case:      ${timeoutMs} ms`);
-  console.log(`Model cutoff:      ${maxConsecutiveTimeouts} consecutive timeouts`);
-  console.log(`Models:            ${selected.join(', ')}`);
-  console.log('Criterion: avoid dangerous analysis first; then compare quality and speed.');
-  console.log('Cold start is measured separately and does NOT affect loaded-model p50/p95 latency.');
-  console.log('No file is deleted or modified. Profiles are synthetic and controlled.');
+  console.log(`${pick('CORE cases', 'Casos CORE')}:        ${MODEL_COMPARISON_CORE.length}`);
+  console.log(`${pick('Max warm-up', 'Calentamiento máx.')}:       ${warmupTimeoutMs} ms`);
+  console.log(`${pick('Timeout/case', 'Timeout/caso')}:      ${timeoutMs} ms`);
+  console.log(`${pick('Model cutoff', 'Corte del modelo')}:      ${maxConsecutiveTimeouts} ${pick('consecutive timeouts', 'timeouts consecutivos')}`);
+  console.log(`${pick('Models', 'Modelos')}:            ${selected.join(', ')}`);
+  console.log(pick(
+    'Criterion: avoid dangerous analysis first; then compare quality and speed.',
+    'Criterio: evitar primero análisis peligrosos; después comparar calidad y velocidad.',
+  ));
+  console.log(pick(
+    'Cold start is measured separately and does NOT affect loaded-model p50/p95 latency.',
+    'El arranque en frío se mide aparte y NO afecta a la latencia p50/p95 del modelo ya cargado.',
+  ));
+  console.log(pick(
+    'No file is deleted or modified. Profiles are synthetic and controlled.',
+    'No se borra ni modifica ningún archivo. Los perfiles son sintéticos y controlados.',
+  ));
 
   const scores: ModelScore[] = [];
-  for (const model of selected) scores.push(await evaluateModel(model, timeoutMs, warmupTimeoutMs, maxConsecutiveTimeouts, logger));
+  for (const model of selected) {
+    scores.push(await evaluateModel(model, timeoutMs, warmupTimeoutMs, maxConsecutiveTimeouts, logger));
+  }
 
   const ordered = rank(scores);
   console.log('\n════════════════════════════════════════════════════');
-  console.log('FINAL RESULT');
+  console.log(pick('FINAL RESULT', 'RESULTADO FINAL'));
   console.log('════════════════════════════════════════════════════');
-  console.log('Model                  Exact  Conserv.  Danger  Error  Skip  Cold ms  p50 ms  p95 ms');
+  console.log(pick(
+    'Model                  Exact  Conserv.  Danger  Error  Skip  Cold ms  p50 ms  p95 ms',
+    'Modelo                 Exact  Conserv.  Peligro Error  Omit. Frío ms  p50 ms  p95 ms',
+  ));
   for (const score of ordered) {
     console.log(`${score.model.padEnd(22)} ${String(score.exact).padStart(5)}  ${String(score.conservative).padStart(8)}  ${String(score.dangerous).padStart(6)}  ${String(score.errors).padStart(5)}  ${String(score.skipped).padStart(4)}  ${String(score.coldStartMs ?? 'n/a').padStart(7)}  ${String(score.p50Ms ?? 'n/a').padStart(6)}  ${String(score.p95Ms ?? 'n/a').padStart(6)}`);
   }
 
   const winner = ordered[0];
-  console.log(`\n🥇 Best balance in this run: ${winner.model}`);
-  console.log(`   Exact: ${winner.exact}/${MODEL_COMPARISON_CORE.length}`);
-  console.log(`   Dangerous analyses: ${winner.dangerous}`);
-  console.log(`   Errors: ${winner.errors}`);
-  console.log(`   Skipped: ${winner.skipped}`);
-  console.log(`   Cold start: ${winner.coldStartMs ?? 'n/a'} ms`);
-  console.log(`   Loaded p50: ${winner.p50Ms ?? 'n/a'} ms`);
-  console.log(`JSONL trace: ${logger.logFile}`);
+  console.log(`\n🥇 ${pick('Best balance in this run', 'Mejor equilibrio en esta ejecución')}: ${winner.model}`);
+  console.log(`   ${pick('Exact', 'Exactas')}: ${winner.exact}/${MODEL_COMPARISON_CORE.length}`);
+  console.log(`   ${pick('Dangerous analyses', 'Análisis peligrosos')}: ${winner.dangerous}`);
+  console.log(`   ${pick('Errors', 'Errores')}: ${winner.errors}`);
+  console.log(`   ${pick('Skipped', 'Omitidos')}: ${winner.skipped}`);
+  console.log(`   ${pick('Cold start', 'Arranque en frío')}: ${winner.coldStartMs ?? 'n/a'} ms`);
+  console.log(`   ${pick('Loaded p50', 'p50 cargado')}: ${winner.p50Ms ?? 'n/a'} ms`);
+  console.log(`${pick('JSONL trace', 'Traza JSONL')}: ${logger.logFile}`);
 }
 
 main().catch((error) => {
