@@ -44,16 +44,16 @@ function isDescendantPath(parent: string, child: string): boolean {
 }
 
 /**
- * Selecciona únicamente candidatos SAFE_CACHE cuyos bytes se pueden sumar sin
- * solapamientos ni atravesar un descendiente conocido que requiera revisión o
- * esté protegido como datos de usuario.
+ * Selects only SAFE_CACHE candidates whose bytes can be summed without
+ * overlaps and without crossing a known descendant that requires review or
+ * is protected as user data.
  *
- * Política conservadora:
- * - SAFE padre + SAFE hijo: se cuenta el padre una sola vez.
- * - SAFE padre + REVIEW/USER_DATA descendiente: el padre NO se cuenta.
- * - REVIEW/USER_DATA padre + SAFE hijo: el hijo sí puede contarse.
- * - Si un padre SAFE queda bloqueado, otros descendientes SAFE independientes
- *   pueden seguir contando sus propios bytes.
+ * Conservative policy:
+ * - SAFE parent + SAFE child: count the parent once.
+ * - SAFE parent + REVIEW/USER_DATA descendant: do NOT count the parent.
+ * - REVIEW/USER_DATA parent + SAFE child: the child may still count.
+ * - If a SAFE parent is blocked, other independent SAFE descendants may still
+ *   contribute their own bytes.
  */
 export function selectRecoverableSafeCandidates(candidates: ScanCandidate[]): ScanCandidate[] {
   const safeCandidates = candidates
@@ -82,8 +82,8 @@ export function selectRecoverableSafeCandidates(candidates: ScanCandidate[]): Sc
 }
 
 /**
- * Compatibilidad con llamadas anteriores: devuelve solo los SAFE_CACHE que
- * pueden contarse de forma conservadora. No usar para ocultar candidatos de UI.
+ * Compatibility with earlier callers: returns only SAFE_CACHE candidates that
+ * can be counted conservatively. Do not use this to hide UI candidates.
  */
 export function removeOverlappingSafeCandidates(candidates: ScanCandidate[]): ScanCandidate[] {
   const recoverableSafePaths = new Set(
@@ -117,7 +117,7 @@ export class LocalScanner {
     this.skippedEntries = 0;
     this.measuredDirectories.length = 0;
 
-    await this.logger.info('scan.config', 'Configuración del escaneo', {
+    await this.logger.info('scan.config', 'Scan configuration', {
       root,
       min_bytes: minBytes,
       max_candidates: maxCandidates,
@@ -127,12 +127,12 @@ export class LocalScanner {
 
     const rootStat = await lstat(root);
     if (!rootStat.isDirectory()) {
-      throw new Error(`La ruta de escaneo no es un directorio: ${root}`);
+      throw new Error(`Scan path is not a directory: ${root}`);
     }
 
     const totalBytes = await this.logger.span(
       'scan.walk',
-      'Recorriendo sistema de archivos',
+      'Walking filesystem',
       () => this.measureDirectory(root, true),
       { root },
     );
@@ -142,7 +142,7 @@ export class LocalScanner {
       .sort((a, b) => b.sizeBytes - a.sizeBytes)
       .slice(0, maxCandidates);
 
-    await this.logger.info('scan.candidates', 'Candidatos detectados', {
+    await this.logger.info('scan.candidates', 'Candidates detected', {
       count: candidateDirs.length,
       min_bytes: minBytes,
       largest: candidateDirs.slice(0, 5),
@@ -156,7 +156,7 @@ export class LocalScanner {
         sizeBytes: candidate.sizeBytes,
       };
       classifiedCandidates.push(result);
-      await this.logger.info('scan.candidate.result', 'Candidato clasificado', {
+      await this.logger.info('scan.candidate.result', 'Candidate classified', {
         path: result.path,
         size_bytes: result.sizeBytes,
         classification: result.classification,
@@ -175,7 +175,7 @@ export class LocalScanner {
     const blockedOrOverlappedSafeCount = safeCandidateCount - recoverableCandidates.length;
 
     if (blockedOrOverlappedSafeCount > 0) {
-      await this.logger.info('scan.recoverable.filtered', 'SAFE_CACHE excluidos del total recuperable por solapamiento o descendientes no seguros', {
+      await this.logger.info('scan.recoverable.filtered', 'SAFE_CACHE entries excluded from recoverable total due to overlap or unsafe descendants', {
         safe_candidate_count: safeCandidateCount,
         recoverable_candidate_count: recoverableCandidates.length,
         excluded_safe_count: blockedOrOverlappedSafeCount,
@@ -193,7 +193,7 @@ export class LocalScanner {
       recoverableBytes,
     };
 
-    await this.logger.info('scan.complete', 'Escaneo completado', {
+    await this.logger.info('scan.complete', 'Scan completed', {
       root,
       scanned_files: summary.scannedFiles,
       scanned_directories: summary.scannedDirectories,
@@ -216,7 +216,7 @@ export class LocalScanner {
       directory = await opendir(directoryPath);
     } catch (error) {
       this.skippedEntries += 1;
-      await this.logger.warn('scan.directory.skipped', 'Directorio omitido por error de acceso', {
+      await this.logger.warn('scan.directory.skipped', 'Directory skipped due to access error', {
         path: directoryPath,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -229,7 +229,7 @@ export class LocalScanner {
       try {
         if (entry.isSymbolicLink()) {
           this.skippedEntries += 1;
-          await this.logger.debug('scan.symlink.skipped', 'Enlace simbólico omitido', { path: fullPath });
+          await this.logger.debug('scan.symlink.skipped', 'Symbolic link skipped', { path: fullPath });
           continue;
         }
 
@@ -248,7 +248,7 @@ export class LocalScanner {
         this.skippedEntries += 1;
       } catch (error) {
         this.skippedEntries += 1;
-        await this.logger.warn('scan.entry.skipped', 'Entrada omitida por error', {
+        await this.logger.warn('scan.entry.skipped', 'Entry skipped due to error', {
           path: fullPath,
           error: error instanceof Error ? error.message : String(error),
         });

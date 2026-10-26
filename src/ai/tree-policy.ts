@@ -9,15 +9,15 @@ export interface AiTreeDecision {
 }
 
 const DROP_DIRECTORIES: Array<{ pattern: RegExp; kind: AiTreeKind; reason: string }> = [
-  { pattern: /^node_modules$/i, kind: 'NODE_DEPENDENCIES', reason: 'Dependencias Node.js: se conserva el nodo de scan, pero no su árbol interno para la IA.' },
-  { pattern: /^(\.venv|venv|env)$/i, kind: 'PYTHON_ENV', reason: 'Entorno virtual Python: sus dependencias instaladas no aportan contexto estructural a la IA.' },
-  { pattern: /^(dist|out|target)$/i, kind: 'BUILD_OUTPUT', reason: 'Salida de compilación/generación: se omite del árbol IA sin autorizar su borrado.' },
-  { pattern: /^build$/i, kind: 'BUILD_OUTPUT', reason: 'Directorio de build: se omite del árbol IA sin asumir que sea seguro eliminarlo.' },
-  { pattern: /^\.git$/i, kind: 'VCS_INTERNAL', reason: 'Metadatos internos de Git: no aportan contexto del proyecto para la IA.' },
-  { pattern: /^(\.gradle|\.m2)$/i, kind: 'TOOL_CACHE', reason: 'Estado local de herramientas de build: se corta antes de expandirlo para la IA.' },
-  { pattern: /^(\.cache|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox)$/i, kind: 'TOOL_CACHE', reason: 'Caché local conocida: no se expande en el árbol IA.' },
-  { pattern: /^(coverage|\.coverage|htmlcov|\.nyc_output)$/i, kind: 'TEST_OUTPUT', reason: 'Salida de cobertura/pruebas: no aporta estructura fuente a la IA.' },
-  { pattern: /^(\.idea|\.vscode|\.aistudio)$/i, kind: 'IDE_INTERNAL', reason: 'Metadatos internos del IDE o asistente: se omiten del árbol IA.' },
+  { pattern: /^node_modules$/i, kind: 'NODE_DEPENDENCIES', reason: 'Node.js dependencies: keep the scan node, but hide its internal tree from AI.' },
+  { pattern: /^(\.venv|venv|env)$/i, kind: 'PYTHON_ENV', reason: 'Python virtual environment: installed dependencies do not add useful structural context for AI.' },
+  { pattern: /^(dist|out|target)$/i, kind: 'BUILD_OUTPUT', reason: 'Build/generated output: omit it from the AI tree without authorizing deletion.' },
+  { pattern: /^build$/i, kind: 'BUILD_OUTPUT', reason: 'Build directory: omit it from the AI tree without assuming it is safe to delete.' },
+  { pattern: /^\.git$/i, kind: 'VCS_INTERNAL', reason: 'Internal Git metadata: it does not add useful project context for AI.' },
+  { pattern: /^(\.gradle|\.m2)$/i, kind: 'TOOL_CACHE', reason: 'Local build-tool state: stop expansion before exposing it to AI.' },
+  { pattern: /^(\.cache|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox)$/i, kind: 'TOOL_CACHE', reason: 'Known local cache: do not expand it in the AI tree.' },
+  { pattern: /^(coverage|\.coverage|htmlcov|\.nyc_output)$/i, kind: 'TEST_OUTPUT', reason: 'Coverage/test output: it does not add source-structure context for AI.' },
+  { pattern: /^(\.idea|\.vscode|\.aistudio)$/i, kind: 'IDE_INTERNAL', reason: 'Internal IDE or assistant metadata: omit it from the AI tree.' },
 ];
 
 const SAFE_ENV_TEMPLATES = [
@@ -45,7 +45,7 @@ export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTre
     return {
       policy: 'KEEP',
       kind: 'SOURCE',
-      reason: 'Plantilla de variables de entorno: se conserva solo su nombre como contexto estructural.',
+      reason: 'Environment-variable template: keep only its name as structural context.',
     };
   }
 
@@ -53,7 +53,7 @@ export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTre
     return {
       policy: 'DROP',
       kind: 'SENSITIVE_FILE',
-      reason: 'Archivo potencialmente sensible: el nombre puede registrarse como omitido, pero nunca se envía en el árbol para IA.',
+      reason: 'Potentially sensitive file: its name may be recorded as omitted, but it is never sent in the AI tree.',
     };
   }
 
@@ -61,7 +61,7 @@ export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTre
     return {
       policy: 'DROP',
       kind: 'TOOL_BUNDLE',
-      reason: 'Bundle local de Universal Ctags: documentación y binarios empaquetados no aportan contexto del proyecto para la IA.',
+      reason: 'Local Universal Ctags bundle: packaged docs and binaries do not add useful project context for AI.',
     };
   }
 
@@ -78,13 +78,13 @@ export function decideAiTreeEntry(fullPath: string, isDirectory: boolean): AiTre
     return {
       policy: 'DROP',
       kind: repomix.kind,
-      reason: `${repomix.reason} Esta decisión solo afecta a visibilidad IA, no autoriza borrado.`,
+      reason: `${repomix.reason} This decision only affects AI visibility; it never authorizes deletion.`,
     };
   }
 
   return {
     policy: 'KEEP',
     kind: 'SOURCE',
-    reason: 'Entrada estructural conservada para aportar contexto al análisis.',
+    reason: 'Structural entry kept to provide context for analysis.',
   };
 }

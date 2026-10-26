@@ -35,22 +35,10 @@ async function main(): Promise<void> {
     const unknownCandidate = result.candidates.find((item) => item.path === unknown);
 
     const checks = [
-      {
-        name: 'directorio grande desconocido de primer nivel llega a Gemma',
-        ok: paths.has(unknown),
-      },
-      {
-        name: 'raíz de proyecto Rust no se propone completa a Gemma',
-        ok: !paths.has(rust),
-      },
-      {
-        name: 'raíz global del scan nunca se propone a Gemma',
-        ok: !paths.has(root),
-      },
-      {
-        name: 'candidato incluye razón explicativa',
-        ok: Boolean(unknownCandidate?.reason && unknownCandidate.reason.length > 0),
-      },
+      { name: 'unknown large top-level directory reaches Gemma', ok: paths.has(unknown) },
+      { name: 'Rust project root is not proposed wholesale to Gemma', ok: !paths.has(rust) },
+      { name: 'global scan root is never proposed to Gemma', ok: !paths.has(root) },
+      { name: 'candidate includes an explanatory reason', ok: Boolean(unknownCandidate?.reason && unknownCandidate.reason.length > 0) },
     ];
 
     let failed = 0;
@@ -60,10 +48,10 @@ async function main(): Promise<void> {
     }
 
     if (failed > 0) {
-      console.error(`\nFAIL: ${failed} comprobación(es) de candidatos incorrectas.`);
+      console.error(`\nFAIL: ${failed} incorrect candidate check(s).`);
       process.exitCode = 1;
     } else {
-      console.log(`\nPASS: ${checks.length} comprobaciones de candidatos correctas.`);
+      console.log(`\nPASS: ${checks.length} candidate checks are correct.`);
     }
   } finally {
     await rm(root, { recursive: true, force: true });

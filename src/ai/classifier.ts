@@ -16,11 +16,11 @@ export class PathClassifier {
   }
 
   async classifyLocalPath(inputPath: string): Promise<ClassificationResult> {
-    await this.logger.info('classifier.start', 'Clasificando ruta local', { input_path: inputPath });
+    await this.logger.info('classifier.start', 'Classifying local path', { input_path: inputPath });
 
     const ruleResult = classifyByRules(inputPath);
     if (ruleResult) {
-      await this.logger.info('classifier.rule_match', 'Clasificación resuelta por regla local', {
+      await this.logger.info('classifier.rule_match', 'Classification resolved by local rule', {
         input_path: inputPath,
         classification: ruleResult.classification,
         confidence: ruleResult.confidence,
@@ -29,14 +29,14 @@ export class PathClassifier {
       return ruleResult;
     }
 
-    await this.logger.info('classifier.profile_required', 'Ruta ambigua: se requiere inspección local antes de usar Gemma', {
+    await this.logger.info('classifier.profile_required', 'Ambiguous path: local inspection is required before asking Gemma', {
       input_path: inputPath,
     });
 
     let profile: ArtifactProfile;
     try {
       profile = await this.profiler.profile(inputPath);
-      await this.logger.info('classifier.profile_ready', 'Perfil objetivo disponible para la IA', {
+      await this.logger.info('classifier.profile_ready', 'Artifact profile ready for AI analysis', {
         input_path: inputPath,
         size_bytes: profile.sizeBytes,
         file_count: profile.fileCount,
@@ -52,11 +52,11 @@ export class PathClassifier {
         path: inputPath,
         classification: 'REVIEW_REQUIRED',
         confidence: 0,
-        reason: `No se pudo inspeccionar el contenido real de la ruta. Por seguridad no se consulta a Gemma y se requiere revisión. Detalle: ${message}`,
+        reason: `The real contents of the path could not be inspected. For safety, Gemma is not queried and human review is required. Detail: ${message}`,
         source: 'fallback',
       };
 
-      await this.logger.warn('classifier.profile_required_but_unavailable', 'Sin inspección real no se consulta a Gemma', {
+      await this.logger.warn('classifier.profile_required_but_unavailable', 'Gemma is not queried without a real artifact profile', {
         input_path: inputPath,
         error: message,
         effective_classification: fallback.classification,
@@ -75,7 +75,7 @@ export class PathClassifier {
     this.validateProfile(profile);
     const inputPath = profile.path;
 
-    await this.logger.info('classifier.profile_received', 'Clasificando perfil de artefacto recibido', {
+    await this.logger.info('classifier.profile_received', 'Classifying received artifact profile', {
       input_path: inputPath,
       size_bytes: profile.sizeBytes,
       file_count: profile.fileCount,
@@ -88,7 +88,7 @@ export class PathClassifier {
     if (!options.rulesAlreadyChecked) {
       const ruleResult = classifyByRules(inputPath);
       if (ruleResult) {
-        await this.logger.info('classifier.rule_match', 'Clasificación resuelta por regla local sobre perfil recibido', {
+        await this.logger.info('classifier.rule_match', 'Classification resolved by local rule on received profile', {
           input_path: inputPath,
           classification: ruleResult.classification,
           confidence: ruleResult.confidence,
@@ -98,7 +98,7 @@ export class PathClassifier {
       }
     }
 
-    await this.logger.info('classifier.ai_required', 'Perfil disponible: Gemma puede analizar la evidencia', {
+    await this.logger.info('classifier.ai_required', 'Artifact profile available: Gemma may analyze the evidence', {
       input_path: inputPath,
       model: this.ollama.getModel(),
       profile_complete: profile.profileComplete ?? null,
@@ -114,7 +114,7 @@ export class PathClassifier {
 
   private validateProfile(profile: ArtifactProfile): void {
     if (typeof profile.path !== 'string' || profile.path.trim().length === 0) {
-      throw new Error('Perfil inválido: path vacío.');
+      throw new Error('Invalid profile: path is empty.');
     }
 
     const fields = [
@@ -126,12 +126,12 @@ export class PathClassifier {
 
     for (const [name, value] of fields) {
       if (!Number.isFinite(value) || value < 0) {
-        throw new Error(`Perfil inválido: ${name} debe ser un número no negativo.`);
+        throw new Error(`Invalid profile: ${name} must be a non-negative number.`);
       }
     }
 
     if (!Array.isArray(profile.extensions)) {
-      throw new Error('Perfil inválido: extensions debe ser una lista.');
+      throw new Error('Invalid profile: extensions must be an array.');
     }
   }
 
@@ -149,11 +149,11 @@ export class PathClassifier {
         path: inputPath,
         classification: 'USER_DATA',
         confidence: ai.confidence,
-        reason: `Gemma detectó señales de datos persistentes o potencialmente únicos. Evidencia: ${evidenceText}. ${ai.reason}`,
+        reason: `Gemma detected signals of persistent or potentially unique data. Evidence: ${evidenceText}. ${ai.reason}`,
         source: 'ai',
       };
 
-      await this.logger.info('classifier.ai_protect', 'Gemma aporta evidencia suficiente para proteger como USER_DATA', {
+      await this.logger.info('classifier.ai_protect', 'Gemma provided enough evidence to protect the path as USER_DATA', {
         input_path: inputPath,
         model: this.ollama.getModel(),
         regenerability: ai.regenerability,
@@ -169,11 +169,11 @@ export class PathClassifier {
       path: inputPath,
       classification: 'REVIEW_REQUIRED',
       confidence: ai.confidence,
-      reason: `Gemma aporta evidencia, pero no puede autorizar SAFE_CACHE. Regenerabilidad=${ai.regenerability}, riesgo_datos=${ai.userDataRisk}. Evidencia: ${evidenceText}. ${ai.reason}`,
+      reason: `Gemma provided evidence, but it cannot authorize SAFE_CACHE. Regenerability=${ai.regenerability}, user_data_risk=${ai.userDataRisk}. Evidence: ${evidenceText}. ${ai.reason}`,
       source: 'ai',
     };
 
-    await this.logger.info('classifier.ai_review', 'La evidencia de Gemma se mantiene en REVIEW_REQUIRED', {
+    await this.logger.info('classifier.ai_review', 'Gemma evidence remains REVIEW_REQUIRED', {
       input_path: inputPath,
       model: this.ollama.getModel(),
       regenerability: ai.regenerability,
@@ -192,11 +192,11 @@ export class PathClassifier {
       path: inputPath,
       classification: 'REVIEW_REQUIRED',
       confidence: 0,
-      reason: `No se pudo validar el análisis de la IA: ${message}`,
+      reason: `AI analysis could not be validated: ${message}`,
       source: 'fallback',
     };
 
-    await this.logger.warn('classifier.fallback', 'Se aplica fallback seguro REVIEW_REQUIRED', {
+    await this.logger.warn('classifier.fallback', 'Applying safe REVIEW_REQUIRED fallback', {
       input_path: inputPath,
       error: message,
     });

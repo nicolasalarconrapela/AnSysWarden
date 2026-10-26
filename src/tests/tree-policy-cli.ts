@@ -9,69 +9,15 @@ interface Case {
 }
 
 const cases: Case[] = [
-  {
-    name: 'node_modules se omite',
-    path: 'C:/dev/app/node_modules',
-    isDirectory: true,
-    expectedPolicy: 'DROP',
-    expectedKind: 'NODE_DEPENDENCIES',
-  },
-  {
-    name: 'dist se omite sin declararlo caché',
-    path: 'C:/dev/app/dist',
-    isDirectory: true,
-    expectedPolicy: 'DROP',
-    expectedKind: 'BUILD_OUTPUT',
-  },
-  {
-    name: 'bundle ctags se omite solo en bin/ctags',
-    path: 'C:/dev/an_graph_ia/bin/ctags',
-    isDirectory: true,
-    expectedPolicy: 'DROP',
-    expectedKind: 'TOOL_BUNDLE',
-  },
-  {
-    name: 'carpeta ctags fuera de bin se conserva',
-    path: 'C:/dev/project/src/ctags',
-    isDirectory: true,
-    expectedPolicy: 'KEEP',
-    expectedKind: 'SOURCE',
-  },
-  {
-    name: '.aistudio se omite',
-    path: 'C:/dev/app/assets/.aistudio',
-    isDirectory: true,
-    expectedPolicy: 'DROP',
-    expectedKind: 'IDE_INTERNAL',
-  },
-  {
-    name: '.env real se bloquea',
-    path: 'C:/dev/app/.env',
-    isDirectory: false,
-    expectedPolicy: 'DROP',
-    expectedKind: 'SENSITIVE_FILE',
-  },
-  {
-    name: '.env.local se bloquea',
-    path: 'C:/dev/app/.env.local',
-    isDirectory: false,
-    expectedPolicy: 'DROP',
-    expectedKind: 'SENSITIVE_FILE',
-  },
-  {
-    name: '.env.example solo aporta el nombre',
-    path: 'C:/dev/app/.env.example',
-    isDirectory: false,
-    expectedPolicy: 'KEEP',
-    expectedKind: 'SOURCE',
-  },
-  {
-    name: '.env.sample solo aporta el nombre',
-    path: 'C:/dev/app/.env.sample',
-    isDirectory: false,
-    expectedPolicy: 'KEEP',
-    expectedKind: 'SOURCE',
-  },
+  { name: 'node_modules is omitted', path: 'C:/dev/app/node_modules', isDirectory: true, expectedPolicy: 'DROP', expectedKind: 'NODE_DEPENDENCIES' },
+  { name: 'dist is omitted without declaring it a cache', path: 'C:/dev/app/dist', isDirectory: true, expectedPolicy: 'DROP', expectedKind: 'BUILD_OUTPUT' },
+  { name: 'ctags bundle is omitted only under bin/ctags', path: 'C:/dev/an_graph_ia/bin/ctags', isDirectory: true, expectedPolicy: 'DROP', expectedKind: 'TOOL_BUNDLE' },
+  { name: 'ctags folder outside bin is kept', path: 'C:/dev/project/src/ctags', isDirectory: true, expectedPolicy: 'KEEP', expectedKind: 'SOURCE' },
+  { name: '.aistudio is omitted', path: 'C:/dev/app/assets/.aistudio', isDirectory: true, expectedPolicy: 'DROP', expectedKind: 'IDE_INTERNAL' },
+  { name: 'real .env is blocked', path: 'C:/dev/app/.env', isDirectory: false, expectedPolicy: 'DROP', expectedKind: 'SENSITIVE_FILE' },
+  { name: '.env.local is blocked', path: 'C:/dev/app/.env.local', isDirectory: false, expectedPolicy: 'DROP', expectedKind: 'SENSITIVE_FILE' },
+  { name: '.env.example contributes only its name', path: 'C:/dev/app/.env.example', isDirectory: false, expectedPolicy: 'KEEP', expectedKind: 'SOURCE' },
+  { name: '.env.sample contributes only its name', path: 'C:/dev/app/.env.sample', isDirectory: false, expectedPolicy: 'KEEP', expectedKind: 'SOURCE' },
 ];
 
 let failed = 0;
@@ -81,14 +27,14 @@ for (const testCase of cases) {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${testCase.name}`);
   if (!ok) {
     failed += 1;
-    console.log(`  esperado: ${testCase.expectedPolicy} / ${testCase.expectedKind}`);
-    console.log(`  obtenido: ${result.policy} / ${result.kind}`);
+    console.log(`  expected: ${testCase.expectedPolicy} / ${testCase.expectedKind}`);
+    console.log(`  actual:   ${result.policy} / ${result.kind}`);
   }
 }
 
 if (failed > 0) {
-  console.error(`\nFAIL: ${failed} caso(s) incorrecto(s).`);
+  console.error(`\nFAIL: ${failed} incorrect case(s).`);
   process.exitCode = 1;
 } else {
-  console.log(`\nPASS: ${cases.length} reglas de árbol IA correctas.`);
+  console.log(`\nPASS: ${cases.length} AI-tree rules are correct.`);
 }

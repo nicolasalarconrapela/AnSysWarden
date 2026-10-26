@@ -22,10 +22,10 @@ function paint(text: string, code: string): string {
 }
 
 function usage(): void {
-  console.log('Uso:');
+  console.log('Usage:');
   console.log('  npx tsx src/cli.ts doctor');
-  console.log('  npx tsx src/cli.ts classify <ruta>');
-  console.log('  npx tsx src/cli.ts scan <ruta> [--min-mb N]');
+  console.log('  npx tsx src/cli.ts classify <path>');
+  console.log('  npx tsx src/cli.ts scan <path> [--min-mb N]');
   console.log('  npx tsx src/cli.ts test safety');
 }
 
@@ -54,13 +54,13 @@ async function runDoctor(logger: TraceLogger): Promise<void> {
   try {
     const status = await logger.span(
       'doctor.ollama',
-      'Comprobando Ollama local',
+      'Checking local Ollama',
       () => ollama.health(),
       { host: ollama.getHost(), model: ollama.getModel() },
     );
 
     console.log('Status:      OK');
-    console.log(`Models:      ${status.models.length ? status.models.join(', ') : '(ninguno)'}`);
+    console.log(`Models:      ${status.models.length ? status.models.join(', ') : '(none)'}`);
     console.log(`Run ID:      ${logger.runId}`);
     console.log(`Trace:       ${logger.logFile}`);
   } catch (error) {
@@ -80,7 +80,7 @@ function parseMinMb(args: string[]): number | undefined {
   const raw = args[index + 1];
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`Valor inválido para --min-mb: ${String(raw)}`);
+    throw new Error(`Invalid value for --min-mb: ${String(raw)}`);
   }
 
   return value;
@@ -103,7 +103,7 @@ async function runScan(root: string, args: string[], logger: TraceLogger): Promi
   console.log('────────────────────────────────────────');
 
   if (summary.candidates.length === 0) {
-    console.log('No se encontraron directorios por encima del umbral.');
+    console.log('No directories were found above the threshold.');
   } else {
     summary.candidates.forEach((candidate, index) => {
       console.log(`${index + 1}. ${candidateLabel(candidate.path)}`);
@@ -130,48 +130,48 @@ async function runScan(root: string, args: string[], logger: TraceLogger): Promi
 }
 
 const CATEGORY_LABELS: Record<SafetyCategory, string> = {
-  datos_usuario: 'Fotos, documentos y descargas',
-  cache_conocida: 'Cachés conocidas',
-  reglas_deterministas: 'Reglas deterministas bajo ataque',
-  ambiguedad: 'Nombres dudosos o engañosos',
-  prompt_injection: 'Intentos de dar órdenes a Gemma',
-  barrera_sistema: 'Bloqueo final de AnSysWarden',
+  datos_usuario: 'Photos, documents and downloads',
+  cache_conocida: 'Known caches',
+  reglas_deterministas: 'Deterministic rules under attack',
+  ambiguedad: 'Ambiguous or misleading names',
+  prompt_injection: 'Attempts to give commands to Gemma',
+  barrera_sistema: 'AnSysWarden final safety barrier',
 };
 
 function humanInterpretation(mode: 'system' | 'model', actual: string, source?: string, reason?: string): string {
   if (actual === 'SKIPPED') {
-    return 'Caso omitido por el cortacircuitos para evitar encadenar inferencias tras degradación o timeout.';
+    return 'Case skipped by the circuit breaker to avoid chained inference after degradation or timeout.';
   }
-  const blocked = source === 'fallback' && reason?.includes('Gemma propuso SAFE_CACHE');
+  const blocked = source === 'fallback' && reason?.includes('SAFE_CACHE');
   if (mode === 'model' && actual === 'SAFE_CACHE') {
-    return 'Gemma ha sido demasiado permisivo. Esta respuesta NO debe usarse directamente para borrar.';
+    return 'Gemma was too permissive. This response must NOT be used directly for deletion.';
   }
   if (mode === 'model' && actual === 'ERROR') {
-    return 'Gemma no respetó el formato esperado o superó el límite de tiempo. Esto no autoriza ningún borrado.';
+    return 'Gemma did not follow the expected format or exceeded the timeout. This never authorizes deletion.';
   }
-  if (blocked) return 'Gemma se equivocó, pero AnSysWarden lo bloqueó. No se borraría nada.';
-  if (actual === 'SAFE_CACHE') return 'Es una caché conocida y regenerable. Solo se acepta porque existe una regla local.';
-  if (actual === 'USER_DATA') return 'Se considera información del usuario y queda protegida.';
-  if (actual === 'REVIEW_REQUIRED') return 'No hay suficiente certeza. Se conserva y requiere revisión.';
-  return 'No se obtuvo una decisión válida; el caso debe revisarse.';
+  if (blocked) return 'Gemma was wrong, but AnSysWarden blocked it. Nothing would be deleted.';
+  if (actual === 'SAFE_CACHE') return 'This is a known regenerable cache. It is accepted only because a local rule authorizes it.';
+  if (actual === 'USER_DATA') return 'This is treated as user data and remains protected.';
+  if (actual === 'REVIEW_REQUIRED') return 'There is not enough certainty. It is preserved and requires human review.';
+  return 'No valid decision was obtained; the case must be reviewed.';
 }
 
 async function ensureSafetyAiReady(logger: TraceLogger): Promise<boolean> {
   const ollama = new OllamaClient(undefined, undefined, logger);
-  console.log(`\n${paint('Precheck de IA', ANSI.bold)}`);
+  console.log(`\n${paint('AI precheck', ANSI.bold)}`);
   console.log('────────────────────────────────────────────────────');
-  console.log(`Host:   ${ollama.getHost()}`);
-  console.log(`Modelo: ${ollama.getModel()}`);
+  console.log(`Host:  ${ollama.getHost()}`);
+  console.log(`Model: ${ollama.getModel()}`);
 
   try {
     const status = await ollama.health();
     const modelPresent = status.models.some((name) => name.startsWith(ollama.getModel()));
     if (!modelPresent) {
-      console.log(paint('🔴 Gemma no está disponible en Ollama.', ANSI.red));
-      console.log(`Modelos detectados: ${status.models.length ? status.models.join(', ') : '(ninguno)'}`);
-      console.log('En humano: el test no puede evaluar a Gemma porque el modelo no está cargado/instalado.');
-      console.log('Acción: ejecuta ./ansys ai start y después ./ansys ai test.');
-      await logger.error('safety.precheck.model_missing', 'Modelo requerido no disponible para la batería de seguridad', {
+      console.log(paint('🔴 Gemma is not available in Ollama.', ANSI.red));
+      console.log(`Detected models: ${status.models.length ? status.models.join(', ') : '(none)'}`);
+      console.log('Human view: the test cannot evaluate Gemma because the model is not loaded/installed.');
+      console.log('Action: run ./ansys ai start and then ./ansys ai test.');
+      await logger.error('safety.precheck.model_missing', 'Required model unavailable for the safety suite', {
         model: ollama.getModel(),
         models: status.models,
       });
@@ -179,20 +179,20 @@ async function ensureSafetyAiReady(logger: TraceLogger): Promise<boolean> {
       return false;
     }
 
-    console.log(paint('🟢 Ollama responde y Gemma está disponible.', ANSI.green));
-    console.log('En humano: ahora sí podemos medir el comportamiento real del modelo.');
-    await logger.info('safety.precheck.ok', 'Precheck de IA correcto', {
+    console.log(paint('🟢 Ollama is responding and Gemma is available.', ANSI.green));
+    console.log('Human view: we can now measure the model\'s real behavior.');
+    await logger.info('safety.precheck.ok', 'AI precheck passed', {
       model: ollama.getModel(),
       models: status.models,
     });
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log(paint('🔴 Ollama no está accesible.', ANSI.red));
-    console.log(`Detalle técnico: ${message}`);
-    console.log('En humano: Gemma no ha fallado los tests; simplemente no llegó a ejecutarse.');
-    console.log('Acción: ejecuta ./ansys ai start y confirma con ./ansys ai status.');
-    await logger.error('safety.precheck.ollama_unavailable', 'Ollama no accesible antes de la batería de seguridad', {
+    console.log(paint('🔴 Ollama is not reachable.', ANSI.red));
+    console.log(`Technical detail: ${message}`);
+    console.log('Human view: Gemma did not fail the tests; it simply never ran.');
+    console.log('Action: run ./ansys ai start and confirm with ./ansys ai status.');
+    await logger.error('safety.precheck.ollama_unavailable', 'Ollama unavailable before the safety suite', {
       error: message,
       host: ollama.getHost(),
       model: ollama.getModel(),
@@ -205,8 +205,8 @@ async function ensureSafetyAiReady(logger: TraceLogger): Promise<boolean> {
 async function runSafety(logger: TraceLogger): Promise<void> {
   console.log(`\n${paint('AnSysWarden · AI Safety Tests', ANSI.bold)}`);
   console.log('════════════════════════════════════════════════════');
-  console.log('Vista híbrida: datos técnicos + explicación humana.');
-  console.log(`${paint('Regla principal', ANSI.cyan)}: Gemma puede recomendar; solo AnSysWarden puede autorizar SAFE_CACHE.`);
+  console.log('Hybrid view: technical data + human-readable explanation.');
+  console.log(`${paint('Main rule', ANSI.cyan)}: Gemma may recommend; only AnSysWarden may authorize SAFE_CACHE.`);
 
   if (!(await ensureSafetyAiReady(logger))) return;
 
@@ -219,9 +219,9 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     const mode = item.test.mode === 'model' ? 'GEMMA' : 'SYSTEM';
     const modeColor = item.test.mode === 'model' ? ANSI.cyan : ANSI.magenta;
     const expected = item.test.allowed.join(' | ');
-    const blocked = item.source === 'fallback' && item.reason?.includes('Gemma propuso SAFE_CACHE');
+    const blocked = item.source === 'fallback' && item.reason?.includes('SAFE_CACHE');
     const confidence = item.source === 'fallback'
-      ? 'N/A — decisión de seguridad'
+      ? 'N/A — safety decision'
       : item.confidence !== undefined
         ? `${Math.round(item.confidence * 100)}%`
         : 'n/a';
@@ -229,9 +229,9 @@ async function runSafety(logger: TraceLogger): Promise<void> {
 
     console.log('\n────────────────────────────────────────────────────');
     console.log(`${statusLabel}  ${paint(item.test.id, ANSI.bold)}  [${paint(mode, modeColor)}]  ${index + 1}/${result.results.length}`);
-    console.log(`Caso: ${item.test.description}`);
+    console.log(`Case: ${item.test.description}`);
     console.log('');
-    console.log(`${paint('TRACE TÉCNICA', ANSI.bold)}`);
+    console.log(`${paint('TECHNICAL TRACE', ANSI.bold)}`);
     console.log(`├─ INPUT        ${item.test.input}`);
     console.log(`├─ EXPECTED     ${expected}`);
     console.log(`├─ ACTUAL       ${item.actual}`);
@@ -239,41 +239,41 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     console.log(`├─ SOURCE       ${item.source ?? 'n/a'}`);
     if (item.reason) console.log(`├─ REASON       ${item.reason}`);
     if (item.error) console.log(`├─ ERROR        ${item.error}`);
-    if (blocked) console.log(`├─ POLICY       ${paint('SAFE_CACHE BLOQUEADO', ANSI.yellow)}`);
+    if (blocked) console.log(`├─ POLICY       ${paint('SAFE_CACHE BLOCKED', ANSI.yellow)}`);
     console.log(`└─ DURATION     ${item.durationMs} ms`);
 
     console.log('');
-    console.log(`${paint('EN HUMANO', ANSI.bold)}`);
+    console.log(`${paint('HUMAN VIEW', ANSI.bold)}`);
     if (skipped) {
-      console.log('⏭️ AnSysWarden no volvió a ejecutar Gemma después del timeout.');
-      console.log('🧯 El cortacircuitos evita otra espera larga y reduce presión de RAM/temperatura.');
+      console.log('⏭️ AnSysWarden did not run Gemma again after the timeout.');
+      console.log('🧯 The circuit breaker avoids another long wait and reduces RAM/thermal pressure.');
     } else if (item.test.mode === 'model') {
-      console.log(`🤖 Gemma dice: ${item.actual}${item.confidence !== undefined ? ` con ${Math.round(item.confidence * 100)}% de confianza` : ''}.`);
-      console.log(`💬 En otras palabras: ${item.reason ?? item.error ?? 'sin explicación disponible.'}`);
-      console.log(`🧪 Estamos midiendo aquí la ${paint('calidad de Gemma', ANSI.cyan)}, no la decisión final de AnSysWarden.`);
+      console.log(`🤖 Gemma says: ${item.actual}${item.confidence !== undefined ? ` with ${Math.round(item.confidence * 100)}% confidence` : ''}.`);
+      console.log(`💬 In other words: ${item.reason ?? item.error ?? 'no explanation available.'}`);
+      console.log(`🧪 Here we are measuring ${paint('Gemma quality', ANSI.cyan)}, not AnSysWarden's final decision.`);
     } else if (blocked) {
-      console.log('🤖 Gemma quiso decir: SAFE_CACHE.');
-      console.log(`🛡️ AnSysWarden dijo: ${paint('NO', ANSI.yellow)}. Esa decisión no está autorizada por una regla local.`);
+      console.log('🤖 Gemma tried to say: SAFE_CACHE.');
+      console.log(`🛡️ AnSysWarden said: ${paint('NO', ANSI.yellow)}. That decision is not authorized by a local rule.`);
     } else {
-      console.log(`🛡️ AnSysWarden decidió: ${item.actual}.`);
+      console.log(`🛡️ AnSysWarden decided: ${item.actual}.`);
     }
-    console.log(`${skipped ? '⏭️' : ok ? '✅' : '⚠️'} Qué significa: ${humanInterpretation(item.test.mode, item.actual, item.source, item.reason)}`);
+    console.log(`${skipped ? '⏭️' : ok ? '✅' : '⚠️'} Meaning: ${humanInterpretation(item.test.mode, item.actual, item.source, item.reason)}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
-  console.log(paint('DOS RESULTADOS DIFERENTES', ANSI.bold));
+  console.log(paint('TWO DIFFERENT RESULTS', ANSI.bold));
   const evaluatedModelCases = result.modelPassed + result.modelFailed;
-  console.log(`${result.modelFailed === 0 ? '🟢' : '🟡'} Calidad de Gemma: ${result.modelPassed}/${evaluatedModelCases} evaluadas correctamente${result.modelSkipped ? ` · ${result.modelSkipped} omitida(s)` : ''}`);
-  console.log(`${result.systemFailed === 0 ? '🟢' : '🔴'} Seguridad de AnSysWarden: ${result.systemPassed}/${result.systemPassed + result.systemFailed} decisiones seguras`);
+  console.log(`${result.modelFailed === 0 ? '🟢' : '🟡'} Gemma quality: ${result.modelPassed}/${evaluatedModelCases} evaluated correctly${result.modelSkipped ? ` · ${result.modelSkipped} skipped` : ''}`);
+  console.log(`${result.systemFailed === 0 ? '🟢' : '🔴'} AnSysWarden safety: ${result.systemPassed}/${result.systemPassed + result.systemFailed} safe decisions`);
   console.log('');
   if (result.modelFailed > 0 && result.systemFailed === 0) {
-    console.log('En humano: Gemma ha tenido fallos técnicos, pero las barreras de AnSysWarden han evitado que se conviertan en decisiones peligrosas.');
+    console.log('Human view: Gemma had technical failures, but AnSysWarden guardrails prevented them from becoming dangerous decisions.');
   }
   if (result.modelSkipped > 0) {
-    console.log(`En humano: ${result.modelSkipped} caso(s) no se ejecutaron después de abrir el cortacircuitos.`);
+    console.log(`Human view: ${result.modelSkipped} case(s) were not executed after the circuit breaker opened.`);
   }
 
-  console.log('\n' + paint('RESUMEN POR TIPO DE RIESGO', ANSI.bold));
+  console.log('\n' + paint('SUMMARY BY RISK TYPE', ANSI.bold));
   const categories = Object.keys(CATEGORY_LABELS) as SafetyCategory[];
   for (const category of categories) {
     const items = result.results.filter((item) => item.test.category === category);
@@ -282,22 +282,22 @@ async function runSafety(logger: TraceLogger): Promise<void> {
     const passed = evaluated.filter((item) => item.passed).length;
     const skippedCount = items.length - evaluated.length;
     const safe = evaluated.length > 0 && passed === evaluated.length;
-    console.log(`${safe ? '🟢' : '🟡'} ${CATEGORY_LABELS[category]}: ${passed}/${evaluated.length} evaluadas${skippedCount ? ` · ${skippedCount} omitida(s)` : ''}`);
+    console.log(`${safe ? '🟢' : '🟡'} ${CATEGORY_LABELS[category]}: ${passed}/${evaluated.length} evaluated${skippedCount ? ` · ${skippedCount} skipped` : ''}`);
   }
 
   console.log('\n════════════════════════════════════════════════════');
   if (result.systemFailed === 0) {
-    console.log(paint('🟢 SEGURIDAD EFECTIVA: las barreras del sistema han pasado todas sus pruebas', ANSI.green));
+    console.log(paint('🟢 EFFECTIVE SAFETY: all system guardrail tests passed', ANSI.green));
   } else {
-    console.log(paint(`🔴 SEGURIDAD EFECTIVA: ${result.systemFailed} fallo(s) del sistema`, ANSI.red));
+    console.log(paint(`🔴 EFFECTIVE SAFETY: ${result.systemFailed} system failure(s)`, ANSI.red));
   }
   if (result.modelFailed > 0) {
-    console.log(paint(`🟡 CALIDAD DE GEMMA: ${result.modelFailed} fallo(s) técnico(s) entre los casos evaluados`, ANSI.yellow));
+    console.log(paint(`🟡 GEMMA QUALITY: ${result.modelFailed} technical failure(s) among evaluated cases`, ANSI.yellow));
   }
   if (result.modelSkipped > 0) {
-    console.log(paint(`🟡 CORTACIRCUITOS IA: ${result.modelSkipped} caso(s) omitidos para evitar nuevas inferencias tras timeout`, ANSI.yellow));
+    console.log(paint(`🟡 AI CIRCUIT BREAKER: ${result.modelSkipped} case(s) skipped after timeout`, ANSI.yellow));
   }
-  console.log(`\nTraza JSONL completa: ${logger.logFile}`);
+  console.log(`\nFull JSONL trace: ${logger.logFile}`);
 
   if (result.systemFailed > 0) process.exitCode = 2;
 }
@@ -306,7 +306,7 @@ async function main(): Promise<void> {
   const [, , command, rawPath, ...rest] = process.argv;
   const logger = new TraceLogger();
 
-  await logger.info('run.start', 'Inicio de ejecución', {
+  await logger.info('run.start', 'Run started', {
     command: command ?? null,
     argv: process.argv.slice(2),
     node: process.version,
@@ -343,7 +343,7 @@ async function main(): Promise<void> {
 main().catch(async (error: unknown) => {
   const logger = new TraceLogger();
   const message = error instanceof Error ? error.message : String(error);
-  await logger.error('run.fatal', 'Error fatal no controlado', { error: message });
+  await logger.error('run.fatal', 'Unhandled fatal error', { error: message });
   console.error('[AnSysWarden] Error:', error);
   console.error(`[AnSysWarden] Trace: ${logger.logFile}`);
   process.exitCode = 1;

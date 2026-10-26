@@ -30,14 +30,14 @@ async function main(): Promise<void> {
     const ecosystems = await detectEcosystems(rust);
     const rustDetection = ecosystems.find((item) => item.ecosystem === 'rust');
     checks.push({
-      name: 'detecta Rust mediante Cargo.toml/Cargo.lock',
+      name: 'detects Rust through Cargo.toml/Cargo.lock',
       ok: Boolean(rustDetection && rustDetection.confidence >= 0.8),
       detail: JSON.stringify(ecosystems),
     });
 
     const targetDecision = decideByEcosystem(join(rust, 'target'), true, ecosystems);
     checks.push({
-      name: 'target se reconoce como build output por contexto Rust',
+      name: 'target is recognized as build output from Rust context',
       ok: targetDecision?.kind === 'BUILD_OUTPUT',
       detail: JSON.stringify(targetDecision),
     });
@@ -45,31 +45,31 @@ async function main(): Promise<void> {
     const context = new ProjectContextEngine(root);
     const ignored = await context.decide(join(rust, 'scratch'), true);
     checks.push({
-      name: '.gitignore del proyecto filtra scratch',
+      name: 'project .gitignore filters scratch',
       ok: ignored?.kind === 'GIT_IGNORED',
       detail: JSON.stringify(ignored),
     });
 
-    // Los patrones de atributos con /** se aplican a contenido del subárbol.
+    // Attribute patterns with /** apply to subtree contents.
     await writeFile(join(rust, 'generated', 'bindings.rs'), '// generated\n');
     await writeFile(join(rust, 'third_party', 'lib.rs'), '// vendor\n');
     const generated = await context.decide(join(rust, 'generated', 'bindings.rs'), false);
     checks.push({
-      name: '.gitattributes reconoce linguist-generated',
+      name: '.gitattributes recognizes linguist-generated',
       ok: generated?.kind === 'GENERATED',
       detail: JSON.stringify(generated),
     });
 
     const vendored = await context.decide(join(rust, 'third_party', 'lib.rs'), false);
     checks.push({
-      name: '.gitattributes reconoce linguist-vendored',
+      name: '.gitattributes recognizes linguist-vendored',
       ok: vendored?.kind === 'VENDORED',
       detail: JSON.stringify(vendored),
     });
 
     const repomix = decideByRepomixPolicy(join(root, 'node-app', 'node_modules'), true);
     checks.push({
-      name: 'política Repomix filtra dependencias instaladas',
+      name: 'Repomix policy filters installed dependencies',
       ok: repomix?.kind === 'NODE_DEPENDENCIES',
       detail: JSON.stringify(repomix),
     });
@@ -79,15 +79,15 @@ async function main(): Promise<void> {
       console.log(`${check.ok ? 'PASS' : 'FAIL'} ${check.name}`);
       if (!check.ok) {
         failed += 1;
-        console.log(`  obtenido: ${check.detail}`);
+        console.log(`  actual: ${check.detail}`);
       }
     }
 
     if (failed > 0) {
-      console.error(`\nFAIL: ${failed} comprobación(es) de contexto incorrectas.`);
+      console.error(`\nFAIL: ${failed} incorrect context check(s).`);
       process.exitCode = 1;
     } else {
-      console.log(`\nPASS: ${checks.length} comprobaciones de contexto correctas.`);
+      console.log(`\nPASS: ${checks.length} context checks are correct.`);
     }
   } finally {
     await rm(root, { recursive: true, force: true });

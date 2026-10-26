@@ -28,7 +28,7 @@ export interface DustInstallResult {
 
 export async function installDust(): Promise<DustInstallResult> {
   if (process.platform !== 'win32') {
-    throw new Error('La instalación gestionada de Dust está implementada por ahora para Windows.');
+    throw new Error('Managed Dust installation is currently implemented for Windows only.');
   }
 
   const architecture = windowsArchitecture(process.arch);
@@ -37,12 +37,12 @@ export async function installDust(): Promise<DustInstallResult> {
   const expectedAsset = `dust-v${version}-${architecture}-pc-windows-msvc.zip`;
   const asset = release.assets.find((item) => item.name === expectedAsset);
   if (!asset) {
-    throw new Error(`La release ${release.tag_name} no contiene ${expectedAsset}.`);
+    throw new Error(`Release ${release.tag_name} does not contain ${expectedAsset}.`);
   }
 
   const expectedSha256 = parseSha256Digest(asset.digest);
   if (!expectedSha256) {
-    throw new Error(`GitHub no publicó un digest SHA-256 verificable para ${asset.name}.`);
+    throw new Error(`GitHub did not publish a verifiable SHA-256 digest for ${asset.name}.`);
   }
 
   const installDir = getManagedDustDir();
@@ -57,7 +57,7 @@ export async function installDust(): Promise<DustInstallResult> {
     const actualSha256 = await sha256File(archive);
     if (actualSha256 !== expectedSha256) {
       throw new Error(
-        `SHA-256 de Dust no coincide. Esperado ${expectedSha256}, recibido ${actualSha256}. Instalación cancelada.`,
+        `Dust SHA-256 mismatch. Expected ${expectedSha256}, received ${actualSha256}. Installation cancelled.`,
       );
     }
 
@@ -65,7 +65,7 @@ export async function installDust(): Promise<DustInstallResult> {
     await expandZipWindows(archive, extractDir);
 
     const extracted = await findDustExe(extractDir);
-    if (!extracted) throw new Error('El ZIP oficial de Dust no contiene dust.exe.');
+    if (!extracted) throw new Error('The official Dust ZIP does not contain dust.exe.');
 
     await mkdir(binDir, { recursive: true });
     const destination = getManagedDustBin();
@@ -73,7 +73,7 @@ export async function installDust(): Promise<DustInstallResult> {
     await rename(extracted, destination);
 
     const info = await stat(destination);
-    if (!info.isFile() || info.size <= 0) throw new Error('dust.exe quedó instalado de forma inválida.');
+    if (!info.isFile() || info.size <= 0) throw new Error('dust.exe was installed in an invalid state.');
 
     return {
       version,
@@ -90,7 +90,7 @@ export async function installDust(): Promise<DustInstallResult> {
 function windowsArchitecture(arch: NodeJS.Architecture): 'x86_64' | 'aarch64' {
   if (arch === 'x64') return 'x86_64';
   if (arch === 'arm64') return 'aarch64';
-  throw new Error(`Arquitectura Windows no soportada para Dust: ${arch}`);
+  throw new Error(`Unsupported Windows architecture for Dust: ${arch}`);
 }
 
 function parseSha256Digest(digest: string | null | undefined): string | null {
@@ -107,13 +107,13 @@ async function fetchJson<T>(url: string): Promise<T> {
       'X-GitHub-Api-Version': '2022-11-28',
     },
   });
-  if (!response.ok) throw new Error(`GitHub respondió HTTP ${response.status} al consultar Dust.`);
+  if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status} while checking Dust.`);
   return await response.json() as T;
 }
 
 async function downloadFile(url: string, destination: string): Promise<void> {
   const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!response.ok) throw new Error(`No se pudo descargar Dust: HTTP ${response.status}.`);
+  if (!response.ok) throw new Error(`Could not download Dust: HTTP ${response.status}.`);
   const bytes = Buffer.from(await response.arrayBuffer());
   await mkdir(join(destination, '..'), { recursive: true });
   const { writeFile } = await import('node:fs/promises');
@@ -163,7 +163,7 @@ function run(bin: string, args: string[]): Promise<void> {
     child.on('close', (code) => {
       if (code === 0) return resolvePromise();
       const detail = Buffer.concat(stderr).toString('utf8').trim();
-      reject(new Error(`No se pudo extraer Dust${detail ? `: ${detail}` : ''}`));
+      reject(new Error(`Could not extract Dust${detail ? `: ${detail}` : ''}`));
     });
   });
 }

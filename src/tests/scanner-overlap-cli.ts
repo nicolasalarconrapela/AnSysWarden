@@ -17,7 +17,7 @@ function candidate(
     path,
     classification,
     confidence: classification === 'SAFE_CACHE' ? 0.99 : 1,
-    reason: 'Caso sintético de seguridad de solapamiento.',
+    reason: 'Synthetic overlap-safety case.',
     source: classification === 'SAFE_CACHE' ? 'rule' : 'fallback',
     sizeBytes,
   };
@@ -26,7 +26,7 @@ function candidate(
 const CASES: OverlapCase[] = [
   {
     id: 'OVERLAP-001',
-    description: 'SAFE padre + SAFE hijo cuenta una sola vez',
+    description: 'SAFE parent + SAFE child counts only once',
     candidates: [
       candidate('/home/user/.gradle/caches', 'SAFE_CACHE', 1_000),
       candidate('/home/user/.gradle/caches/modules-2', 'SAFE_CACHE', 600),
@@ -36,7 +36,7 @@ const CASES: OverlapCase[] = [
   },
   {
     id: 'OVERLAP-002',
-    description: 'SAFE padre + REVIEW hijo no permite contar el padre',
+    description: 'SAFE parent + REVIEW child prevents counting the parent',
     candidates: [
       candidate('/work/cache', 'SAFE_CACHE', 1_000),
       candidate('/work/cache/client-copy', 'REVIEW_REQUIRED', 400),
@@ -46,7 +46,7 @@ const CASES: OverlapCase[] = [
   },
   {
     id: 'OVERLAP-003',
-    description: 'SAFE padre + USER_DATA hijo no permite contar el padre',
+    description: 'SAFE parent + USER_DATA child prevents counting the parent',
     candidates: [
       candidate('/work/generated', 'SAFE_CACHE', 2_000),
       candidate('/work/generated/photos', 'USER_DATA', 500),
@@ -56,7 +56,7 @@ const CASES: OverlapCase[] = [
   },
   {
     id: 'OVERLAP-004',
-    description: 'REVIEW padre + SAFE hijo permite contar solo el hijo',
+    description: 'REVIEW parent + SAFE child counts only the child',
     candidates: [
       candidate('/work/project', 'REVIEW_REQUIRED', 2_000),
       candidate('/work/project/node_modules', 'SAFE_CACHE', 800),
@@ -66,7 +66,7 @@ const CASES: OverlapCase[] = [
   },
   {
     id: 'OVERLAP-005',
-    description: 'Dos hermanos SAFE se cuentan ambos',
+    description: 'Two SAFE siblings are both counted',
     candidates: [
       candidate('/work/a/node_modules', 'SAFE_CACHE', 700),
       candidate('/work/b/node_modules', 'SAFE_CACHE', 900),
@@ -76,7 +76,7 @@ const CASES: OverlapCase[] = [
   },
   {
     id: 'OVERLAP-006',
-    description: 'Rutas Windows normalizan barras, mayúsculas y slash final',
+    description: 'Windows paths normalize slashes, case, and trailing separators',
     candidates: [
       candidate('C:\\Users\\Nico\\dev\\app\\node_modules\\', 'SAFE_CACHE', 1_200),
       candidate('c:/users/nico/dev/app/node_modules/pkg', 'SAFE_CACHE', 300),
@@ -100,7 +100,7 @@ let passed = 0;
 
 console.log('AnSysWarden · Scanner Overlap Safety');
 console.log('════════════════════════════════════════════════════');
-console.log('Política: ante solapamiento, infraestimar antes que sobreestimar.');
+console.log('Policy: when paths overlap, underestimate rather than overestimate recoverable space.');
 console.log('');
 
 for (const test of CASES) {
@@ -112,8 +112,8 @@ for (const test of CASES) {
   if (ok) passed += 1;
 
   console.log(`${ok ? 'PASS' : 'FAIL'} ${test.id} · ${test.description}`);
-  console.log(`├─ EXPECTED PATHS  ${test.expectedPaths.length ? test.expectedPaths.join(' | ') : '(ninguno)'}`);
-  console.log(`├─ ACTUAL PATHS    ${actualPaths.length ? actualPaths.join(' | ') : '(ninguno)'}`);
+  console.log(`├─ EXPECTED PATHS  ${test.expectedPaths.length ? test.expectedPaths.join(' | ') : '(none)'}`);
+  console.log(`├─ ACTUAL PATHS    ${actualPaths.length ? actualPaths.join(' | ') : '(none)'}`);
   console.log(`├─ EXPECTED BYTES  ${test.expectedBytes}`);
   console.log(`└─ ACTUAL BYTES    ${actualBytes}`);
   console.log('');
@@ -121,8 +121,8 @@ for (const test of CASES) {
 
 console.log('════════════════════════════════════════════════════');
 if (passed === CASES.length) {
-  console.log(`🟢 OVERLAP GUARDRAIL: ${passed}/${CASES.length} pruebas superadas`);
+  console.log(`🟢 OVERLAP GUARDRAIL: ${passed}/${CASES.length} tests passed`);
 } else {
-  console.log(`🔴 OVERLAP GUARDRAIL: ${passed}/${CASES.length} pruebas superadas`);
+  console.log(`🔴 OVERLAP GUARDRAIL: ${passed}/${CASES.length} tests passed`);
   process.exitCode = 1;
 }

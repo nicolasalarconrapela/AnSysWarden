@@ -20,8 +20,8 @@ ensure_arm64() {
   local arch
   arch="$(uname -m)"
   case "$arch" in
-    aarch64|arm64) ok "Arquitectura ARM64 detectada: $arch" ;;
-    *) warn "Arquitectura detectada: $arch. Este script está pensado para el S25 Ultra/ARM64." ;;
+    aarch64|arm64) ok "ARM64 architecture detected: $arch" ;;
+    *) warn "Detected architecture: $arch. This script is designed for S25 Ultra/ARM64." ;;
   esac
 }
 
@@ -35,7 +35,7 @@ install_base_dependencies() {
     return
   fi
 
-  info "Instalando dependencias base: ${missing[*]}"
+  info "Installing base dependencies: ${missing[*]}"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates jq
@@ -43,35 +43,35 @@ install_base_dependencies() {
     pkg update -y
     pkg install -y curl jq
   else
-    die "Faltan dependencias (${missing[*]}) y no encuentro apt-get ni pkg."
+    die "Missing dependencies (${missing[*]}) and neither apt-get nor pkg is available."
   fi
 }
 
 install_ollama() {
   if command -v ollama >/dev/null 2>&1; then
-    ok "Ollama ya está instalado: $(ollama --version 2>/dev/null || echo 'versión no disponible')"
+    ok "Ollama is already installed: $(ollama --version 2>/dev/null || echo 'version unavailable')"
     return
   fi
 
-  info "Ollama no está instalado. Intentando instalación para el entorno actual..."
+  info "Ollama is not installed. Attempting installation for the current environment..."
 
-  # En Debian/proot usamos el instalador Linux oficial solicitado.
+  # In Debian/proot we use the requested official Linux installer.
   if command -v apt-get >/dev/null 2>&1 && [[ -f /etc/debian_version ]]; then
     if curl -fsSL https://ollama.com/install.sh | sh; then
       hash -r
     else
-      die "Falló el instalador oficial de Ollama dentro de Debian/Termux. Prueba Ollama desde Termux nativo o una build específica para Android ARM64."
+      die "The official Ollama installer failed inside Debian/Termux. Try native Termux Ollama or an Android ARM64-specific build."
     fi
   elif command -v pkg >/dev/null 2>&1; then
-    # Termux nativo dispone de paquete propio; evita mezclar binarios glibc con el userland Android.
+    # Native Termux provides its own package, avoiding glibc binaries in Android userland.
     pkg update -y
-    pkg install -y ollama || die "No se pudo instalar el paquete ollama de Termux. Comprueba que usas una versión de Termux compatible y repositorios actualizados."
+    pkg install -y ollama || die "Could not install the Termux ollama package. Check that your Termux version and repositories are current."
   else
-    die "Entorno no reconocido. Instala Ollama manualmente y vuelve a ejecutar este script."
+    die "Unrecognized environment. Install Ollama manually and run this script again."
   fi
 
-  command -v ollama >/dev/null 2>&1 || die "La instalación terminó, pero 'ollama' no está disponible en PATH."
-  ok "Ollama instalado correctamente."
+  command -v ollama >/dev/null 2>&1 || die "Installation finished, but 'ollama' is not available in PATH."
+  ok "Ollama installed successfully."
 }
 
 wait_for_ollama() {
@@ -87,40 +87,40 @@ wait_for_ollama() {
 
 start_ollama() {
   if curl -fsS "$OLLAMA_HOST_URL/api/tags" >/dev/null 2>&1; then
-    ok "Servidor Ollama ya activo en $OLLAMA_HOST_URL"
+    ok "Ollama server is already active at $OLLAMA_HOST_URL"
     return
   fi
 
-  info "Iniciando servidor Ollama en segundo plano..."
+  info "Starting Ollama server in the background..."
   nohup ollama serve >"$LOG_FILE" 2>&1 &
   local pid=$!
   printf '%s\n' "$pid" > .ollama.pid
 
   if ! wait_for_ollama; then
-    warn "Últimas líneas de $LOG_FILE:"
+    warn "Last lines from $LOG_FILE:"
     tail -n 40 "$LOG_FILE" 2>/dev/null || true
-    die "Ollama no respondió en $OLLAMA_HOST_URL."
+    die "Ollama did not respond at $OLLAMA_HOST_URL."
   fi
 
-  ok "Servidor Ollama listo (PID $pid). Log: $LOG_FILE"
+  ok "Ollama server ready (PID $pid). Log: $LOG_FILE"
 }
 
 pull_model() {
-  info "Descargando/verificando modelo $MODEL..."
+  info "Downloading/verifying model $MODEL..."
   ollama pull "$MODEL"
-  ok "Modelo $MODEL disponible."
+  ok "Model $MODEL is available."
 }
 
 native_test() {
-  info "Prueba 1/2: inferencia nativa mediante API HTTP"
+  info "Test 1/2: native inference through HTTP API"
   local payload response text
-  payload="$(jq -n --arg model "$MODEL" '{model:$model,prompt:"Eres el asistente del núcleo del sistema AnSysWarden. Responde en una sola frase corta cuál es tu misión principal.",stream:false}')"
+  payload="$(jq -n --arg model "$MODEL" '{model:$model,prompt:"You are the assistant at the core of AnSysWarden. In one short sentence, state your primary mission.",stream:false}')"
   response="$(curl -fsS -H 'Content-Type: application/json' -d "$payload" "$OLLAMA_HOST_URL/api/generate")"
   text="$(jq -r '.response // empty' <<<"$response")"
 
-  [[ -n "$text" ]] || die "Ollama respondió, pero no devolvió texto: $response"
+  [[ -n "$text" ]] || die "Ollama responded but returned no text: $response"
   printf '\nGemma > %s\n' "$text"
-  ok "Inferencia nativa completada."
+  ok "Native inference completed."
 }
 
 ensure_node() {
@@ -128,18 +128,18 @@ ensure_node() {
     return
   fi
 
-  info "Node.js/npx no están disponibles; instalándolos para la prueba TypeScript..."
+  info "Node.js/npx are unavailable; installing them for the TypeScript test..."
   if command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
   elif command -v pkg >/dev/null 2>&1; then
     pkg install -y nodejs
   else
-    die "No puedo instalar Node.js automáticamente."
+    die "Cannot install Node.js automatically."
   fi
 }
 
 typescript_test() {
-  info "Prueba 2/2: integración Node.js/TypeScript"
+  info "Test 2/2: Node.js/TypeScript integration"
   ensure_node
 
   cat > "$TS_FILE" <<'TS'
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      prompt: 'Clasifica esta ruta: /node_modules/.cache. Responde EXCLUSIVAMENTE con JUNK_CACHE o USER_DATA.',
+      prompt: 'Classify this path: /node_modules/.cache. Reply EXCLUSIVELY with JUNK_CACHE or USER_DATA.',
       stream: false,
     }),
   });
@@ -163,32 +163,32 @@ async function main(): Promise<void> {
 
   const data = await response.json() as { response?: string };
   const answer = (data.response ?? '').trim();
-  console.log(`\n[AnSysWarden] Respuesta de Gemma: ${answer}`);
+  console.log(`\n[AnSysWarden] Gemma response: ${answer}`);
 
   if (!['JUNK_CACHE', 'USER_DATA'].includes(answer)) {
-    console.warn('[AnSysWarden] AVISO: la respuesta no respetó exactamente el contrato esperado.');
+    console.warn('[AnSysWarden] WARNING: response did not exactly follow the expected contract.');
     process.exitCode = 2;
   } else if (answer !== 'JUNK_CACHE') {
-    console.warn('[AnSysWarden] AVISO: el formato es válido, pero /node_modules/.cache debería clasificarse como JUNK_CACHE en esta prueba.');
+    console.warn('[AnSysWarden] WARNING: format is valid, but /node_modules/.cache should be JUNK_CACHE in this test.');
     process.exitCode = 3;
   }
 }
 
 main().catch((error: unknown) => {
-  console.error('[AnSysWarden] Error en la prueba TypeScript:', error);
+  console.error('[AnSysWarden] TypeScript test error:', error);
   process.exitCode = 1;
 });
 TS
 
   OLLAMA_HOST_URL="$OLLAMA_HOST_URL" ANSYSWARDEN_MODEL="$MODEL" npx --yes tsx "$TS_FILE"
-  ok "Integración TypeScript completada."
+  ok "TypeScript integration completed."
 }
 
 main() {
   printf '\n============================================================\n'
-  printf ' AnSysWarden · Bootstrap del cerebro IA móvil\n'
-  printf ' Modelo: %s\n' "$MODEL"
-  printf ' API:    %s\n' "$OLLAMA_HOST_URL"
+  printf ' AnSysWarden · Mobile AI brain bootstrap\n'
+  printf ' Model: %s\n' "$MODEL"
+  printf ' API:   %s\n' "$OLLAMA_HOST_URL"
   printf '============================================================\n'
 
   ensure_arm64
@@ -200,10 +200,10 @@ main() {
   typescript_test
 
   printf '\n============================================================\n'
-  ok "S25 Ultra listo para usar Ollama como backend local de AnSysWarden."
-  printf 'Servidor: %s\n' "$OLLAMA_HOST_URL"
-  printf 'Modelo:   %s\n' "$MODEL"
-  printf 'Log:      %s\n' "$LOG_FILE"
+  ok "S25 Ultra is ready to use Ollama as AnSysWarden's local AI backend."
+  printf 'Server: %s\n' "$OLLAMA_HOST_URL"
+  printf 'Model:  %s\n' "$MODEL"
+  printf 'Log:    %s\n' "$LOG_FILE"
   printf '============================================================\n\n'
 }
 

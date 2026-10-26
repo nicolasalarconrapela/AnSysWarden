@@ -21,21 +21,21 @@ usage() {
   cat <<'EOF'
 AnSysWarden CLI
 
-Uso:
+Usage:
   ./ansys ai start
   ./ansys ai stop
   ./ansys ai status
   ./ansys ai test
   ./ansys ai models
-  ./ansys ai pull <modelo>
+  ./ansys ai pull <model>
   ./ansys ai pull-mobile-candidate
-  ./ansys worker mobile --backend http://IP_PC:8787 [--once] [--poll-ms N]
+  ./ansys worker mobile --backend http://PC_IP:8787 [--once] [--poll-ms N]
   ./ansys doctor
-  ./ansys classify <ruta>
-  ./ansys scan <ruta> [--min-mb N]
+  ./ansys classify <path>
+  ./ansys scan <path> [--min-mb N]
   ./ansys dust status
-  ./ansys dust scan <ruta> [--depth N] [--min-size SIZE]
-  ./ansys inspect <ruta>
+  ./ansys dust scan <path> [--depth N] [--min-size SIZE]
+  ./ansys inspect <path>
   ./ansys backend token
   ./ansys backend serve [--host IP] [--port N]
   ./ansys test safety
@@ -45,18 +45,19 @@ Uso:
   ./ansys test context
   ./ansys test candidates
   ./ansys test benchmark [--offset N] [--limit N]
-  ./ansys test models [--models modelo1,modelo2] [--timeout-ms N]
+  ./ansys test models [--models model1,model2] [--timeout-ms N]
   ./ansys test mobile-models [--timeout-ms N]
-  ./ansys review export <ruta>
+  ./ansys test e2e --backend http://PC_IP:8787 [--timeout-ms N] [--poll-ms N]
+  ./ansys review export <path>
   ./ansys logs [--raw]
 
-La interfaz diaria no requiere usar npm directamente.
+The daily interface does not require using npm directly.
 EOF
 }
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
-    err "No se encuentra '$1' en PATH."
+    err "'$1' was not found in PATH."
     exit 1
   }
 }
@@ -70,14 +71,14 @@ ai_start() {
   require_command curl
 
   if ollama_ready; then
-    info "Ollama ya está ejecutándose en $OLLAMA_HOST_URL"
+    info "Ollama is already running at $OLLAMA_HOST_URL"
     ai_status
     return
   fi
 
   printf 'AnSysWarden\n────────────────────────\n'
-  printf 'IA local: iniciando Ollama...\n'
-  printf 'Modelo: %s\n' "$MODEL"
+  printf 'Local AI: starting Ollama...\n'
+  printf 'Model: %s\n' "$MODEL"
 
   nohup ollama serve >"$OLLAMA_LOG_FILE" 2>&1 &
   local pid=$!
@@ -85,7 +86,7 @@ ai_start() {
 
   for _ in $(seq 1 30); do
     if ollama_ready; then
-      info "Estado: OK"
+      info "Status: OK"
       printf 'PID: %s\n' "$pid"
       printf 'Log: %s\n' "$OLLAMA_LOG_FILE"
       return
@@ -93,7 +94,7 @@ ai_start() {
     sleep 1
   done
 
-  warn "Ollama no respondió tras 30 segundos."
+  warn "Ollama did not respond after 30 seconds."
   tail -n 40 "$OLLAMA_LOG_FILE" 2>/dev/null || true
   exit 1
 }
@@ -101,11 +102,11 @@ ai_start() {
 ai_stop() {
   if [[ ! -f "$OLLAMA_PID_FILE" ]]; then
     if ollama_ready; then
-      warn "Ollama está activo, pero AnSysWarden no tiene un PID propio registrado."
-      warn "Por seguridad no se detendrá un proceso iniciado externamente."
+      warn "Ollama is running, but AnSysWarden has no registered PID for it."
+      warn "For safety, a process started externally will not be stopped."
       return 2
     fi
-    warn "No hay ningún proceso de Ollama gestionado por AnSysWarden."
+    warn "There is no Ollama process managed by AnSysWarden."
     return
   fi
 
@@ -114,45 +115,45 @@ ai_stop() {
 
   if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
     rm -f "$OLLAMA_PID_FILE"
-    err "El PID registrado no es válido. Se elimina el estado local sin detener procesos."
+    err "The registered PID is invalid. Local state is removed without stopping any process."
     return 2
   fi
 
   if ! kill -0 "$pid" 2>/dev/null; then
     rm -f "$OLLAMA_PID_FILE"
-    warn "El proceso registrado (PID $pid) ya no existe. Estado local limpiado."
+    warn "The registered process (PID $pid) no longer exists. Local state cleaned."
     return
   fi
 
   local command_line
   command_line="$(ps -p "$pid" -o args= 2>/dev/null || true)"
   if [[ "$command_line" != *"ollama serve"* ]]; then
-    err "El PID $pid ya no corresponde a 'ollama serve'."
-    err "Por seguridad NO se enviará ninguna señal al proceso."
+    err "PID $pid no longer belongs to 'ollama serve'."
+    err "For safety, NO signal will be sent to that process."
     rm -f "$OLLAMA_PID_FILE"
     return 2
   fi
 
   kill "$pid"
   rm -f "$OLLAMA_PID_FILE"
-  info "Ollama gestionado por AnSysWarden detenido (PID $pid)."
+  info "AnSysWarden-managed Ollama stopped (PID $pid)."
 }
 
 ai_status() {
   require_command curl
-  printf 'IA local\n────────────────────────\n'
+  printf 'Local AI\n────────────────────────\n'
   printf 'Ollama:   '
   if ollama_ready; then
     printf 'RUNNING\n'
-    printf 'Modelo:   %s\n' "$MODEL"
+    printf 'Model:    %s\n' "$MODEL"
     printf 'API:      %s\n' "$OLLAMA_HOST_URL"
     local started ended latency
     started="$(date +%s%3N 2>/dev/null || date +%s000)"
     curl -fsS "$OLLAMA_HOST_URL/api/tags" >/dev/null
     ended="$(date +%s%3N 2>/dev/null || date +%s000)"
     latency=$((ended - started))
-    printf 'Latencia: %s ms\n' "$latency"
-    [[ -f "$OLLAMA_PID_FILE" ]] && printf 'PID propio: %s\n' "$(cat "$OLLAMA_PID_FILE")"
+    printf 'Latency:  %s ms\n' "$latency"
+    [[ -f "$OLLAMA_PID_FILE" ]] && printf 'Own PID:  %s\n' "$(cat "$OLLAMA_PID_FILE")"
     printf 'Log:      %s\n' "$OLLAMA_LOG_FILE"
   else
     printf 'STOPPED\n'
@@ -162,40 +163,40 @@ ai_status() {
 }
 
 ai_models() {
-  printf 'Modelos de AnSysWarden v1\n'
+  printf 'AnSysWarden models v1\n'
   printf '────────────────────────────────────────\n'
-  printf 'gemma4:e2b    PRINCIPAL   mejor equilibrio medido en S25 Ultra\n'
-  printf 'gemma2:2b     REFERENCIA  más ligero; fallback manual\n'
-  printf 'gemma3:1b     SECUNDARIO  ligero pero menos estable en nuestras pruebas\n'
-  printf 'qwen3:0.6b    DESCARTADO  timeouts en el dataset CORE\n'
-  printf '\nPolítica de seguridad:\n'
-  printf '  Solo las reglas locales pueden autorizar SAFE_CACHE.\n'
-  printf '  La IA solo aporta evidencia y puede terminar en proteger o revisar.\n'
-  printf '\nInstalar modelo principal:\n  ./ansys ai pull-mobile-candidate\n'
-  printf '\nComparar modelo principal y referencia:\n  ./ansys test mobile-models\n'
-  printf '\nForzar temporalmente la referencia:\n  ANSYSWARDEN_MODEL=gemma2:2b ./ansys classify <ruta>\n'
+  printf 'gemma4:e2b    PRIMARY    best measured balance on S25 Ultra\n'
+  printf 'gemma2:2b     REFERENCE  lighter; manual fallback\n'
+  printf 'gemma3:1b     SECONDARY  lightweight but less stable in our tests\n'
+  printf 'qwen3:0.6b    REJECTED   timeouts on the CORE dataset\n'
+  printf '\nSafety policy:\n'
+  printf '  Only local rules may authorize SAFE_CACHE.\n'
+  printf '  AI only provides evidence and may lead to protection or review.\n'
+  printf '\nInstall primary model:\n  ./ansys ai pull-mobile-candidate\n'
+  printf '\nCompare primary and reference models:\n  ./ansys test mobile-models\n'
+  printf '\nTemporarily force the reference model:\n  ANSYSWARDEN_MODEL=%q ./ansys classify <path>\n' 'gemma2:2b'
 }
 
 ai_pull() {
   require_command ollama
   local requested_model="${1:-}"
-  [[ -n "$requested_model" ]] || { err "Falta el nombre del modelo."; ai_models; exit 1; }
+  [[ -n "$requested_model" ]] || { err "Model name is required."; ai_models; exit 1; }
 
-  printf 'AnSysWarden · Descargar modelo\n'
+  printf 'AnSysWarden · Download model\n'
   printf '────────────────────────────────────────\n'
-  printf 'Modelo: %s\n' "$requested_model"
-  printf 'Motor:  Ollama\n\n'
+  printf 'Model:  %s\n' "$requested_model"
+  printf 'Engine: Ollama\n\n'
   ollama pull "$requested_model"
-  info "Modelo descargado: $requested_model"
-  printf 'Para probarlo sin cambiar la configuración global:\n'
+  info "Model downloaded: $requested_model"
+  printf 'To test it without changing global configuration:\n'
   printf '  ANSYSWARDEN_MODEL=%q ./ansys test benchmark --offset 0 --limit 10\n' "$requested_model"
 }
 
 ai_pull_mobile_candidate() {
-  printf 'AnSysWarden · Modelo móvil v1\n'
+  printf 'AnSysWarden · Mobile model v1\n'
   printf '────────────────────────────────────────\n'
-  printf 'Modelo: gemma4:e2b\n'
-  printf 'Rol:    modelo principal de IA local\n\n'
+  printf 'Model: gemma4:e2b\n'
+  printf 'Role:  primary local AI model\n\n'
   ai_pull 'gemma4:e2b'
 }
 
@@ -203,18 +204,18 @@ ai_test() {
   require_command curl
   require_command jq
   if ! ollama_ready; then
-    err "Ollama no está respondiendo. Ejecuta: ./ansys ai start"
+    err "Ollama is not responding. Run: ./ansys ai start"
     exit 1
   fi
 
-  info "Ollama responde"
+  info "Ollama is responding"
 
   local tags
   tags="$(curl -fsS "$OLLAMA_HOST_URL/api/tags")"
   if jq -e --arg model "$MODEL" 'any(.models[]?; ((.name // "") | startswith($model)))' <<<"$tags" >/dev/null 2>&1; then
-    info "Modelo $MODEL disponible"
+    info "Model $MODEL is available"
   else
-    warn "El modelo $MODEL no aparece entre los modelos instalados."
+    warn "Model $MODEL was not found among installed models."
   fi
 
   local payload response text
@@ -222,24 +223,24 @@ ai_test() {
     --arg model "$MODEL" \
     --arg keep "$AI_KEEP_ALIVE" \
     --argjson ctx "$AI_NUM_CTX" \
-    '{model:$model,prompt:"Responde exactamente: ANSYSWARDEN_OK",stream:false,think:false,keep_alive:$keep,options:{temperature:0,num_ctx:$ctx,num_predict:16}}')"
+    '{model:$model,prompt:"Reply exactly: ANSYSWARDEN_OK",stream:false,think:false,keep_alive:$keep,options:{temperature:0,num_ctx:$ctx,num_predict:16}}')"
   response="$(curl -fsS -H 'Content-Type: application/json' -d "$payload" "$OLLAMA_HOST_URL/api/generate")"
   text="$(jq -r '.response // empty' <<<"$response" | tr -d '\r' | xargs)"
 
   if [[ "$text" == *"ANSYSWARDEN_OK"* ]]; then
-    info "Inferencia correcta"
-    printf 'Perfil móvil: ctx=%s keep_alive=%s\n' "$AI_NUM_CTX" "$AI_KEEP_ALIVE"
-    printf '\nRespuesta:\n%s\n' "$text"
+    info "Inference succeeded"
+    printf 'Mobile profile: ctx=%s keep_alive=%s\n' "$AI_NUM_CTX" "$AI_KEEP_ALIVE"
+    printf '\nResponse:\n%s\n' "$text"
   else
-    err "La inferencia respondió de forma inesperada: $text"
+    err "Inference returned an unexpected response: $text"
     exit 1
   fi
 }
 
 run_ts() {
   if [[ ! -x "$ROOT_DIR/node_modules/.bin/tsx" ]]; then
-    err "Las dependencias TypeScript aún no están instaladas."
-    printf 'Ejecuta una sola vez:\n  npm install\n'
+    err "TypeScript dependencies are not installed yet."
+    printf 'Run once:\n  npm install\n'
     exit 1
   fi
 
@@ -252,7 +253,7 @@ show_logs() {
     shopt -s nullglob
     local files=("$LOG_DIR"/*.jsonl)
     if ((${#files[@]} == 0)); then
-      warn "Todavía no hay trazas JSONL."
+      warn "No JSONL traces exist yet."
       return
     fi
     cat "${files[@]}"
@@ -264,10 +265,10 @@ show_logs() {
   if [[ -f "$OLLAMA_LOG_FILE" ]]; then
     tail -n 30 "$OLLAMA_LOG_FILE"
   else
-    warn "Todavía no existe el log de Ollama."
+    warn "The Ollama log does not exist yet."
   fi
 
-  printf '\nTrazas estructuradas:\n'
+  printf '\nStructured traces:\n'
   find "$LOG_DIR" -maxdepth 1 -name '*.jsonl' -type f -printf '  %f\n' 2>/dev/null | sort || true
 }
 
@@ -292,18 +293,18 @@ main() {
           shift 2
           run_ts "$ROOT_DIR/src/worker/mobile-worker.ts" "$@"
           ;;
-        *) err "Worker desconocido: ${2:-}"; usage; exit 1 ;;
+        *) err "Unknown worker: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
     doctor)
       run_ts "$ROOT_DIR/src/cli.ts" doctor
       ;;
     classify)
-      [[ -n "${2:-}" ]] || { err "Falta la ruta a clasificar."; exit 1; }
+      [[ -n "${2:-}" ]] || { err "Path to classify is required."; exit 1; }
       run_ts "$ROOT_DIR/src/cli.ts" classify "$2"
       ;;
     scan)
-      [[ -n "${2:-}" ]] || { err "Falta la ruta a escanear."; exit 1; }
+      [[ -n "${2:-}" ]] || { err "Path to scan is required."; exit 1; }
       shift
       run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
       ;;
@@ -312,7 +313,7 @@ main() {
       run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@"
       ;;
     inspect)
-      [[ -n "${2:-}" ]] || { err "Falta la ruta a inspeccionar."; exit 1; }
+      [[ -n "${2:-}" ]] || { err "Path to inspect is required."; exit 1; }
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
       ;;
     backend)
@@ -339,16 +340,20 @@ main() {
           shift 2
           run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@"
           ;;
-        *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
+        e2e)
+          shift 2
+          run_ts "$ROOT_DIR/src/tests/backend-gemma-e2e-cli.ts" "$@"
+          ;;
+        *) err "Unknown test: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
     review)
       case "${2:-}" in
         export)
-          [[ -n "${3:-}" ]] || { err "Falta la ruta a exportar para revisión."; exit 1; }
+          [[ -n "${3:-}" ]] || { err "Path to export for review is required."; exit 1; }
           run_ts "$ROOT_DIR/src/review/export-review.ts" "$3"
           ;;
-        *) err "Comando review desconocido: ${2:-}"; usage; exit 1 ;;
+        *) err "Unknown review command: ${2:-}"; usage; exit 1 ;;
       esac
       ;;
     logs)
@@ -358,7 +363,7 @@ main() {
       usage
       ;;
     *)
-      err "Comando desconocido: $command"
+      err "Unknown command: $command"
       usage
       exit 1
       ;;

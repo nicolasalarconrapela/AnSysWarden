@@ -62,17 +62,17 @@ export class DustScanner {
   async scan(inputPath: string, options: DustScanOptions = {}): Promise<DustScanResult> {
     const depth = options.depth ?? readPositiveInt(process.env.ANSYSWARDEN_DUST_DEPTH, DEFAULT_DEPTH);
     if (!Number.isInteger(depth) || depth < 1 || depth > 32) {
-      throw new Error(`Profundidad Dust inválida: ${depth}. Debe estar entre 1 y 32.`);
+      throw new Error(`Invalid Dust depth: ${depth}. It must be between 1 and 32.`);
     }
 
     const minSize = options.minSize ?? process.env.ANSYSWARDEN_DUST_MIN_SIZE ?? DEFAULT_MIN_SIZE;
     if (!/^[0-9]+(?:\.[0-9]+)?(?:B|K|KB|KIB|M|MB|MIB|G|GB|GIB|T|TB|TIB)?$/i.test(minSize)) {
-      throw new Error(`Tamaño mínimo Dust inválido: ${minSize}`);
+      throw new Error(`Invalid Dust minimum size: ${minSize}`);
     }
 
     const target = resolve(inputPath);
-    // AnSysWarden decide sobre directorios. -D evita convertir archivos grandes
-    // aislados (VHDX, instaladores, bases SQLite...) en candidatos para Gemma.
+    // AnSysWarden makes decisions about directories. -D prevents isolated large
+    // files (VHDX, installers, SQLite databases...) from becoming Gemma candidates.
     const args = ['-j', '-p', '-P', '-D', '-o', 'b', '-d', String(depth), '-z', minSize, target];
     const bin = this.getBinary();
     const result = await runProcess(bin.path, args, this.maxOutputBytes);
@@ -82,13 +82,13 @@ export class DustScanner {
       parsed = JSON.parse(result.stdout);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`Dust devolvió JSON inválido: ${reason}`);
+      throw new Error(`Dust returned invalid JSON: ${reason}`);
     }
 
     const root = parseDustNode(parsed);
     const entries = flattenDustTree(root);
     if (entries.length === 0) {
-      throw new Error('Dust no devolvió ninguna entrada utilizable para el scan.');
+      throw new Error('Dust returned no usable scan entries.');
     }
 
     const scan: ScanDocument = {
@@ -100,8 +100,8 @@ export class DustScanner {
       entries,
     };
 
-    // El scan Dust es la fuente completa de tamaños de directorios. El árbol IA
-    // se deriva después y nunca sustituye ni modifica el inventario original.
+    // The Dust scan is the complete source of directory sizes. The AI tree is
+    // derived afterwards and never replaces or modifies the original inventory.
     await this.storage.saveScan(scan);
     const aiInput = await this.treePruner.build(scan, target, {
       ...(options.aiTreeDepth === undefined ? {} : { maxDepth: options.aiTreeDepth }),
@@ -122,18 +122,18 @@ export class DustScanner {
 
 function parseDustNode(value: unknown): DustJsonNode {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('La raíz JSON de Dust no tiene el formato esperado.');
+    throw new Error('Dust JSON root does not have the expected format.');
   }
 
   const node = value as Record<string, unknown>;
   if (typeof node.name !== 'string' || node.name.length === 0) {
-    throw new Error('Dust devolvió un nodo sin nombre válido.');
+    throw new Error('Dust returned a node without a valid name.');
   }
   if (!(typeof node.size === 'string' || typeof node.size === 'number')) {
-    throw new Error(`Dust devolvió un tamaño inválido para ${node.name}.`);
+    throw new Error(`Dust returned an invalid size for ${node.name}.`);
   }
   if (!Array.isArray(node.children)) {
-    throw new Error(`Dust devolvió children inválido para ${node.name}.`);
+    throw new Error(`Dust returned invalid children for ${node.name}.`);
   }
 
   return {
@@ -161,7 +161,7 @@ function flattenDustTree(root: DustJsonNode): ScanEntry[] {
       currentParentId = entryId;
 
       if (entries.size > MAX_ENTRIES) {
-        throw new Error(`Dust produjo más de ${MAX_ENTRIES} entradas; reduce --depth o aumenta --min-size.`);
+        throw new Error(`Dust produced more than ${MAX_ENTRIES} entries; reduce --depth or increase --min-size.`);
       }
     }
 
@@ -179,13 +179,13 @@ function createEntryId(path: string): string {
 
 export function parseDustSize(value: string | number): number {
   if (typeof value === 'number') {
-    if (!Number.isFinite(value) || value < 0) throw new Error(`Tamaño Dust inválido: ${value}`);
+    if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid Dust size: ${value}`);
     return Math.round(value);
   }
 
   const normalized = value.trim().replace(/,/g, '');
   const match = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*(B|KB|KIB|MB|MIB|GB|GIB|TB|TIB|PB|PIB|K|KI|M|MI|G|GI|T|TI|P|PI)?$/i);
-  if (!match) throw new Error(`No se puede convertir el tamaño de Dust: ${value}`);
+  if (!match) throw new Error(`Could not parse Dust size: ${value}`);
 
   const amount = Number(match[1]);
   const unit = (match[2] ?? 'B').toUpperCase();
@@ -214,7 +214,7 @@ export function parseDustSize(value: string | number): number {
   };
 
   const factor = factors[unit];
-  if (!factor) throw new Error(`Unidad de tamaño Dust no soportada: ${unit}`);
+  if (!factor) throw new Error(`Unsupported Dust size unit: ${unit}`);
   return Math.round(amount * factor);
 }
 
@@ -254,7 +254,7 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
       stdoutBytes += chunk.length;
       if (stdoutBytes > maxOutputBytes) {
         child.kill();
-        fail(new Error(`La salida JSON de Dust supera el máximo permitido de ${maxOutputBytes} bytes.`));
+        fail(new Error(`Dust JSON output exceeds the maximum allowed ${maxOutputBytes} bytes.`));
         return;
       }
       stdout.push(chunk);
@@ -268,7 +268,7 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
 
     child.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') {
-        fail(new Error(`No se encuentra '${bin}'. Ejecuta: ./ansys dust install`));
+        fail(new Error(`'${bin}' was not found. Run: ./ansys dust install`));
         return;
       }
       fail(error);
@@ -278,7 +278,7 @@ function runProcess(bin: string, args: string[], maxOutputBytes: number): Promis
       if (settled) return;
       const errText = Buffer.concat(stderr).toString('utf8').trim();
       if (code !== 0) {
-        fail(new Error(`Dust terminó con código ${String(code)}${errText ? `: ${errText}` : ''}`));
+        fail(new Error(`Dust exited with code ${String(code)}${errText ? `: ${errText}` : ''}`));
         return;
       }
       settled = true;
