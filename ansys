@@ -47,6 +47,7 @@ Uso:
   ./ansys test benchmark [--offset N] [--limit N]
   ./ansys test models [--models modelo1,modelo2] [--timeout-ms N]
   ./ansys test mobile-models [--timeout-ms N]
+  ./ansys test e2e --backend http://IP_PC:8787 [--timeout-ms N] [--poll-ms N]
   ./ansys review export <ruta>
   ./ansys logs [--raw]
 
@@ -173,7 +174,7 @@ ai_models() {
   printf '  La IA solo aporta evidencia y puede terminar en proteger o revisar.\n'
   printf '\nInstalar modelo principal:\n  ./ansys ai pull-mobile-candidate\n'
   printf '\nComparar modelo principal y referencia:\n  ./ansys test mobile-models\n'
-  printf '\nForzar temporalmente la referencia:\n  ANSYSWARDEN_MODEL=gemma2:2b ./ansys classify <ruta>\n'
+  printf '\nForzar temporalmente la referencia:\n  ANSYSWARDEN_MODEL=%q ./ansys classify <ruta>\n' 'gemma2:2b'
 }
 
 ai_pull() {
@@ -338,6 +339,10 @@ main() {
         mobile-models)
           shift 2
           run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@"
+          ;;
+        e2e)
+          shift 2
+          run_ts "$ROOT_DIR/src/tests/backend-gemma-e2e-cli.ts" "$@"
           ;;
         *) err "Test desconocido: ${2:-}"; usage; exit 1 ;;
       esac
