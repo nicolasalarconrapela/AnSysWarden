@@ -1,7 +1,8 @@
 import { resolve } from 'node:path';
 import { PathClassifier } from '../../../ai/classifier';
+import { ScanService } from '../../../application/scan/scan-service';
 import type { TraceLogger } from '../../../observability/logger';
-import { LocalScanner, candidateLabel, formatBytes } from '../../../scanner/scanner';
+import { candidateLabel, formatBytes } from '../../../scanner/scanner';
 import { pick } from '../presentation/terminal';
 import { renderScan } from '../presentation/scan-presenter';
 
@@ -21,7 +22,7 @@ function parseMinMb(args: string[]): number | undefined {
 export async function runScanCommand(root: string, args: string[], logger: TraceLogger): Promise<void> {
   const minMb = parseMinMb(args) ?? 50;
   const classifier = new PathClassifier(logger);
-  const scanner = new LocalScanner(classifier, logger);
+  const scanner = new ScanService(classifier, logger);
   const summary = await scanner.scan(root, { minBytes: minMb * 1024 * 1024 });
 
   renderScan({
