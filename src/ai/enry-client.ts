@@ -16,7 +16,7 @@ export async function detectLanguagesWithEnry(root: string): Promise<EnryDetecti
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return { available: false, languages: [], reason: 'Enry no está instalado; se usa detección local por manifests.' };
+      return { available: false, languages: [], reason: 'Enry is not installed; falling back to local manifest-based detection.' };
     }
     return {
       available: false,
@@ -53,7 +53,7 @@ function run(bin: string, args: string[]): Promise<string> {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(`Enry terminó con código ${String(code)}: ${Buffer.concat(stderr).toString('utf8').trim()}`));
+        reject(new Error(`Enry exited with code ${String(code)}: ${Buffer.concat(stderr).toString('utf8').trim()}`));
         return;
       }
       resolve(Buffer.concat(stdout).toString('utf8'));
