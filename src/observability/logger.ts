@@ -57,12 +57,12 @@ export class TraceLogger {
     data?: Record<string, unknown>,
   ): Promise<T> {
     const startedAt = performance.now();
-    await this.info(`${event}.start`, `${message} · inicio`, data);
+    await this.info(`${event}.start`, `${message} · start`, data);
 
     try {
       const result = await operation();
       const durationMs = Math.round(performance.now() - startedAt);
-      await this.write('info', `${event}.success`, `${message} · completado`, data, durationMs);
+      await this.write('info', `${event}.success`, `${message} · completed`, data, durationMs);
       return result;
     } catch (error) {
       const durationMs = Math.round(performance.now() - startedAt);
