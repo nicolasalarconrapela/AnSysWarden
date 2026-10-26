@@ -24,7 +24,7 @@ function sanitizePath(inputPath: string): string {
 async function main(): Promise<void> {
   const input = process.argv[2];
   if (!input) {
-    throw new Error('Uso: export-review <ruta>');
+    throw new Error('Usage: export-review <path>');
   }
 
   const logger = new TraceLogger();
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
       automatically_uploaded: false,
       contains_file_contents: false,
       path_sanitized: sanitizedPath !== absolutePath,
-      note: 'Este JSON se crea localmente. AnSysWarden no lo envía a ningún servidor.',
+      note: 'This JSON is created locally. AnSysWarden does not send it to any server.',
     },
     case: {
       path: sanitizedPath,
@@ -69,17 +69,17 @@ async function main(): Promise<void> {
 
   console.log('\nAnSysWarden · Review Export');
   console.log('════════════════════════════════════════════════════');
-  console.log(`Ruta:          ${sanitizedPath}`);
-  console.log(`Clasificación: ${result.classification}`);
-  console.log(`Fuente:        ${result.source}`);
-  console.log(`Archivo:       ${output}`);
-  console.log('Privacidad:    LOCAL. No se ha enviado nada a Internet.');
-  console.log('Contenido:     No incluye contenido de archivos; solo contexto de clasificación.');
-  console.log('\nPuedes revisar manualmente este JSON con otra IA si tú decides compartirlo.');
+  console.log(`Path:           ${sanitizedPath}`);
+  console.log(`Classification: ${result.classification}`);
+  console.log(`Source:         ${result.source}`);
+  console.log(`File:           ${output}`);
+  console.log('Privacy:        LOCAL. Nothing has been sent to the Internet.');
+  console.log('Contents:       No file contents are included; only classification context.');
+  console.log('\nYou may manually review this JSON with another AI only if you choose to share it.');
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[AnSysWarden] No se pudo exportar la revisión: ${message}`);
+  console.error(`[AnSysWarden] Review export failed: ${message}`);
   process.exitCode = 1;
 });
