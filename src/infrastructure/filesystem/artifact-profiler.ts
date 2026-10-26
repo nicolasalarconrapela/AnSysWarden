@@ -1,21 +1,9 @@
 import { opendir, lstat } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { TraceLogger } from '../../observability/logger';
+import type { ArtifactProfile, ProfileLimitReason } from '../../core/contracts/artifact-profile';
 
-export type ProfileLimitReason = 'MAX_FILES' | 'MAX_DIRECTORIES' | 'MAX_DURATION';
-
-export interface ArtifactProfile {
-  path: string;
-  sizeBytes: number;
-  fileCount: number;
-  directoryCount: number;
-  skippedEntries: number;
-  newestMtimeMs: number | null;
-  oldestMtimeMs: number | null;
-  extensions: Array<{ extension: string; files: number; bytes: number }>;
-  profileComplete?: boolean;
-  limitReason?: ProfileLimitReason | null;
-}
+export type { ArtifactProfile, ProfileLimitReason } from '../../core/contracts/artifact-profile';
 
 export interface ArtifactProfilerOptions {
   maxFiles?: number;
