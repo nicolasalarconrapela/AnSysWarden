@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { BackendStorage } from './storage';
+import { getLanguage } from '../i18n';
 import {
   isAiJobDocument,
   isAiJobResultDocument,
@@ -16,6 +17,10 @@ export interface BackendServerOptions {
   port?: number;
   token: string;
   storage?: BackendStorage;
+}
+
+function pick(en: string, es: string): string {
+  return getLanguage() === 'es' ? es : en;
 }
 
 export async function startBackendServer(options: BackendServerOptions): Promise<void> {
@@ -188,12 +193,12 @@ export async function startBackendServer(options: BackendServerOptions): Promise
   });
 
   server.listen(port, host, () => {
-    console.log('\nAnSysWarden · PC Backend');
+    console.log(`\nAnSysWarden · ${pick('PC Backend', 'Backend del PC')}`);
     console.log('────────────────────────────────────────');
-    console.log(`Listening:  http://${host}:${port}`);
-    console.log(`Data:       ${storage.root}`);
-    console.log('Security:   Bearer token required');
-    console.log('Role:       source of truth for scans/results and AI job queue');
+    console.log(`${pick('Listening', 'Escuchando')}:  http://${host}:${port}`);
+    console.log(`${pick('Data', 'Datos')}:       ${storage.root}`);
+    console.log(`${pick('Security', 'Seguridad')}:   ${pick('Bearer token required', 'token Bearer requerido')}`);
+    console.log(`${pick('Role', 'Rol')}:       ${pick('source of truth for scans/results and AI job queue', 'fuente de verdad para escaneos/resultados y cola de trabajos IA')}`);
   });
 }
 
