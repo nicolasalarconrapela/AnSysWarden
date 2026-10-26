@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { PathClassifier } from '../ai/classifier';
 import { OllamaClient } from '../ai/ollama-client';
 import { TraceLogger } from '../observability/logger';
+import { t } from '../i18n';
 import {
   AI_JOB_RESULT_SCHEMA,
   type AiJobDocument,
@@ -25,35 +26,33 @@ async function main(): Promise<void> {
   const classifier = new PathClassifier(logger, ollama);
   const workerName = process.env.ANSYSWARDEN_WORKER_NAME?.trim() || `mobile-${hostname()}`;
 
-  console.log('AnSysWarden · Mobile Worker');
+  console.log(t('worker.title'));
   console.log('────────────────────────────────────────');
-  console.log(`Backend: ${options.backendUrl}`);
-  console.log(`Worker:  ${workerName}`);
-  console.log(`Model:   ${ollama.getModel()}`);
-  console.log('Policy: the mobile worker can never authorize SAFE_CACHE.');
+  console.log(`${t('common.backend')}: ${options.backendUrl}`);
+  console.log(`${t('common.worker')}:  ${workerName}`);
+  console.log(`${t('common.model')}:   ${ollama.getModel()}`);
+  console.log(`${t('common.policy')}: ${t('worker.policy')}`);
 
   do {
     const job = await fetchNextJob(options);
     if (!job) {
       if (options.once) {
-        console.log('[·] No pending jobs.');
+        console.log(t('worker.no_jobs'));
         return;
       }
       await sleep(options.pollMs);
       continue;
     }
 
-    console.log(`[✓] Job received: ${job.id}`);
-    console.log(`    Path: ${job.profile.path}`);
+    console.log(t('worker.job_received', { jobId: job.id }));
+    console.log(`    ${t('common.path')}: ${job.profile.path}`);
 
     let result = await classifier.classifyProfile(job.profile, { rulesAlreadyChecked: true });
 
-    // Defense in depth: even if the classifier changes in the future,
-    // the mobile worker must never send SAFE_CACHE back to the PC.
     if (result.classification === 'SAFE_CACHE') {
       result = await classifier.fallbackFromAiError(
         job.profile.path,
-        new Error('The mobile worker received SAFE_CACHE, which is not an authorized remote AI classification.'),
+        new Error(t('worker.remote_safe_cache')),
       );
     }
 
@@ -67,7 +66,7 @@ async function main(): Promise<void> {
     };
 
     await postResult(options, job.id, document);
-    console.log(`[✓] Result sent: ${result.classification}`);
+    console.log(t('worker.result_sent', { classification: result.classification }));
 
     if (options.once) return;
   } while (true);
@@ -79,14 +78,14 @@ function readOptions(args: string[]): WorkerOptions {
     ?? DEFAULT_BACKEND_URL;
   const token = process.env.ANSYSWARDEN_API_TOKEN?.trim() ?? '';
   if (token.length < 24) {
-    throw new Error('ANSYSWARDEN_API_TOKEN is missing or too short. It must match the PC backend token.');
+    throw new Error(t('worker.token_missing'));
   }
 
   const once = args.includes('--once');
   const rawPollMs = readOption(args, '--poll-ms') ?? String(DEFAULT_POLL_MS);
   const pollMs = Number(rawPollMs);
   if (!Number.isInteger(pollMs) || pollMs < 500 || pollMs > 60_000) {
-    throw new Error(`Invalid --poll-ms: ${rawPollMs}. Use a value between 500 and 60000.`);
+    throw new Error(t('worker.invalid_poll', { value: rawPollMs }));
   }
 
   return {
@@ -109,7 +108,7 @@ async function fetchNextJob(options: WorkerOptions): Promise<AiJobDocument | nul
 
   if (response.status === 204) return null;
   if (!response.ok) {
-    throw new Error(`Backend returned ${response.status} while requesting the next job.`);
+    throw new Error(t('worker.backend_next_error', { status: response.status }));
   }
   return await response.json() as AiJobDocument;
 }
@@ -130,7 +129,7 @@ async function postResult(
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Backend rejected the result (${response.status}): ${body}`);
+    throw new Error(t('worker.backend_rejected', { status: response.status, body }));
   }
 }
 
