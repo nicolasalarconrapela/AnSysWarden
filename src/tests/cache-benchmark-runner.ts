@@ -10,7 +10,7 @@ function readNumberArg(name: string, fallback: number): number {
   if (index === -1) return fallback;
   const raw = process.argv[index + 1];
   const parsed = Number.parseInt(raw ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`Valor inválido para ${name}: ${String(raw)}`);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`Invalid value for ${name}: ${String(raw)}`);
   return parsed;
 }
 
@@ -29,9 +29,7 @@ type EvidenceQuality = 'exact' | 'conservative' | 'dangerous';
 
 function evaluateEvidence(expected: Classification, ai: AiEvidencePayload): EvidenceQuality {
   if (expected === 'SAFE_CACHE') {
-    return ai.regenerability === 'likely' && ai.userDataRisk === 'low'
-      ? 'exact'
-      : 'conservative';
+    return ai.regenerability === 'likely' && ai.userDataRisk === 'low' ? 'exact' : 'conservative';
   }
 
   if (expected === 'USER_DATA') {
@@ -40,13 +38,11 @@ function evaluateEvidence(expected: Classification, ai: AiEvidencePayload): Evid
     return 'conservative';
   }
 
-  // REVIEW_REQUIRED: lo correcto es conservar incertidumbre. Declarar simultáneamente
-  // regenerabilidad probable y riesgo bajo es la señal peligrosa equivalente al viejo SAFE_CACHE.
+  // For REVIEW_REQUIRED, the correct behavior is to preserve uncertainty.
+  // Claiming both likely regenerability and low risk is the dangerous equivalent
+  // of the old direct SAFE_CACHE behavior.
   if (ai.regenerability === 'likely' && ai.userDataRisk === 'low') return 'dangerous';
-  if (
-    ai.regenerability === 'unknown'
-    && (ai.userDataRisk === 'unknown' || ai.userDataRisk === 'medium')
-  ) return 'exact';
+  if (ai.regenerability === 'unknown' && (ai.userDataRisk === 'unknown' || ai.userDataRisk === 'medium')) return 'exact';
   return 'conservative';
 }
 
@@ -54,38 +50,38 @@ async function warmupModel(ollama: OllamaClient, label: string, timeoutMs?: numb
   const startedAt = performance.now();
   try {
     await ollama.analyzePath('/benchmark/warmup/unknown-artifact', timeoutMs);
-    console.log(`✓ ${label}: modelo listo (${Math.round(performance.now() - startedAt)} ms).`);
+    console.log(`✓ ${label}: model ready (${Math.round(performance.now() - startedAt)} ms).`);
     return true;
   } catch (error) {
-    console.log(`! ${label}: warm-up no concluyente: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(`! ${label}: inconclusive warm-up: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }
 
 async function recoverModel(ollama: OllamaClient, cooldownMs: number, recoveryTimeoutMs: number): Promise<boolean> {
-  console.log('↻ Recuperación fuerte: descargando modelo de memoria...');
+  console.log('↻ Hard recovery: unloading model from memory...');
   try {
     await ollama.unloadModel();
-    console.log('✓ Modelo:      descargado de memoria');
+    console.log('✓ Model:       unloaded from memory');
   } catch (error) {
-    console.log(`! Modelo:      no se pudo descargar limpiamente: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(`! Model:       could not unload cleanly: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   if (cooldownMs > 0) {
-    console.log(`↻ Cooldown:    ${cooldownMs} ms antes del warm-up`);
+    console.log(`↻ Cooldown:    ${cooldownMs} ms before warm-up`);
     await sleep(cooldownMs);
   }
 
   try {
     await ollama.health();
-    console.log('✓ Ollama:      servidor activo');
+    console.log('✓ Ollama:      server active');
   } catch (error) {
-    console.log(`! Ollama:      servidor no disponible: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(`! Ollama:      server unavailable: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 
-  console.log(`↻ Warm-up:     timeout de recuperación ${recoveryTimeoutMs} ms`);
-  return warmupModel(ollama, 'Recuperación', recoveryTimeoutMs);
+  console.log(`↻ Warm-up:     recovery timeout ${recoveryTimeoutMs} ms`);
+  return warmupModel(ollama, 'Recovery', recoveryTimeoutMs);
 }
 
 async function main(): Promise<void> {
@@ -103,30 +99,30 @@ async function main(): Promise<void> {
   const classifier = new PathClassifier(logger, ollama);
   const selected = CACHE_BENCHMARK_100.slice(offset, offset + limit);
 
-  if (selected.length === 0) throw new Error(`No hay casos para offset=${offset} limit=${limit}`);
+  if (selected.length === 0) throw new Error(`No cases for offset=${offset} limit=${limit}`);
 
   console.log(`\n${BENCHMARK_METADATA.name}`);
   console.log('════════════════════════════════════════════════════');
-  console.log(`Versión:       ${BENCHMARK_METADATA.version}`);
-  console.log(`Casos totales: ${CACHE_BENCHMARK_100.length}`);
-  console.log(`Tanda:         ${offset + 1}-${offset + selected.length}`);
-  console.log(`Modelo:        ${ollama.getModel()}`);
-  console.log(`Timeout test:  ${timeoutMs} ms`);
-  console.log(`Cooldown:      ${cooldownMs} ms tras timeout`);
-  console.log(`Recycle:       tras ${recycleAfterTimeouts} timeouts consecutivos`);
-  console.log(`Timeout recovery: ${recoveryTimeoutMs} ms`);
-  console.log('Contrato IA:   Gemma analiza evidencia; nunca decide SAFE_CACHE.');
-  console.log('Métrica crítica: SAFE_CACHE efectivos malos = 0.');
-  console.log('Calidad IA: evidencia exacta / conservadora / peligrosa.');
-  console.log('Nota: este benchmark usa rutas sintéticas; el ArtifactProfiler se evalúa con rutas reales.');
-  console.log('No se borra ni modifica ningún archivo.');
+  console.log(`Version:          ${BENCHMARK_METADATA.version}`);
+  console.log(`Total cases:      ${CACHE_BENCHMARK_100.length}`);
+  console.log(`Batch:            ${offset + 1}-${offset + selected.length}`);
+  console.log(`Model:            ${ollama.getModel()}`);
+  console.log(`Test timeout:     ${timeoutMs} ms`);
+  console.log(`Cooldown:         ${cooldownMs} ms after timeout`);
+  console.log(`Recycle:          after ${recycleAfterTimeouts} consecutive timeouts`);
+  console.log(`Recovery timeout: ${recoveryTimeoutMs} ms`);
+  console.log('AI contract:      Gemma analyzes evidence; it never decides SAFE_CACHE.');
+  console.log('Critical metric:  bad effective SAFE_CACHE = 0.');
+  console.log('AI quality:       exact / conservative / dangerous evidence.');
+  console.log('Note: this benchmark uses synthetic paths; ArtifactProfiler is evaluated with real paths.');
+  console.log('No file is deleted or modified.');
 
   const status = await ollama.health();
   const modelPresent = status.models.some((name) => name.startsWith(ollama.getModel()));
-  if (!modelPresent) throw new Error(`El modelo ${ollama.getModel()} no está disponible en Ollama.`);
+  if (!modelPresent) throw new Error(`Model ${ollama.getModel()} is not available in Ollama.`);
 
-  console.log('🔥 Warm-up de Gemma...');
-  await warmupModel(ollama, 'Inicio', recoveryTimeoutMs);
+  console.log('🔥 Warming up Gemma...');
+  await warmupModel(ollama, 'Start', recoveryTimeoutMs);
 
   let evidenceExact = 0;
   let evidenceConservative = 0;
@@ -150,12 +146,12 @@ async function main(): Promise<void> {
     const test = selected[index];
     console.log('\n────────────────────────────────────────────────────');
     console.log(`${test.id}  ${offset + index + 1}/100`);
-    console.log(`Familia:    ${test.appFamily}`);
-    console.log(`Artefacto:  ${test.artifactType}`);
-    console.log(`Ruta:       ${test.path}`);
-    console.log(`Tamaño:     ${test.sizeMb} MB`);
-    console.log(`Esperado:   ${test.expected}`);
-    console.log(`Dificultad: ${test.difficulty}`);
+    console.log(`Family:      ${test.appFamily}`);
+    console.log(`Artifact:    ${test.artifactType}`);
+    console.log(`Path:        ${test.path}`);
+    console.log(`Size:        ${test.sizeMb} MB`);
+    console.log(`Expected:    ${test.expected}`);
+    console.log(`Difficulty:  ${test.difficulty}`);
 
     const ruleResult = classifyByRules(test.path);
     let modelActual = 'SKIPPED_BY_RULE';
@@ -165,7 +161,7 @@ async function main(): Promise<void> {
     if (ruleResult) {
       skippedAiByRule += 1;
       effective = ruleResult;
-      console.log('⚡ Gemma:      OMITIDA (regla local suficiente)');
+      console.log('⚡ Gemma:      SKIPPED (local rule is sufficient)');
     } else {
       const startedAt = performance.now();
       try {
@@ -182,13 +178,13 @@ async function main(): Promise<void> {
         else evidenceDangerous += 1;
 
         modelActual = `regen=${ai.regenerability};risk=${ai.userDataRisk}`;
-        console.log(`🤖 Gemma evidencia (${Math.round(ai.confidence * 100)}%)`);
+        console.log(`🤖 Gemma evidence (${Math.round(ai.confidence * 100)}%)`);
         console.log(`   Regenerable: ${ai.regenerability}`);
-        console.log(`   Riesgo datos:${ai.userDataRisk}`);
-        console.log(`   Latencia:    ${latencyMs} ms`);
-        console.log(`   Evidencia:   ${ai.evidence.join(' | ')}`);
-        console.log(`   Motivo:      ${ai.reason}`);
-        console.log(`   Calidad:     ${quality.toUpperCase()}`);
+        console.log(`   Data risk:   ${ai.userDataRisk}`);
+        console.log(`   Latency:     ${latencyMs} ms`);
+        console.log(`   Evidence:    ${ai.evidence.join(' | ')}`);
+        console.log(`   Reason:      ${ai.reason}`);
+        console.log(`   Quality:     ${quality.toUpperCase()}`);
 
         effective = await classifier.applyAiEvidence(test.path, ai);
       } catch (error) {
@@ -208,20 +204,20 @@ async function main(): Promise<void> {
         }
 
         console.log('🤖 Gemma:      ERROR');
-        console.log(`   Latencia:   ${latencyMs} ms`);
-        console.log(`   Motivo:     ${message}`);
+        console.log(`   Latency:    ${latencyMs} ms`);
+        console.log(`   Reason:     ${message}`);
         effective = await classifier.fallbackFromAiError(test.path, error);
 
         if (isTimeout) {
           if (consecutiveTimeouts < recycleAfterTimeouts) {
             softRecoveries += 1;
-            console.log(`↻ Recuperación suave: ${cooldownMs} ms; se conserva el modelo cargado`);
+            console.log(`↻ Soft recovery: ${cooldownMs} ms; keeping the model loaded`);
             if (cooldownMs > 0) await sleep(cooldownMs);
             try {
               await ollama.health();
-              console.log('✓ Ollama:      servidor activo; se continúa sin unload');
+              console.log('✓ Ollama:      server active; continuing without unload');
             } catch (healthError) {
-              console.log(`! Ollama:      no responde: ${healthError instanceof Error ? healthError.message : String(healthError)}`);
+              console.log(`! Ollama:      not responding: ${healthError instanceof Error ? healthError.message : String(healthError)}`);
             }
           } else {
             recoveriesAttempted += 1;
@@ -239,12 +235,12 @@ async function main(): Promise<void> {
     if (unsafe) dangerousEffectiveSafe += 1;
     else systemSafetyPass += 1;
 
-    console.log(`🛡️ Sistema:    ${effective.classification}`);
+    console.log(`🛡️ System:     ${effective.classification}`);
     console.log(`   Source:     ${effective.source}`);
-    console.log(`   Motivo:     ${effective.reason}`);
-    console.log(`✅ Seguridad:  ${unsafe ? 'FALLO CRÍTICO' : 'PASS'}`);
+    console.log(`   Reason:     ${effective.reason}`);
+    console.log(`✅ Safety:     ${unsafe ? 'CRITICAL FAILURE' : 'PASS'}`);
 
-    await logger.info('benchmark.case', 'Caso del benchmark evaluado', {
+    await logger.info('benchmark.case', 'Benchmark case evaluated', {
       id: test.id,
       expected: test.expected,
       model_actual: modelActual,
@@ -272,33 +268,33 @@ async function main(): Promise<void> {
   const maxAttempt = attemptedLatenciesMs.length > 0 ? Math.max(...attemptedLatenciesMs) : null;
 
   console.log('\n════════════════════════════════════════════════════');
-  console.log('RESUMEN DE LA TANDA');
-  console.log(`Casos totales:              ${total}`);
-  console.log(`Gemma omitida por reglas:   ${skippedAiByRule}`);
-  console.log(`Gemma realmente evaluada:   ${aiEvaluated}`);
-  console.log(`Respuestas válidas:         ${validModelResponses}/${aiEvaluated}`);
-  console.log(`Evidencia exacta:           ${evidenceExact}/${validModelResponses}`);
-  console.log(`Evidencia conservadora:     ${evidenceConservative}`);
-  console.log(`Evidencia peligrosa:        ${evidenceDangerous}`);
-  console.log(`Errores técnicos Gemma:     ${modelErrors}/${aiEvaluated}`);
-  console.log(`Timeouts Gemma:             ${modelTimeouts}/${aiEvaluated}`);
-  console.log(`Latencia media OK:          ${averageLatency ?? 'n/a'} ms`);
-  console.log(`Latencia p50 OK:            ${p50 ?? 'n/a'} ms`);
-  console.log(`Latencia p95 OK:            ${p95 ?? 'n/a'} ms`);
-  console.log(`Mayor intento:              ${maxAttempt ?? 'n/a'} ms`);
-  console.log(`Antes del 1er timeout:      ${firstTimeoutAfterAiCases ?? 'sin timeout'} inferencias OK`);
-  console.log(`Racha máxima de timeouts:   ${maxTimeoutStreak}`);
-  console.log(`Recuperaciones suaves:      ${softRecoveries}`);
-  console.log(`Recuperaciones fuertes OK:  ${recoveriesSucceeded}/${recoveriesAttempted}`);
-  console.log(`Seguridad AnSysWarden:      ${systemSafetyPass}/${total}`);
-  console.log(`SAFE_CACHE efectivos malos: ${dangerousEffectiveSafe}`);
-  console.log(`Traza JSONL:                ${logger.logFile}`);
+  console.log('BATCH SUMMARY');
+  console.log(`Total cases:                 ${total}`);
+  console.log(`Gemma skipped by rules:      ${skippedAiByRule}`);
+  console.log(`Gemma actually evaluated:    ${aiEvaluated}`);
+  console.log(`Valid responses:             ${validModelResponses}/${aiEvaluated}`);
+  console.log(`Exact evidence:              ${evidenceExact}/${validModelResponses}`);
+  console.log(`Conservative evidence:       ${evidenceConservative}`);
+  console.log(`Dangerous evidence:          ${evidenceDangerous}`);
+  console.log(`Gemma technical errors:      ${modelErrors}/${aiEvaluated}`);
+  console.log(`Gemma timeouts:              ${modelTimeouts}/${aiEvaluated}`);
+  console.log(`Average successful latency:  ${averageLatency ?? 'n/a'} ms`);
+  console.log(`Successful p50 latency:      ${p50 ?? 'n/a'} ms`);
+  console.log(`Successful p95 latency:      ${p95 ?? 'n/a'} ms`);
+  console.log(`Longest attempt:             ${maxAttempt ?? 'n/a'} ms`);
+  console.log(`Before first timeout:        ${firstTimeoutAfterAiCases ?? 'no timeout'} successful inferences`);
+  console.log(`Max timeout streak:          ${maxTimeoutStreak}`);
+  console.log(`Soft recoveries:             ${softRecoveries}`);
+  console.log(`Successful hard recoveries:  ${recoveriesSucceeded}/${recoveriesAttempted}`);
+  console.log(`AnSysWarden safety:          ${systemSafetyPass}/${total}`);
+  console.log(`Bad effective SAFE_CACHE:    ${dangerousEffectiveSafe}`);
+  console.log(`JSONL trace:                 ${logger.logFile}`);
 
   if (dangerousEffectiveSafe > 0) {
-    console.log('\n🔴 FALLO CRÍTICO: el sistema autorizó SAFE_CACHE en uno o más casos no seguros.');
+    console.log('\n🔴 CRITICAL FAILURE: the system authorized SAFE_CACHE in one or more unsafe cases.');
     process.exitCode = 2;
   } else {
-    console.log('\n🟢 La IA no tiene capacidad de autorizar SAFE_CACHE y no hubo falsos SAFE_CACHE efectivos.');
+    console.log('\n🟢 AI has no authority to authorize SAFE_CACHE, and there were no effective false SAFE_CACHE results.');
   }
 }
 
