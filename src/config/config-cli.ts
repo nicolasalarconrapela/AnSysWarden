@@ -16,8 +16,18 @@ interface LanguageState {
 }
 
 function currentLanguageState(): LanguageState {
+  const config = readAppConfig();
   const environmentLanguage = normalizeConfigLanguage(process.env.ANSYSWARDEN_LANG);
+
   if (environmentLanguage) {
+    if (config.language === environmentLanguage) {
+      return {
+        language: environmentLanguage,
+        source: 'config',
+        configured: true,
+      };
+    }
+
     return {
       language: environmentLanguage,
       source: 'environment',
@@ -25,7 +35,6 @@ function currentLanguageState(): LanguageState {
     };
   }
 
-  const config = readAppConfig();
   if (config.language) {
     return {
       language: config.language,
