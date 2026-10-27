@@ -1,4 +1,4 @@
-import { selectRecoverableSafeCandidates, type ScanCandidate } from '../scanner/scanner';
+import { selectRecoverableSafeCandidates, type ScanCandidate } from '../application/scan/scan-service';
 import { getLanguage } from '../i18n';
 
 interface OverlapCase {
