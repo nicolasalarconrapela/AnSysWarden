@@ -24,7 +24,11 @@ async function run(): Promise<void> {
   }
 
   if (command === 'serve') {
-    const token = process.env.ANSYSWARDEN_API_TOKEN?.trim() || undefined;
+    const token = process.env.ANSYSWARDEN_API_TOKEN?.trim();
+    if (!token || token.length < 24) {
+      throw new Error(t('backend.token_missing'));
+    }
+
     const host = readOption(args, '--host') ?? process.env.ANSYSWARDEN_BACKEND_HOST ?? '0.0.0.0';
     const rawPort = readOption(args, '--port') ?? process.env.ANSYSWARDEN_BACKEND_PORT ?? '8787';
     const port = Number(rawPort);
