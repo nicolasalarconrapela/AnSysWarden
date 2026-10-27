@@ -1,5 +1,5 @@
-import { classifyByRules } from '../ai/rules';
-import type { Classification } from '../ai/types';
+import { classifyByRules } from '../core/classification/rules';
+import type { Classification } from '../core/classification/types';
 import { getLanguage } from '../i18n';
 
 interface RuleCase {
