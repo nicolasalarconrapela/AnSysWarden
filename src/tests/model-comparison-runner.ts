@@ -1,5 +1,5 @@
-import { OllamaClient } from '../ai/ollama-client';
-import type { AiEvidencePayload } from '../ai/types';
+import { OllamaClient } from '../infrastructure/ollama/ollama-client';
+import type { AiEvidencePayload } from '../core/classification/types';
 import { TraceLogger } from '../observability/logger';
 import { MODEL_COMPARISON_CORE, type CoreExpectation } from './model-comparison-dataset';
 

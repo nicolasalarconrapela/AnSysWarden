@@ -1,8 +1,8 @@
 import { PathClassifier } from '../ai/classifier';
-import { OllamaClient } from '../ai/ollama-client';
+import { OllamaClient } from '../infrastructure/ollama/ollama-client';
 import { TraceLogger } from '../observability/logger';
-import type { AiEvidencePayload, Classification } from '../ai/types';
-import type { ArtifactProfile } from '../profiler/artifact-profiler';
+import type { AiEvidencePayload, Classification } from '../core/classification/types';
+import type { ArtifactProfile } from '../core/contracts/artifact-profile';
 
 export type SafetyCategory = 'datos_usuario' | 'cache_conocida' | 'reglas_deterministas' | 'ambiguedad' | 'prompt_injection' | 'barrera_sistema';
 
@@ -146,15 +146,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
 
     if (test.mode === 'model' && !modelReady) {
       const reason = `Case skipped to avoid further inference after model degradation: ${modelStopReason ?? 'unknown reason'}`;
-      results.push({
-        test,
-        actual: 'SKIPPED',
-        passed: false,
-        skipped: true,
-        reason,
-        source: 'circuit-breaker',
-        durationMs: 0,
-      });
+      results.push({ test, actual: 'SKIPPED', passed: false, skipped: true, reason, source: 'circuit-breaker', durationMs: 0 });
       await logger.warn('safety.case.skipped', `${test.id} SKIPPED: ${test.description}`, {
         category: test.category,
         input: test.input,
@@ -174,10 +166,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
         if (test.systemProbe === 'dangerous_ai_evidence') {
           result = await classifier.applyAiEvidence(test.input, DANGEROUS_AI_EVIDENCE);
         } else if (test.systemProbe === 'invalid_ai_response') {
-          result = await classifier.fallbackFromAiError(
-            test.input,
-            new Error('Simulated invalid Gemma response: JSON contract violated'),
-          );
+          result = await classifier.fallbackFromAiError(test.input, new Error('Simulated invalid Gemma response: JSON contract violated'));
         } else {
           result = await classifier.classify(test.input);
         }
@@ -185,11 +174,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
         reason = result.reason;
         confidence = result.confidence;
       } else {
-        const evidence = await ollama.analyzePath(
-          test.input,
-          MODEL_CASE_TIMEOUT_MS,
-          syntheticModelProfile(test.input),
-        );
+        const evidence = await ollama.analyzePath(test.input, MODEL_CASE_TIMEOUT_MS, syntheticModelProfile(test.input));
         result = await classifier.applyAiEvidence(test.input, evidence);
         source = 'ai-evidence';
         reason = `regen=${evidence.regenerability}; risk=${evidence.userDataRisk}; evidence=${evidence.evidence.join(' | ')}; ${evidence.reason}`;
@@ -197,38 +182,24 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
       }
 
       const classification = result.classification;
-      const passed = test.allowed.includes(classification)
-        && !(test.forbidden ?? []).includes(classification);
+      const passed = test.allowed.includes(classification) && !(test.forbidden ?? []).includes(classification);
       const durationMs = Math.round(performance.now() - startedAt);
+      const safetyResult: SafetyResult = { test, actual: classification, confidence, reason, source, passed, durationMs };
+      results.push(safetyResult);
 
-      const safetyResult: SafetyResult = {
-        test,
+      await logger.info(passed ? 'safety.case.pass' : 'safety.case.fail', `${test.id} ${passed ? 'PASS' : 'FAIL'}: ${test.description}`, {
+        category: test.category,
+        input: test.input,
+        mode: test.mode,
+        system_probe: test.systemProbe ?? null,
+        allowed: test.allowed,
+        forbidden: test.forbidden ?? [],
         actual: classification,
         confidence,
         reason,
         source,
-        passed,
-        durationMs,
-      };
-      results.push(safetyResult);
-
-      await logger.info(
-        passed ? 'safety.case.pass' : 'safety.case.fail',
-        `${test.id} ${passed ? 'PASS' : 'FAIL'}: ${test.description}`,
-        {
-          category: test.category,
-          input: test.input,
-          mode: test.mode,
-          system_probe: test.systemProbe ?? null,
-          allowed: test.allowed,
-          forbidden: test.forbidden ?? [],
-          actual: classification,
-          confidence,
-          reason,
-          source,
-          duration_ms: durationMs,
-        },
-      );
+        duration_ms: durationMs,
+      });
     } catch (error) {
       const durationMs = Math.round(performance.now() - startedAt);
       const message = error instanceof Error ? error.message : String(error);
@@ -245,13 +216,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
         });
       }
 
-      results.push({
-        test,
-        actual: 'ERROR',
-        passed: false,
-        error: message,
-        durationMs,
-      });
+      results.push({ test, actual: 'ERROR', passed: false, error: message, durationMs });
       await logger.error('safety.case.error', `${test.id} ERROR: ${test.description}`, {
         category: test.category,
         input: test.input,
@@ -265,9 +230,7 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
 
   try {
     await ollama.unloadModel();
-    await logger.info('safety.model.released', 'Model unloaded after the suite to return memory to the system', {
-      model: ollama.getModel(),
-    });
+    await logger.info('safety.model.released', 'Model unloaded after the suite to return memory to the system', { model: ollama.getModel() });
   } catch (error) {
     await logger.warn('safety.model.release_failed', 'Could not unload the model after the suite', {
       model: ollama.getModel(),
@@ -298,14 +261,5 @@ export async function runAiSafetySuite(logger: TraceLogger): Promise<SafetySuite
     system_failed: systemFailed,
   });
 
-  return {
-    passed,
-    failed,
-    modelPassed,
-    modelFailed,
-    modelSkipped,
-    systemPassed,
-    systemFailed,
-    results,
-  };
+  return { passed, failed, modelPassed, modelFailed, modelSkipped, systemPassed, systemFailed, results };
 }

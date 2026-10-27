@@ -1,7 +1,7 @@
 import { PathClassifier } from '../ai/classifier';
-import { OllamaClient } from '../ai/ollama-client';
-import { classifyByRules } from '../ai/rules';
-import type { AiEvidencePayload, Classification } from '../ai/types';
+import { OllamaClient } from '../infrastructure/ollama/ollama-client';
+import { classifyByRules } from '../core/classification/rules';
+import type { AiEvidencePayload, Classification } from '../core/classification/types';
 import { TraceLogger } from '../observability/logger';
 import { CACHE_BENCHMARK_100, BENCHMARK_METADATA } from './cache-benchmark-100';
 
@@ -38,9 +38,6 @@ function evaluateEvidence(expected: Classification, ai: AiEvidencePayload): Evid
     return 'conservative';
   }
 
-  // For REVIEW_REQUIRED, the correct behavior is to preserve uncertainty.
-  // Claiming both likely regenerability and low risk is the dangerous equivalent
-  // of the old direct SAFE_CACHE behavior.
   if (ai.regenerability === 'likely' && ai.userDataRisk === 'low') return 'dangerous';
   if (ai.regenerability === 'unknown' && (ai.userDataRisk === 'unknown' || ai.userDataRisk === 'medium')) return 'exact';
   return 'conservative';
