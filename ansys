@@ -26,33 +26,47 @@ normalize_language() {
   esac
 }
 
+LANGUAGE_SOURCE='default'
+LANGUAGE_CONFIGURED='no'
+LANGUAGE_NOTICE_REQUIRED='no'
+
 load_language_from_config() {
-  local lang
+  local lang=''
 
   if [[ -n "${ANSYSWARDEN_LANG:-}" ]]; then
     if lang="$(normalize_language "$ANSYSWARDEN_LANG")"; then
       export ANSYSWARDEN_LANG="$lang"
-      return
+      LANGUAGE_SOURCE='environment'
+      LANGUAGE_CONFIGURED='no'
+      return 0
     fi
     warn "Ignoring unsupported ANSYSWARDEN_LANG='$ANSYSWARDEN_LANG'."
     unset ANSYSWARDEN_LANG
   fi
 
-  [[ -f "$CONFIG_FILE" ]] || return
-  command -v node >/dev/null 2>&1 || return
+  if [[ -f "$CONFIG_FILE" ]] && command -v node >/dev/null 2>&1; then
+    lang="$(node -e '
+      const fs = require("fs");
+      try {
+        const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        const lang = typeof cfg.language === "string" ? cfg.language.toLowerCase() : "";
+        if (lang === "en" || lang === "es") process.stdout.write(lang);
+      } catch {}
+    ' "$CONFIG_FILE" 2>/dev/null || true)"
 
-  lang="$(node -e '
-    const fs = require("fs");
-    try {
-      const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-      const lang = typeof cfg.language === "string" ? cfg.language.toLowerCase() : "";
-      if (lang === "en" || lang === "es") process.stdout.write(lang);
-    } catch {}
-  ' "$CONFIG_FILE" 2>/dev/null || true)"
-
-  if [[ "$lang" == "en" || "$lang" == "es" ]]; then
-    export ANSYSWARDEN_LANG="$lang"
+    if [[ "$lang" == "en" || "$lang" == "es" ]]; then
+      export ANSYSWARDEN_LANG="$lang"
+      LANGUAGE_SOURCE='config'
+      LANGUAGE_CONFIGURED='yes'
+      return 0
+    fi
   fi
+
+  export ANSYSWARDEN_LANG='en'
+  LANGUAGE_SOURCE='default'
+  LANGUAGE_CONFIGURED='no'
+  LANGUAGE_NOTICE_REQUIRED='yes'
+  return 0
 }
 
 apply_global_options() {
@@ -73,6 +87,8 @@ apply_global_options() {
         exit 1
       fi
       export ANSYSWARDEN_LANG="$lang"
+      LANGUAGE_SOURCE='argument'
+      LANGUAGE_NOTICE_REQUIRED='no'
       i=$((i + 2))
       continue
     fi
@@ -80,8 +96,27 @@ apply_global_options() {
     i=$((i + 1))
   done
 
-  set -- "${cleaned[@]}"
-  GLOBAL_ARGS=("$@")
+  GLOBAL_ARGS=("${cleaned[@]}")
+}
+
+show_language_notice_if_needed() {
+  [[ "$LANGUAGE_NOTICE_REQUIRED" == 'yes' ]] || return 0
+
+  cat <<'EOF'
+AnSysWarden · Language
+────────────────────────────────────────
+No language has been configured yet.
+English will be used by default.
+
+Choose a persistent language:
+  ./ansys config language en
+  ./ansys config language es
+
+Temporary override:
+  ./ansys --lang es <command>
+────────────────────────────────────────
+
+EOF
 }
 
 msg() {
@@ -89,7 +124,7 @@ msg() {
   shift || true
   local lang="${ANSYSWARDEN_LANG:-en}"
 
-  if [[ "$lang" == "es" ]]; then
+  if [[ "$lang" == 'es' ]]; then
     case "$key" in
       missing_command) printf "No se encontró '%s' en PATH." "$1" ;;
       ai.already_running) printf 'Ollama ya está ejecutándose en %s' "$1" ;;
@@ -154,7 +189,7 @@ msg() {
       unknown_command) printf 'Comando desconocido: %s' "$1" ;;
       *) printf '%s' "$key" ;;
     esac
-    return
+    return 0
   fi
 
   case "$key" in
@@ -205,7 +240,7 @@ msg() {
     ai.mobile_profile) printf 'Mobile profile' ;;
     ai.response) printf 'Response' ;;
     ai.unexpected_response) printf 'Inference returned an unexpected response: %s' "$1" ;;
-    deps_missing) printf 'TypeScript dependencies are not installed yet.' ;;
+    deps_missing) printf 'The TypeScript dependencies are not installed yet.' ;;
     run_once) printf 'Run once:' ;;
     logs.none) printf 'No JSONL traces exist yet.' ;;
     logs.title) printf 'AnSysWarden logs' ;;
@@ -224,7 +259,7 @@ msg() {
 }
 
 usage() {
-  if [[ "${ANSYSWARDEN_LANG:-en}" == "es" ]]; then
+  if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
     cat <<'EOF'
 AnSysWarden CLI
 
@@ -296,17 +331,29 @@ ollama_ready() { curl -fsS "$OLLAMA_HOST_URL/api/tags" >/dev/null 2>&1; }
 ai_start() {
   require_command ollama
   require_command curl
-  if ollama_ready; then info "$(msg ai.already_running "$OLLAMA_HOST_URL")"; ai_status; return; fi
+  if ollama_ready; then
+    info "$(msg ai.already_running "$OLLAMA_HOST_URL")"
+    ai_status
+    return 0
+  fi
+
   printf 'AnSysWarden\n────────────────────────\n'
   printf '%s\n' "$(msg ai.starting)"
   printf 'Model: %s\n' "$MODEL"
   nohup ollama serve >"$OLLAMA_LOG_FILE" 2>&1 &
   local pid=$!
   printf '%s\n' "$pid" > "$OLLAMA_PID_FILE"
+
   for _ in $(seq 1 30); do
-    if ollama_ready; then info "Status: OK"; printf 'PID: %s\n' "$pid"; printf 'Log: %s\n' "$OLLAMA_LOG_FILE"; return; fi
+    if ollama_ready; then
+      info 'Status: OK'
+      printf 'PID: %s\n' "$pid"
+      printf 'Log: %s\n' "$OLLAMA_LOG_FILE"
+      return 0
+    fi
     sleep 1
   done
+
   warn "$(msg ai.no_response)"
   tail -n 40 "$OLLAMA_LOG_FILE" 2>/dev/null || true
   exit 1
@@ -320,7 +367,7 @@ ai_stop() {
       return 2
     fi
     warn "$(msg ai.no_managed_process)"
-    return
+    return 0
   fi
 
   local pid
@@ -335,12 +382,12 @@ ai_stop() {
   if ! kill -0 "$pid" 2>/dev/null; then
     rm -f "$OLLAMA_PID_FILE"
     warn "$(msg ai.process_gone "$pid")"
-    return
+    return 0
   fi
 
   local command_line
   command_line="$(ps -p "$pid" -o args= 2>/dev/null || true)"
-  if [[ "$command_line" != *"ollama serve"* ]]; then
+  if [[ "$command_line" != *'ollama serve'* ]]; then
     err "$(msg ai.pid_not_ollama "$pid")"
     err "$(msg ai.no_signal)"
     rm -f "$OLLAMA_PID_FILE"
@@ -356,6 +403,7 @@ ai_status() {
   require_command curl
   printf '%s\n────────────────────────\n' "$(msg ai.local_title)"
   printf 'Ollama:   '
+
   if ollama_ready; then
     printf '%s\n' "$(msg ai.running)"
     printf 'Model:    %s\n' "$MODEL"
@@ -366,13 +414,16 @@ ai_status() {
     ended="$(date +%s%3N 2>/dev/null || date +%s000)"
     latency=$((ended - started))
     printf 'Latency:  %s ms\n' "$latency"
-    [[ -f "$OLLAMA_PID_FILE" ]] && printf '%s:  %s\n' "$(msg ai.own_pid)" "$(cat "$OLLAMA_PID_FILE")"
+    if [[ -f "$OLLAMA_PID_FILE" ]]; then
+      printf '%s:  %s\n' "$(msg ai.own_pid)" "$(cat "$OLLAMA_PID_FILE")"
+    fi
     printf 'Log:      %s\n' "$OLLAMA_LOG_FILE"
-  else
-    printf '%s\n' "$(msg ai.stopped_state)"
-    printf 'API:      %s\n' "$OLLAMA_HOST_URL"
-    return 1
+    return 0
   fi
+
+  printf '%s\n' "$(msg ai.stopped_state)"
+  printf 'API:      %s\n' "$OLLAMA_HOST_URL"
+  return 1
 }
 
 ai_models() {
@@ -416,6 +467,7 @@ ai_pull_mobile_candidate() {
 ai_test() {
   require_command curl
   require_command jq
+
   if ! ollama_ready; then
     err "$(msg ai.not_responding)"
     exit 1
@@ -436,14 +488,15 @@ ai_test() {
   response="$(curl -fsS -H 'Content-Type: application/json' -d "$payload" "$OLLAMA_HOST_URL/api/generate")"
   text="$(jq -r '.response // empty' <<<"$response" | tr -d '\r' | xargs)"
 
-  if [[ "$text" == *"ANSYSWARDEN_OK"* ]]; then
+  if [[ "$text" == *'ANSYSWARDEN_OK'* ]]; then
     info "$(msg ai.inference_ok)"
     printf '%s: ctx=%s keep_alive=%s\n' "$(msg ai.mobile_profile)" "$AI_NUM_CTX" "$AI_KEEP_ALIVE"
     printf '\n%s:\n%s\n' "$(msg ai.response)" "$text"
-  else
-    err "$(msg ai.unexpected_response "$text")"
-    exit 1
+    return 0
   fi
+
+  err "$(msg ai.unexpected_response "$text")"
+  exit 1
 }
 
 run_ts() {
@@ -458,15 +511,16 @@ run_ts() {
 
 show_logs() {
   local raw="${1:-}"
-  if [[ "$raw" == "--raw" ]]; then
+
+  if [[ "$raw" == '--raw' ]]; then
     shopt -s nullglob
     local files=("$LOG_DIR"/*.jsonl)
     if ((${#files[@]} == 0)); then
       warn "$(msg logs.none)"
-      return
+      return 0
     fi
     cat "${files[@]}"
-    return
+    return 0
   fi
 
   printf '%s\n────────────────────────\n' "$(msg logs.title)"
@@ -483,8 +537,12 @@ show_logs() {
 
 main() {
   local command="${1:-}"
+
   case "$command" in
-    config) shift; run_ts "$ROOT_DIR/src/config/config-cli.ts" "$@" ;;
+    config)
+      shift
+      run_ts "$ROOT_DIR/src/config/config-cli.ts" "$@"
+      ;;
     ai)
       case "${2:-}" in
         start) ai_start ;;
@@ -504,11 +562,27 @@ main() {
       esac
       ;;
     doctor) run_ts "$ROOT_DIR/src/cli.ts" doctor ;;
-    classify) [[ -n "${2:-}" ]] || { err "$(msg path_classify)"; exit 1; }; run_ts "$ROOT_DIR/src/cli.ts" classify "$2" ;;
-    scan) [[ -n "${2:-}" ]] || { err "$(msg path_scan)"; exit 1; }; shift; run_ts "$ROOT_DIR/src/cli.ts" scan "$@" ;;
-    dust) shift; run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@" ;;
-    inspect) [[ -n "${2:-}" ]] || { err "$(msg path_inspect)"; exit 1; }; run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2" ;;
-    backend) shift; run_ts "$ROOT_DIR/src/backend/backend-cli.ts" "$@" ;;
+    classify)
+      [[ -n "${2:-}" ]] || { err "$(msg path_classify)"; exit 1; }
+      run_ts "$ROOT_DIR/src/cli.ts" classify "$2"
+      ;;
+    scan)
+      [[ -n "${2:-}" ]] || { err "$(msg path_scan)"; exit 1; }
+      shift
+      run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
+      ;;
+    dust)
+      shift
+      run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@"
+      ;;
+    inspect)
+      [[ -n "${2:-}" ]] || { err "$(msg path_inspect)"; exit 1; }
+      run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
+      ;;
+    backend)
+      shift
+      run_ts "$ROOT_DIR/src/backend/backend-cli.ts" "$@"
+      ;;
     test)
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
@@ -526,7 +600,10 @@ main() {
       ;;
     review)
       case "${2:-}" in
-        export) [[ -n "${3:-}" ]] || { err "$(msg review_path)"; exit 1; }; run_ts "$ROOT_DIR/src/review/export-review.ts" "$3" ;;
+        export)
+          [[ -n "${3:-}" ]] || { err "$(msg review_path)"; exit 1; }
+          run_ts "$ROOT_DIR/src/review/export-review.ts" "$3"
+          ;;
         *) err "$(msg unknown_review "${2:-}")"; usage; exit 1 ;;
       esac
       ;;
@@ -539,4 +616,5 @@ main() {
 GLOBAL_ARGS=()
 load_language_from_config
 apply_global_options "$@"
+show_language_notice_if_needed
 main "${GLOBAL_ARGS[@]}"
