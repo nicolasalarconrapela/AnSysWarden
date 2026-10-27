@@ -7,10 +7,42 @@ import {
 } from './app-config';
 import { setLanguage } from '../i18n';
 
+type LanguageSource = 'argument' | 'environment' | 'config' | 'default';
+
+interface LanguageState {
+  language: ConfigLanguage;
+  source: LanguageSource;
+  configured: boolean;
+}
+
+function currentLanguageState(): LanguageState {
+  const environmentLanguage = normalizeConfigLanguage(process.env.ANSYSWARDEN_LANG);
+  if (environmentLanguage) {
+    return {
+      language: environmentLanguage,
+      source: 'environment',
+      configured: false,
+    };
+  }
+
+  const config = readAppConfig();
+  if (config.language) {
+    return {
+      language: config.language,
+      source: 'config',
+      configured: true,
+    };
+  }
+
+  return {
+    language: 'en',
+    source: 'default',
+    configured: false,
+  };
+}
+
 function currentLanguage(): ConfigLanguage {
-  return normalizeConfigLanguage(process.env.ANSYSWARDEN_LANG)
-    ?? readAppConfig().language
-    ?? 'en';
+  return currentLanguageState().language;
 }
 
 function pick(en: string, es: string, language = currentLanguage()): string {
@@ -36,14 +68,29 @@ async function main(): Promise<void> {
 
   if (command === 'show') {
     const config = readAppConfig();
-    const language = currentLanguage();
+    const state = currentLanguageState();
+    const language = state.language;
     setLanguage(language);
 
     console.log(pick('AnSysWarden · Configuration', 'AnSysWarden · Configuración', language));
     console.log('────────────────────────────────────────');
-    console.log(`${pick('File', 'Archivo', language)}:     ${getConfigPath()}`);
-    console.log(`${pick('Language', 'Idioma', language)}: ${config.language ?? pick('en (default)', 'en (predeterminado)', language)}`);
-    console.log(`Schema:   ${config.schema}`);
+    console.log(`${pick('File', 'Archivo', language)}:       ${getConfigPath()}`);
+    console.log(`${pick('Language', 'Idioma', language)}:   ${language}`);
+    console.log(`${pick('Source', 'Origen', language)}:     ${state.source}`);
+    console.log(`${pick('Configured', 'Configurado', language)}: ${state.configured ? pick('yes', 'sí', language) : 'no'}`);
+    console.log(`Schema:     ${config.schema}`);
+
+    if (state.source === 'default') {
+      console.log('');
+      console.log(pick(
+        'No persistent language is configured. English is being used by default.',
+        'No hay un idioma persistente configurado. Se está usando inglés por defecto.',
+        language,
+      ));
+      console.log(pick('Choose a persistent language:', 'Elige un idioma persistente:', language));
+      console.log('  ./ansys config language en');
+      console.log('  ./ansys config language es');
+    }
     return;
   }
 
