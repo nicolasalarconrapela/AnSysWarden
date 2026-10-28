@@ -1,5 +1,7 @@
 import { BackendStorage } from '../backend/storage';
+import type { ScanDocument } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
+import { ScanCache } from '../infrastructure/persistence/scan-cache';
 import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
 
 function usage(): never {
@@ -54,9 +56,33 @@ function printReport(scanId: string, report: ReturnType<typeof buildReclaimRepor
   printGroup('PROTEGER', report.protectCandidates, max);
 }
 
+async function findScanHere(storage: BackendStorage, cache: ScanCache, id: string): Promise<ScanDocument | null> {
+  const original = await storage.getScan(id);
+  if (original) return original;
+
+  const cached = await cache.get(id);
+  return cached?.scan ?? null;
+}
+
+async function findLatestScanHere(storage: BackendStorage, cache: ScanCache): Promise<ScanDocument | null> {
+  const [originals, copies] = await Promise.all([storage.listScans(), cache.list()]);
+  const candidates = [
+    ...originals.map((scan) => ({ id: scan.id, createdAt: scan.createdAt })),
+    ...copies.map((scan) => ({ id: scan.scanId, createdAt: scan.createdAt })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  for (const candidate of candidates) {
+    const scan = await findScanHere(storage, cache, candidate.id);
+    if (scan) return scan;
+  }
+
+  return null;
+}
+
 async function run(): Promise<void> {
   const [, , command, ...args] = process.argv;
   const storage = new BackendStorage();
+  const cache = new ScanCache();
   const max = readPositiveInt(args, '--max', 10);
 
   if (command === 'scan') {
@@ -84,7 +110,7 @@ async function run(): Promise<void> {
   }
 
   if (command === 'latest') {
-    const scan = await storage.getLatestScan();
+    const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
     printReport(scan.id, buildReclaimReport(scan), max);
     return;
@@ -93,7 +119,7 @@ async function run(): Promise<void> {
   if (command === 'show') {
     const id = args[0];
     if (!id || id.startsWith('--')) usage();
-    const scan = await storage.getScan(id);
+    const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
     printReport(scan.id, buildReclaimReport(scan), max);
     return;
