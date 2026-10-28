@@ -1,5 +1,7 @@
+import { networkInterfaces } from 'node:os';
 import { readAppConfig } from '../../config/app-config';
 import { isScanDocument, type ScanDocument, type ScanOrigin } from '../../core/contracts/backend-protocol';
+import { BackendStorage } from '../../infrastructure/persistence/backend-storage';
 import { ScanCache, type CachedScanMetadata } from '../../infrastructure/persistence/scan-cache';
 
 interface RemoteScanSummary {
@@ -38,9 +40,10 @@ function usage(exitCode = 0): never {
   console.log('  ./ansys-scans pull <id>                  Descarga un escaneo concreto');
   console.log('  ./ansys-scans show <id>                  Muestra el JSON local completo');
   console.log('');
-  console.log('Limpieza local:');
+  console.log('Limpieza:');
   console.log('  ./ansys-scans delete local <id>          Elimina una copia local');
   console.log('  ./ansys-scans delete local --all         Elimina todas las copias locales');
+  console.log('  ./ansys-scans delete remote <id>         Elimina del backend alojado aquí');
   console.log('');
   console.log('Ayuda:');
   console.log('  ./ansys-scans help');
@@ -59,7 +62,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Compatibility with the previous commands.
   if (command === 'local') {
     await listScans(cache, { scope: 'local', idsOnly: false, max: DEFAULT_LIST_MAX });
     return;
@@ -82,18 +84,45 @@ async function main(): Promise<void> {
   if (command === 'delete') {
     const target = args[1];
     const value = args[2];
-    if (target !== 'local' || !value) usage(1);
+    if (!target || !value) usage(1);
 
-    if (value === '--all') {
-      const count = await cache.deleteAll();
-      console.log(`Escaneos locales eliminados: ${count}`);
+    if (target === 'local') {
+      if (value === '--all') {
+        const count = await cache.deleteAll();
+        console.log(`Escaneos locales eliminados: ${count}`);
+        return;
+      }
+
+      const removed = await cache.delete(value);
+      if (!removed) {
+        const remoteRows = await tryFetchRemoteScans();
+        if (remoteRows.some((scan) => scan.id === value)) {
+          throw new Error(`El escaneo ${value} no es local; existe en REMOTOS. Usa: ./ansys-scans delete remote ${value}`);
+        }
+        throw new Error(`No existe el escaneo local ${value}.`);
+      }
+      console.log(`Escaneo local eliminado: ${value}`);
       return;
     }
 
-    const removed = await cache.delete(value);
-    if (!removed) throw new Error(`No existe el escaneo local ${value}.`);
-    console.log(`Escaneo local eliminado: ${value}`);
-    return;
+    if (target === 'remote') {
+      if (value === '--all') {
+        throw new Error('Por seguridad, delete remote --all no está habilitado. Borra por ID.');
+      }
+
+      const connection = readConnection();
+      if (!isBackendHostedHere(connection.backendUrl)) {
+        throw new Error('El backend configurado está en otro dispositivo. La eliminación remota por HTTP todavía no está habilitada. Ejecuta este comando en el equipo que aloja el backend.');
+      }
+
+      const storage = new BackendStorage();
+      const removed = await storage.deleteScan(value);
+      if (!removed) throw new Error(`No existe el escaneo remoto ${value}.`);
+      console.log(`Escaneo remoto eliminado del backend: ${value}`);
+      return;
+    }
+
+    usage(1);
   }
 
   if (command === 'pull') {
@@ -211,6 +240,14 @@ async function fetchRemoteScans(): Promise<RemoteScanSummary[]> {
   return Array.isArray(body.scans) ? body.scans : [];
 }
 
+async function tryFetchRemoteScans(): Promise<RemoteScanSummary[]> {
+  try {
+    return await fetchRemoteScans();
+  } catch {
+    return [];
+  }
+}
+
 function printRemoteScan(scan: RemoteScanSummary, localRows: CachedScanMetadata[]): void {
   const downloaded = localRows.some((row) => row.scanId === scan.id);
   const role = scan.origin?.deviceRole?.toUpperCase() ?? 'DESCONOCIDO';
@@ -252,6 +289,25 @@ function readConnection(): { backendUrl: string; token: string } {
     throw new Error('Falta el token del backend. Configúralo o usa ANSYSWARDEN_API_TOKEN.');
   }
   return { backendUrl: backendUrl.replace(/\/+$/, ''), token };
+}
+
+function isBackendHostedHere(backendUrl: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(backendUrl).hostname;
+  } catch {
+    return false;
+  }
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
+    return true;
+  }
+
+  const addresses = new Set<string>();
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) addresses.add(entry.address);
+  }
+  return addresses.has(hostname);
 }
 
 async function request(connection: { backendUrl: string; token: string }, path: string): Promise<Response> {
