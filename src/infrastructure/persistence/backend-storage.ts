@@ -5,8 +5,18 @@ import type {
   AiJobDocument,
   AiJobResultDocument,
   ScanDocument,
+  ScanOrigin,
   ScanResultDocument,
 } from '../../core/contracts/backend-protocol';
+
+export interface ScanSummary {
+  id: string;
+  createdAt: string;
+  source: string;
+  computer: string;
+  origin?: ScanOrigin;
+  entries: number;
+}
 
 export class BackendStorage {
   readonly root: string;
@@ -47,14 +57,21 @@ export class BackendStorage {
     return readJsonOrNull<ScanDocument>(join(this.scansDir, 'latest.json'));
   }
 
-  async listScans(): Promise<Array<{ id: string; createdAt: string; source: string; computer: string; entries: number }>> {
+  async listScans(): Promise<ScanSummary[]> {
     await this.init();
     const files = (await readdir(this.scansDir)).filter((name) => name.endsWith('.json') && name !== 'latest.json');
-    const rows = [];
+    const rows: ScanSummary[] = [];
     for (const file of files) {
       const scan = await readJsonOrNull<ScanDocument>(join(this.scansDir, file));
       if (!scan) continue;
-      rows.push({ id: scan.id, createdAt: scan.createdAt, source: scan.source, computer: scan.computer, entries: scan.entries.length });
+      rows.push({
+        id: scan.id,
+        createdAt: scan.createdAt,
+        source: scan.source,
+        computer: scan.computer,
+        ...(scan.origin ? { origin: scan.origin } : {}),
+        entries: scan.entries.length,
+      });
     }
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
