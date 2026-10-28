@@ -6,6 +6,17 @@ export const RESULT_SCHEMA = 'ansyswarden.result.v1' as const;
 export const AI_JOB_SCHEMA = 'ansyswarden.ai-job.v1' as const;
 export const AI_JOB_RESULT_SCHEMA = 'ansyswarden.ai-job-result.v1' as const;
 
+export type ScanDeviceRole = 'pc' | 'mobile' | 'other';
+export type ScanScanner = 'dust' | 'native' | 'imported' | 'other';
+
+export interface ScanOrigin {
+  deviceRole: ScanDeviceRole;
+  platform: string;
+  scanner: ScanScanner;
+  rootPath: string;
+  hostname: string;
+}
+
 export interface ScanEntry {
   entryId?: string;
   parentId?: string;
@@ -22,6 +33,7 @@ export interface ScanDocument {
   createdAt: string;
   source: string;
   computer: string;
+  origin?: ScanOrigin;
   entries: ScanEntry[];
 }
 
@@ -60,6 +72,7 @@ export function isScanDocument(value: unknown): value is ScanDocument {
   if (typeof doc.createdAt !== 'string' || Number.isNaN(Date.parse(doc.createdAt))) return false;
   if (typeof doc.source !== 'string' || doc.source.length === 0 || doc.source.length > 128) return false;
   if (typeof doc.computer !== 'string' || doc.computer.length === 0 || doc.computer.length > 256) return false;
+  if (doc.origin !== undefined && !isScanOrigin(doc.origin)) return false;
   if (!Array.isArray(doc.entries) || doc.entries.length === 0 || doc.entries.length > 100_000) return false;
   if (!doc.entries.every(isScanEntry)) return false;
   return hasValidOptionalHierarchy(doc.entries as ScanEntry[]);
@@ -97,13 +110,28 @@ export function isAiJobResultDocument(value: unknown): value is AiJobResultDocum
   if (typeof doc.createdAt !== 'string' || Number.isNaN(Date.parse(doc.createdAt))) return false;
   if (!isClassificationResult(doc.result)) return false;
 
-  // Remote/mobile workers never have authority to approve deletion.
   return doc.result.classification !== 'SAFE_CACHE'
     && (doc.result.source === 'ai' || doc.result.source === 'fallback');
 }
 
 export function isSafeId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(value);
+}
+
+function isScanOrigin(value: unknown): value is ScanOrigin {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const origin = value as Record<string, unknown>;
+  return ['pc', 'mobile', 'other'].includes(String(origin.deviceRole))
+    && typeof origin.platform === 'string'
+    && origin.platform.length > 0
+    && origin.platform.length <= 128
+    && ['dust', 'native', 'imported', 'other'].includes(String(origin.scanner))
+    && typeof origin.rootPath === 'string'
+    && origin.rootPath.length > 0
+    && origin.rootPath.length <= 16_384
+    && typeof origin.hostname === 'string'
+    && origin.hostname.length > 0
+    && origin.hostname.length <= 256;
 }
 
 function isClassificationResult(value: unknown): value is ClassificationResult {
