@@ -3,17 +3,18 @@ import { BackendStorage } from '../backend/storage';
 import { isScanDocument, type ScanDocument, type ScanEntry } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
 import { ScanCache } from '../infrastructure/persistence/scan-cache';
+import { analyzeAmbiguousCandidates, type ReclaimAiResult } from './reclaim-ai';
 import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
 
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
   console.log('────────────────────────────────────────');
   console.log('Uso:');
-  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree]');
-  console.log('  ./ansys-reclaim latest [--max N] [--tree]');
-  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree]');
-  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat]`);
-  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat]');
+  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree] [--ai] [--ai-max N]');
+  console.log('  ./ansys-reclaim latest [--max N] [--tree] [--ai] [--ai-max N]');
+  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree] [--ai] [--ai-max N]');
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat] [--ai] [--ai-max N]`);
+  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat] [--ai] [--ai-max N]');
   process.exit(1);
 }
 
@@ -151,7 +152,39 @@ function printTree(scan: ScanDocument, report: ReturnType<typeof buildReclaimRep
   console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = sin prueba suficiente · PROTEGER = datos protegidos');
 }
 
-function printReport(scan: ScanDocument, report: ReturnType<typeof buildReclaimReport>, max: number, tree: boolean): void {
+function printAiResult(result: ReclaimAiResult): void {
+  console.log('\nGEMMA · EVIDENCIA SOBRE CASOS AMBIGUOS');
+  console.log('────────────────────────────────────────');
+  console.log(`Modelo: ${result.model}`);
+  console.log('Seguridad: Gemma aporta evidencia; NO puede autorizar ELIMINAR.');
+
+  if (result.analyzed.length === 0) {
+    console.log('  No hubo candidatos ambiguos analizados.');
+  }
+
+  for (const finding of result.analyzed) {
+    const e = finding.evidence;
+    console.log(`\n${formatBytes(finding.sizeBytes).padStart(10)}  ${finding.path}`);
+    console.log(`  Regenerable: ${e.regenerability} · Riesgo datos: ${e.userDataRisk} · Confianza: ${Math.round(e.confidence * 100)}%`);
+    console.log(`  Gemma: ${e.reason}`);
+    for (const item of e.evidence) console.log(`  - ${item}`);
+    console.log('  Decisión efectiva: REVISAR');
+  }
+
+  for (const failure of result.failures) {
+    console.log(`\n  [AI no disponible] ${failure.path}`);
+    console.log(`  ${failure.error}`);
+  }
+}
+
+async function printReport(
+  scan: ScanDocument,
+  report: ReturnType<typeof buildReclaimReport>,
+  max: number,
+  tree: boolean,
+  ai: boolean,
+  aiMax: number,
+): Promise<void> {
   console.log('\nAnSysWarden · Propuestas de espacio');
   console.log('════════════════════════════════════════');
   console.log(`Scan ID: ${scan.id}`);
@@ -172,12 +205,17 @@ function printReport(scan: ScanDocument, report: ReturnType<typeof buildReclaimR
 
   if (tree) {
     printTree(scan, report, max);
-    return;
+  } else {
+    printGroup('ELIMINAR', report.deleteCandidates, max);
+    printGroup('REVISAR', report.reviewCandidates, max);
+    printGroup('PROTEGER', report.protectCandidates, max);
   }
 
-  printGroup('ELIMINAR', report.deleteCandidates, max);
-  printGroup('REVISAR', report.reviewCandidates, max);
-  printGroup('PROTEGER', report.protectCandidates, max);
+  if (ai) {
+    console.log(`\nAnalizando con Gemma hasta ${aiMax} candidato(s) ambiguo(s) principal(es)...`);
+    const result = await analyzeAmbiguousCandidates(scan, report, aiMax);
+    printAiResult(result);
+  }
 }
 
 async function findScanHere(storage: BackendStorage, cache: ScanCache, id: string): Promise<ScanDocument | null> {
@@ -208,6 +246,8 @@ async function run(): Promise<void> {
   const storage = new BackendStorage();
   const cache = new ScanCache();
   const max = readPositiveInt(args, '--max', 30);
+  const ai = hasFlag(args, '--ai');
+  const aiMax = readPositiveInt(args, '--ai-max', 3);
 
   if (command === 'scan') {
     const inputPath = args[0];
@@ -229,8 +269,7 @@ async function run(): Promise<void> {
     console.log('Modo: solo lectura · no se eliminará ningún archivo');
 
     const result = await scanner.scan(inputPath, { depth, minSize });
-    const report = buildReclaimReport(result.scan);
-    printReport(result.scan, report, max, tree);
+    await printReport(result.scan, buildReclaimReport(result.scan), max, tree, ai, aiMax);
     return;
   }
 
@@ -238,7 +277,7 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
-    printReport(scan, buildReclaimReport(scan), max, tree);
+    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
     return;
   }
 
@@ -248,7 +287,7 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
-    printReport(scan, buildReclaimReport(scan), max, tree);
+    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
     return;
   }
 
@@ -261,7 +300,7 @@ async function run(): Promise<void> {
     console.log('────────────────────────────────────────');
     console.log(`Entrada: ${source}`);
     console.log('Persistencia: no se guarda; solo se analiza en memoria.');
-    printReport(scan, buildReclaimReport(scan), max, tree);
+    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
     return;
   }
 
