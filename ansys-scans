@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ ! -x "$ROOT_DIR/node_modules/.bin/tsx" ]]; then
+  printf '[✗] Faltan dependencias TypeScript. Ejecuta una vez: npm install\n' >&2
+  exit 1
+fi
+
+exec "$ROOT_DIR/node_modules/.bin/tsx" \
+  "$ROOT_DIR/src/interfaces/cli/scans-cli.ts" \
+  "$@"
