@@ -14,6 +14,9 @@ export interface ReclaimCandidate {
 
 export interface ReclaimReport {
   scanId: string;
+  totalEntries: number;
+  analyzedEntries: number;
+  rootFallbackUsed: boolean;
   confirmedRecoverableBytes: number;
   deleteCandidates: ReclaimCandidate[];
   reviewCandidates: ReclaimCandidate[];
@@ -21,8 +24,11 @@ export interface ReclaimReport {
 }
 
 export function buildReclaimReport(scan: ScanDocument): ReclaimReport {
-  const candidates = scan.entries
-    .filter((entry) => !isScanRoot(entry, scan))
+  const nonRootEntries = scan.entries.filter((entry) => !isScanRoot(entry, scan));
+  const rootFallbackUsed = nonRootEntries.length === 0;
+  const entriesToAnalyze = rootFallbackUsed ? scan.entries : nonRootEntries;
+
+  const candidates = entriesToAnalyze
     .map(toCandidate)
     .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
@@ -32,6 +38,9 @@ export function buildReclaimReport(scan: ScanDocument): ReclaimReport {
 
   return {
     scanId: scan.id,
+    totalEntries: scan.entries.length,
+    analyzedEntries: entriesToAnalyze.length,
+    rootFallbackUsed,
     confirmedRecoverableBytes: sumNonOverlapping(deleteCandidates),
     deleteCandidates,
     reviewCandidates,
