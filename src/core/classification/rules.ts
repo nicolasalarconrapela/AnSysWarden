@@ -11,6 +11,7 @@ const USER_DATA_PATTERNS: Rule[] = [
   { pattern: /(^|\/)(backup|backups|copia|copias|respaldo|respaldos)(\/|$)/i, reason: 'Backups may contain the only recoverable copy of data.' },
   { pattern: /(^|\/)(save|saves|savegame|savegames|partidas)(\/|$)/i, reason: 'Path associated with user save data or game states.' },
   { pattern: /(^|\/)(projects|proyectos)(\/|$)/i, reason: 'Path associated with user projects.' },
+  { pattern: /(^|\/)\.git(\/|$)/i, reason: 'Git repository metadata and history must be protected.' },
   { pattern: /(^|\/)(config|configs|configuration|settings|preferences|profiles|perfiles)(\/|$)/i, reason: 'Configuration or profiles must not be treated as cache by default.' },
   { pattern: /(^|\/)(mods|screenshots|capturas)(\/|$)/i, reason: 'Content explicitly created, installed, or kept by the user.' },
 ];
