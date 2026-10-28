@@ -5,18 +5,8 @@ import type {
   AiJobDocument,
   AiJobResultDocument,
   ScanDocument,
-  ScanOrigin,
   ScanResultDocument,
 } from '../../core/contracts/backend-protocol';
-
-export interface ScanSummary {
-  id: string;
-  createdAt: string;
-  source: string;
-  computer: string;
-  origin?: ScanOrigin;
-  entries: number;
-}
 
 export class BackendStorage {
   readonly root: string;
@@ -57,10 +47,10 @@ export class BackendStorage {
     return readJsonOrNull<ScanDocument>(join(this.scansDir, 'latest.json'));
   }
 
-  async listScans(): Promise<ScanSummary[]> {
+  async listScans(): Promise<Array<{ id: string; createdAt: string; source: string; computer: string; entries: number; origin?: ScanDocument['origin'] }>> {
     await this.init();
     const files = (await readdir(this.scansDir)).filter((name) => name.endsWith('.json') && name !== 'latest.json');
-    const rows: ScanSummary[] = [];
+    const rows = [];
     for (const file of files) {
       const scan = await readJsonOrNull<ScanDocument>(join(this.scansDir, file));
       if (!scan) continue;
@@ -69,11 +59,27 @@ export class BackendStorage {
         createdAt: scan.createdAt,
         source: scan.source,
         computer: scan.computer,
-        ...(scan.origin ? { origin: scan.origin } : {}),
         entries: scan.entries.length,
+        ...(scan.origin ? { origin: scan.origin } : {}),
       });
     }
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteScan(id: string): Promise<boolean> {
+    const scan = await this.getScan(id);
+    if (!scan) return false;
+
+    await unlink(join(this.scansDir, `${id}.json`));
+    await unlink(join(this.aiInputsDir, `${id}.ai.json`)).catch(ignoreMissing);
+    await unlink(join(this.resultsDir, `${id}.result.json`)).catch(ignoreMissing);
+
+    const latest = await this.getLatestScan();
+    if (latest?.id === id) {
+      await unlink(join(this.scansDir, 'latest.json')).catch(ignoreMissing);
+    }
+
+    return true;
   }
 
   async saveAiInput(input: AiInputDocument): Promise<void> {
@@ -124,14 +130,16 @@ export class BackendStorage {
   async saveAiJobResult(result: AiJobResultDocument): Promise<void> {
     await this.init();
     await atomicWriteJson(join(this.aiJobsResultsDir, `${result.jobId}.json`), result);
-    await unlink(join(this.aiJobsPendingDir, `${result.jobId}.json`)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-    });
+    await unlink(join(this.aiJobsPendingDir, `${result.jobId}.json`)).catch(ignoreMissing);
   }
 
   async getAiJobResult(id: string): Promise<AiJobResultDocument | null> {
     return readJsonOrNull<AiJobResultDocument>(join(this.aiJobsResultsDir, `${id}.json`));
   }
+}
+
+function ignoreMissing(error: NodeJS.ErrnoException): void {
+  if (error.code !== 'ENOENT') throw error;
 }
 
 async function readJsonOrNull<T>(path: string): Promise<T | null> {
