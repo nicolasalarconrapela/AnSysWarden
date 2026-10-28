@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, platform } from 'node:os';
 import { resolve, join } from 'node:path';
 import { AiTreePruner } from '../ai/tree-pruner';
 import type { AiInputDocument } from '../ai/tree-types';
 import { BackendStorage } from '../backend/storage';
-import { SCAN_SCHEMA, type ScanDocument } from '../backend/types';
+import { SCAN_SCHEMA, type ScanDeviceRole, type ScanDocument } from '../backend/types';
 import { DustAdapter } from '../infrastructure/dust/dust-adapter';
 
 const DEFAULT_DEPTH = 5;
@@ -62,13 +62,21 @@ export class DustScanner {
 
     const target = resolve(inputPath);
     const { entries } = await this.adapter.execute({ depth, minSize, target });
+    const currentHostname = hostname();
 
     const scan: ScanDocument = {
       schema: SCAN_SCHEMA,
       id: createScanId(),
       createdAt: new Date().toISOString(),
       source: 'dust',
-      computer: hostname(),
+      computer: currentHostname,
+      origin: {
+        deviceRole: detectDeviceRole(),
+        platform: detectPlatformLabel(),
+        scanner: 'dust',
+        rootPath: target,
+        hostname: currentHostname,
+      },
       entries,
     };
 
@@ -91,6 +99,18 @@ export class DustScanner {
 }
 
 export { parseDustSize } from '../infrastructure/dust/dust-adapter';
+
+function detectDeviceRole(): ScanDeviceRole {
+  if (process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux')) return 'mobile';
+  if (platform() === 'android') return 'mobile';
+  if (platform() === 'win32' || platform() === 'darwin' || platform() === 'linux') return 'pc';
+  return 'other';
+}
+
+function detectPlatformLabel(): string {
+  if (process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux')) return 'android-termux';
+  return platform();
+}
 
 function createScanId(): string {
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
