@@ -1,5 +1,5 @@
 import { BackendStorage } from '../backend/storage';
-import { isScanDocument, type ScanDocument } from '../backend/types';
+import { isScanDocument, type ScanDocument, type ScanEntry } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
 import { ScanCache } from '../infrastructure/persistence/scan-cache';
 import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
@@ -8,16 +8,20 @@ function usage(): never {
   console.log('AnSysWarden · Reclaim');
   console.log('────────────────────────────────────────');
   console.log('Uso:');
-  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N]');
-  console.log('  ./ansys-reclaim latest [--max N]');
-  console.log('  ./ansys-reclaim show <scan-id> [--max N]');
-  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N]`);
+  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree]');
+  console.log('  ./ansys-reclaim latest [--max N] [--tree]');
+  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree]');
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--tree]`);
   process.exit(1);
 }
 
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function hasFlag(args: string[], name: string): boolean {
+  return args.includes(name);
 }
 
 function readPositiveInt(args: string[], name: string, fallback: number): number {
@@ -60,10 +64,80 @@ function printGroup(title: string, rows: ReclaimCandidate[], max: number): void 
   }
 }
 
-function printReport(scanId: string, report: ReturnType<typeof buildReclaimReport>, max: number): void {
+function printTree(scan: ScanDocument, report: ReturnType<typeof buildReclaimReport>, max: number): void {
+  console.log(`\nÁRBOL (${Math.min(scan.entries.length, max)}/${scan.entries.length})`);
+  console.log('────────────────────────────────────────');
+
+  const candidateByPath = new Map<string, ReclaimCandidate>();
+  for (const candidate of [
+    ...report.deleteCandidates,
+    ...report.reviewCandidates,
+    ...report.protectCandidates,
+  ]) {
+    candidateByPath.set(normalizePath(candidate.path), candidate);
+  }
+
+  const byId = new Map<string, ScanEntry>();
+  const children = new Map<string, ScanEntry[]>();
+  const roots: ScanEntry[] = [];
+
+  for (const entry of scan.entries) {
+    if (entry.entryId) byId.set(entry.entryId, entry);
+  }
+
+  for (const entry of scan.entries) {
+    if (entry.parentId && byId.has(entry.parentId)) {
+      const siblings = children.get(entry.parentId) ?? [];
+      siblings.push(entry);
+      children.set(entry.parentId, siblings);
+    } else {
+      roots.push(entry);
+    }
+  }
+
+  const sortBySize = (a: ScanEntry, b: ScanEntry): number => b.sizeBytes - a.sizeBytes;
+  roots.sort(sortBySize);
+  for (const siblings of children.values()) siblings.sort(sortBySize);
+
+  let printed = 0;
+  const render = (entry: ScanEntry, prefix: string, last: boolean, isRoot: boolean): void => {
+    if (printed >= max) return;
+    printed += 1;
+
+    const candidate = candidateByPath.get(normalizePath(entry.path));
+    const decision = candidate ? formatDecision(candidate.action) : 'RAÍZ';
+    const branch = isRoot ? '' : `${prefix}${last ? '└── ' : '├── '}`;
+    console.log(`${branch}${displayName(entry.path)} · ${formatBytes(entry.sizeBytes)} · ${decision}`);
+
+    if (!entry.entryId) return;
+    const directChildren = children.get(entry.entryId) ?? [];
+    const childPrefix = isRoot ? '' : `${prefix}${last ? '    ' : '│   '}`;
+
+    for (let index = 0; index < directChildren.length; index += 1) {
+      if (printed >= max) break;
+      render(directChildren[index], childPrefix, index === directChildren.length - 1, false);
+    }
+  };
+
+  for (let index = 0; index < roots.length; index += 1) {
+    if (printed >= max) break;
+    render(roots[index], '', index === roots.length - 1, true);
+  }
+
+  if (scan.entries.length > printed) {
+    console.log(`… ${scan.entries.length - printed} entradas omitidas por --max ${max}`);
+  }
+
+  console.log('');
+  console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = sin prueba suficiente · PROTEGER = datos protegidos');
+}
+
+function printReport(scan: ScanDocument, report: ReturnType<typeof buildReclaimReport>, max: number, tree: boolean): void {
   console.log('\nAnSysWarden · Propuestas de espacio');
   console.log('════════════════════════════════════════');
-  console.log(`Scan ID: ${scanId}`);
+  console.log(`Scan ID: ${scan.id}`);
+  console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
+  console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
   console.log(`Entradas JSON: ${report.totalEntries}`);
   console.log(`Entradas analizadas: ${report.analyzedEntries}`);
   console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
@@ -75,6 +149,11 @@ function printReport(scanId: string, report: ReturnType<typeof buildReclaimRepor
     console.log('Para propuestas más precisas, genera un escaneo con mayor profundidad o menor --min-size.');
   } else if (report.totalEntries <= 3) {
     console.log('Aviso: el escaneo contiene muy pocas entradas; las propuestas pueden ser demasiado generales.');
+  }
+
+  if (tree) {
+    printTree(scan, report, max);
+    return;
   }
 
   printGroup('ELIMINAR', report.deleteCandidates, max);
@@ -109,7 +188,8 @@ async function run(): Promise<void> {
   const [, , command, ...args] = process.argv;
   const storage = new BackendStorage();
   const cache = new ScanCache();
-  const max = readPositiveInt(args, '--max', 10);
+  const max = readPositiveInt(args, '--max', 30);
+  const tree = hasFlag(args, '--tree');
 
   if (command === 'scan') {
     const inputPath = args[0];
@@ -131,14 +211,14 @@ async function run(): Promise<void> {
 
     const result = await scanner.scan(inputPath, { depth, minSize });
     const report = buildReclaimReport(result.scan);
-    printReport(result.scan.id, report, max);
+    printReport(result.scan, report, max, tree);
     return;
   }
 
   if (command === 'latest') {
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
-    printReport(scan.id, buildReclaimReport(scan), max);
+    printReport(scan, buildReclaimReport(scan), max, tree);
     return;
   }
 
@@ -147,7 +227,7 @@ async function run(): Promise<void> {
     if (!id || id.startsWith('--')) usage();
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
-    printReport(scan.id, buildReclaimReport(scan), max);
+    printReport(scan, buildReclaimReport(scan), max, tree);
     return;
   }
 
@@ -157,14 +237,28 @@ async function run(): Promise<void> {
     const scan = parseScanJson(raw);
     console.log('AnSysWarden · JSON directo');
     console.log('────────────────────────────────────────');
-    console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
-    console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
     console.log('Persistencia: no se guarda; solo se analiza en memoria.');
-    printReport(scan.id, buildReclaimReport(scan), max);
+    printReport(scan, buildReclaimReport(scan), max, tree);
     return;
   }
 
   usage();
+}
+
+function displayName(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function formatDecision(action: ReclaimCandidate['action']): string {
+  if (action === 'DELETE') return 'ELIMINAR';
+  if (action === 'PROTECT') return 'PROTEGER';
+  return 'REVISAR';
 }
 
 run().catch((error: unknown) => {
