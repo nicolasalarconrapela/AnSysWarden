@@ -427,19 +427,20 @@ export class OllamaClient {
     if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw new Error(`Invalid confidence received from model: ${String(confidence)}`);
     }
-    if (!Array.isArray(evidence) || evidence.length < 1 || evidence.length > 4) {
-      throw new Error('Model must return between 1 and 4 evidence items.');
-    }
-
-    const normalizedEvidence = evidence.map((item) => {
-      if (typeof item !== 'string' || item.trim().length === 0) {
-        throw new Error('Model returned an invalid evidence item.');
-      }
-      return item.trim();
-    });
-
     if (typeof reason !== 'string' || reason.trim().length === 0) {
       throw new Error('Model did not return a valid reason.');
+    }
+    if (!Array.isArray(evidence)) {
+      throw new Error('Model did not return evidence as an array.');
+    }
+
+    const normalizedEvidence = evidence
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, 4)
+      .map((item) => item.trim());
+
+    if (normalizedEvidence.length === 0) {
+      normalizedEvidence.push(reason.trim());
     }
 
     const forbiddenText = JSON.stringify(candidate).toUpperCase();
