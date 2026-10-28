@@ -3,6 +3,9 @@ import type { AiEvidencePayload } from '../core/classification/types';
 import type { ScanDocument } from '../backend/types';
 import type { ReclaimCandidate, ReclaimReport } from './reclaim-engine';
 
+const RECLAIM_AI_MODEL = process.env.ANSYSWARDEN_RECLAIM_MODEL ?? 'gemma2:2b';
+const RECLAIM_AI_TIMEOUT_MS = readPositiveInt(process.env.ANSYSWARDEN_RECLAIM_AI_TIMEOUT_MS, 45_000);
+
 export interface ReclaimAiFinding {
   path: string;
   sizeBytes: number;
@@ -21,7 +24,7 @@ export async function analyzeAmbiguousCandidates(
   report: ReclaimReport,
   limit = 3,
 ): Promise<ReclaimAiResult> {
-  const client = new OllamaClient();
+  const client = new OllamaClient(process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434', RECLAIM_AI_MODEL);
   const selected = selectTopLevelAmbiguous(report.reviewCandidates, limit);
   const analyzed: ReclaimAiFinding[] = [];
   const failures: Array<{ path: string; error: string }> = [];
@@ -29,7 +32,7 @@ export async function analyzeAmbiguousCandidates(
   for (const candidate of selected) {
     try {
       const context = buildContext(scan, candidate);
-      const evidence = await client.analyzePath(context);
+      const evidence = await client.analyzePath(context, RECLAIM_AI_TIMEOUT_MS);
       analyzed.push({
         path: candidate.path,
         sizeBytes: candidate.sizeBytes,
@@ -61,17 +64,29 @@ function buildContext(scan: ScanDocument, candidate: ReclaimCandidate): string {
   const descendants = scan.entries
     .filter((entry) => entry.path !== candidate.path && isSameOrDescendant(entry.path, candidate.path))
     .sort((a, b) => b.sizeBytes - a.sizeBytes)
-    .slice(0, 8)
-    .map((entry) => `${entry.path} (${entry.sizeBytes} bytes)`);
+    .slice(0, 5)
+    .map((entry) => `${relativeTo(candidate.path, entry.path)}:${entry.sizeBytes}`);
 
   return [
-    `SCAN ORIGIN role=${scan.origin?.deviceRole ?? 'unknown'} platform=${scan.origin?.platform ?? 'unknown'} root=${scan.origin?.rootPath ?? 'unknown'}`,
-    `CANDIDATE sizeBytes=${candidate.sizeBytes}`,
-    `CANDIDATE PATH=${candidate.path}`,
-    ...(descendants.length > 0 ? ['LARGEST DESCENDANTS:', ...descendants] : []),
-    'Assess what this artifact likely is, whether it is regenerable, and the risk of unique user data.',
-    'Do not authorize deletion. Preserve uncertainty when the path alone is insufficient.',
+    `role=${scan.origin?.deviceRole ?? 'unknown'} platform=${scan.origin?.platform ?? 'unknown'}`,
+    `root=${basename(scan.origin?.rootPath ?? '')}`,
+    `candidate=${basename(candidate.path)} size=${candidate.sizeBytes}`,
+    ...(descendants.length > 0 ? [`children=${descendants.join(',')}`] : []),
+    'Infer artifact type, regenerability and unique-data risk. Do not authorize deletion.',
   ].join('\n');
+}
+
+function relativeTo(parent: string, child: string): string {
+  const normalizedParent = normalizePath(parent).replace(/\/$/, '');
+  const normalizedChild = normalizePath(child);
+  if (!normalizedChild.startsWith(`${normalizedParent}/`)) return basename(child);
+  return normalizedChild.slice(normalizedParent.length + 1);
+}
+
+function basename(value: string): string {
+  const normalized = value.replace(/\\/g, '/').replace(/\/$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? value;
 }
 
 function isSameOrDescendant(path: string, parent: string): boolean {
@@ -82,4 +97,10 @@ function isSameOrDescendant(path: string, parent: string): boolean {
 
 function normalizePath(value: string): string {
   return value.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function readPositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
