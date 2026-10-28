@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { BackendStorage } from '../backend/storage';
 import { isScanDocument, type ScanDocument, type ScanEntry } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
@@ -11,7 +12,8 @@ function usage(): never {
   console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree]');
   console.log('  ./ansys-reclaim latest [--max N] [--tree]');
   console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree]');
-  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--tree]`);
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat]`);
+  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat]');
   process.exit(1);
 }
 
@@ -48,6 +50,23 @@ function parseScanJson(raw: string): ScanDocument {
   }
 
   return parsed;
+}
+
+async function loadScanJson(input: string): Promise<{ scan: ScanDocument; source: string }> {
+  const trimmed = input.trim();
+  if (trimmed.startsWith('{')) {
+    return { scan: parseScanJson(trimmed), source: 'argumento JSON' };
+  }
+
+  let raw: string;
+  try {
+    raw = await readFile(input, 'utf8');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`No se pudo leer el archivo JSON ${input}: ${reason}`);
+  }
+
+  return { scan: parseScanJson(raw), source: input };
 }
 
 function printGroup(title: string, rows: ReclaimCandidate[], max: number): void {
@@ -189,11 +208,11 @@ async function run(): Promise<void> {
   const storage = new BackendStorage();
   const cache = new ScanCache();
   const max = readPositiveInt(args, '--max', 30);
-  const tree = hasFlag(args, '--tree');
 
   if (command === 'scan') {
     const inputPath = args[0];
     if (!inputPath || inputPath.startsWith('--')) usage();
+    const tree = hasFlag(args, '--tree');
 
     const depthRaw = readOption(args, '--depth');
     const depth = depthRaw === undefined ? undefined : Number.parseInt(depthRaw, 10);
@@ -216,6 +235,7 @@ async function run(): Promise<void> {
   }
 
   if (command === 'latest') {
+    const tree = hasFlag(args, '--tree');
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
     printReport(scan, buildReclaimReport(scan), max, tree);
@@ -225,6 +245,7 @@ async function run(): Promise<void> {
   if (command === 'show') {
     const id = args[0];
     if (!id || id.startsWith('--')) usage();
+    const tree = hasFlag(args, '--tree');
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
     printReport(scan, buildReclaimReport(scan), max, tree);
@@ -232,11 +253,13 @@ async function run(): Promise<void> {
   }
 
   if (command === 'json') {
-    const raw = args[0];
-    if (!raw || raw.startsWith('--')) usage();
-    const scan = parseScanJson(raw);
+    const input = args[0];
+    if (!input || input.startsWith('--')) usage();
+    const { scan, source } = await loadScanJson(input);
+    const tree = !hasFlag(args, '--flat');
     console.log('AnSysWarden · JSON directo');
     console.log('────────────────────────────────────────');
+    console.log(`Entrada: ${source}`);
     console.log('Persistencia: no se guarda; solo se analiza en memoria.');
     printReport(scan, buildReclaimReport(scan), max, tree);
     return;
