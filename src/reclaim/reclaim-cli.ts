@@ -1,5 +1,5 @@
 import { BackendStorage } from '../backend/storage';
-import type { ScanDocument } from '../backend/types';
+import { isScanDocument, type ScanDocument } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
 import { ScanCache } from '../infrastructure/persistence/scan-cache';
 import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
@@ -11,6 +11,7 @@ function usage(): never {
   console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N]');
   console.log('  ./ansys-reclaim latest [--max N]');
   console.log('  ./ansys-reclaim show <scan-id> [--max N]');
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N]`);
   process.exit(1);
 }
 
@@ -27,6 +28,22 @@ function readPositiveInt(args: string[], name: string, fallback: number): number
     throw new Error(`${name} debe ser un entero entre 1 y 1000.`);
   }
   return value;
+}
+
+function parseScanJson(raw: string): ScanDocument {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`JSON inválido: ${reason}`);
+  }
+
+  if (!isScanDocument(parsed)) {
+    throw new Error('El JSON no cumple el contrato ansyswarden.scan.v1. No se analizará.');
+  }
+
+  return parsed;
 }
 
 function printGroup(title: string, rows: ReclaimCandidate[], max: number): void {
@@ -130,6 +147,19 @@ async function run(): Promise<void> {
     if (!id || id.startsWith('--')) usage();
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
+    printReport(scan.id, buildReclaimReport(scan), max);
+    return;
+  }
+
+  if (command === 'json') {
+    const raw = args[0];
+    if (!raw || raw.startsWith('--')) usage();
+    const scan = parseScanJson(raw);
+    console.log('AnSysWarden · JSON directo');
+    console.log('────────────────────────────────────────');
+    console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
+    console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
+    console.log('Persistencia: no se guarda; solo se analiza en memoria.');
     printReport(scan.id, buildReclaimReport(scan), max);
     return;
   }
