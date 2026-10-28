@@ -47,9 +47,18 @@ function printReport(scanId: string, report: ReturnType<typeof buildReclaimRepor
   console.log('\nAnSysWarden · Propuestas de espacio');
   console.log('════════════════════════════════════════');
   console.log(`Scan ID: ${scanId}`);
+  console.log(`Entradas JSON: ${report.totalEntries}`);
+  console.log(`Entradas analizadas: ${report.analyzedEntries}`);
   console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
   console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.protectCandidates.length} proteger`);
   console.log('Seguridad: esta orden NO borra archivos. Solo reglas locales deterministas pueden proponer ELIMINAR.');
+
+  if (report.rootFallbackUsed) {
+    console.log('Aviso: el escaneo no contiene hijos utilizables; se analiza la raíz como REVISAR/PROTEGER/ELIMINAR según reglas.');
+    console.log('Para propuestas más precisas, genera un escaneo con mayor profundidad o menor --min-size.');
+  } else if (report.totalEntries <= 3) {
+    console.log('Aviso: el escaneo contiene muy pocas entradas; las propuestas pueden ser demasiado generales.');
+  }
 
   printGroup('ELIMINAR', report.deleteCandidates, max);
   printGroup('REVISAR', report.reviewCandidates, max);
