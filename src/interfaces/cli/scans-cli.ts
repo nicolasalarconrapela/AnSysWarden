@@ -1,6 +1,6 @@
 import { readAppConfig } from '../../config/app-config';
-import { isScanDocument, type ScanDocument } from '../../core/contracts/backend-protocol';
-import { ScanCache } from '../../infrastructure/persistence/scan-cache';
+import { isScanDocument, type ScanDocument, type ScanOrigin } from '../../core/contracts/backend-protocol';
+import { ScanCache, type CachedScanMetadata } from '../../infrastructure/persistence/scan-cache';
 
 interface RemoteScanSummary {
   id: string;
@@ -8,39 +8,58 @@ interface RemoteScanSummary {
   source: string;
   computer: string;
   entries: number;
+  origin?: ScanOrigin;
 }
 
-function usage(): never {
-  console.log('Uso:');
-  console.log('  ./ansys-scans remote');
-  console.log('  ./ansys-scans pull <id|latest>');
-  console.log('  ./ansys-scans local');
-  console.log('  ./ansys-scans show <id>');
-  console.log('  ./ansys-scans delete local <id>');
-  console.log('  ./ansys-scans delete local --all');
-  process.exit(1);
+type ListScope = 'all' | 'local' | 'remote';
+
+function usage(exitCode = 0): never {
+  console.log('AnSysWarden · Escaneos');
+  console.log('────────────────────────────────────────');
+  console.log('Uso principal:');
+  console.log('  ./ansys-scans list                 Lista remotos + locales');
+  console.log('  ./ansys-scans list remote          Lista solo el backend');
+  console.log('  ./ansys-scans list local           Lista copias offline');
+  console.log('');
+  console.log('Descarga y consulta:');
+  console.log('  ./ansys-scans pull latest          Descarga el escaneo más reciente');
+  console.log('  ./ansys-scans pull <id>            Descarga un escaneo concreto');
+  console.log('  ./ansys-scans show <id>            Muestra el JSON local completo');
+  console.log('');
+  console.log('Limpieza local:');
+  console.log('  ./ansys-scans delete local <id>    Elimina una copia local');
+  console.log('  ./ansys-scans delete local --all   Elimina todas las copias locales');
+  console.log('');
+  console.log('Ayuda:');
+  console.log('  ./ansys-scans help');
+  process.exit(exitCode);
 }
 
 async function main(): Promise<void> {
   const [, , command, value, extra] = process.argv;
   const cache = new ScanCache();
 
+  if (!command || command === 'help' || command === '--help' || command === '-h') usage(0);
+
+  if (command === 'list') {
+    const scope = normalizeListScope(value);
+    await listScans(cache, scope);
+    return;
+  }
+
+  // Compatibility with the previous commands.
   if (command === 'local') {
-    const rows = await cache.list();
-    console.log('AnSysWarden · Escaneos locales');
-    console.log('────────────────────────────────────────');
-    if (rows.length === 0) {
-      console.log('No hay escaneos descargados.');
-      return;
-    }
-    for (const row of rows) {
-      console.log(`${row.scanId} | ${row.entries} entradas | ${row.computer} | ${row.cachedAt}`);
-    }
+    await listScans(cache, 'local');
+    return;
+  }
+
+  if (command === 'remote') {
+    await listScans(cache, 'remote');
     return;
   }
 
   if (command === 'show') {
-    if (!value) usage();
+    if (!value) usage(1);
     const cached = await cache.get(value);
     if (!cached) throw new Error(`No existe una copia local válida del escaneo ${value}.`);
     console.log(JSON.stringify(cached.scan, null, 2));
@@ -48,7 +67,7 @@ async function main(): Promise<void> {
   }
 
   if (command === 'delete') {
-    if (value !== 'local' || !extra) usage();
+    if (value !== 'local' || !extra) usage(1);
 
     if (extra === '--all') {
       const count = await cache.deleteAll();
@@ -62,27 +81,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'remote') {
-    const connection = readConnection();
-    const response = await request(connection, '/api/scans');
-    if (!response.ok) throw new Error(`Backend respondió HTTP ${response.status}.`);
-    const body = await response.json() as { scans?: RemoteScanSummary[] };
-    const scans = Array.isArray(body.scans) ? body.scans : [];
-
-    console.log('AnSysWarden · Escaneos remotos');
-    console.log('────────────────────────────────────────');
-    if (scans.length === 0) {
-      console.log('El backend no tiene escaneos disponibles.');
-      return;
-    }
-    for (const scan of scans) {
-      console.log(`${scan.id} | ${scan.entries} entradas | ${scan.computer} | ${scan.createdAt}`);
-    }
-    return;
-  }
-
   if (command === 'pull') {
-    if (!value) usage();
+    if (!value) usage(1);
     const connection = readConnection();
     const endpoint = value === 'latest' ? '/api/scans/latest' : `/api/scans/${encodeURIComponent(value)}`;
     const response = await request(connection, endpoint);
@@ -95,14 +95,96 @@ async function main(): Promise<void> {
     console.log('────────────────────────────────────────');
     console.log(`ID:       ${cached.metadata.scanId}`);
     console.log(`Entradas: ${cached.metadata.entries}`);
-    console.log(`Origen:   ${cached.metadata.computer}`);
+    console.log(`Origen:   ${formatOrigin(document)}`);
     console.log(`SHA-256:  ${cached.metadata.sha256}`);
     console.log(`Local:    ${cached.scanPath}`);
-    console.log('Disponible para reutilización offline.');
+    console.log('Estado:   disponible offline');
     return;
   }
 
-  usage();
+  usage(1);
+}
+
+async function listScans(cache: ScanCache, scope: ListScope): Promise<void> {
+  const localRows = scope === 'remote' ? [] : await cache.list();
+  const remoteRows = scope === 'local' ? [] : await fetchRemoteScans();
+
+  console.log('AnSysWarden · Escaneos');
+  console.log('────────────────────────────────────────');
+  console.log(`Vista: ${scope === 'all' ? 'todos' : scope}`);
+  console.log('');
+
+  if (scope !== 'local') {
+    console.log(`REMOTOS (${remoteRows.length})`);
+    if (remoteRows.length === 0) {
+      console.log('  No hay escaneos remotos disponibles.');
+    } else {
+      for (const scan of remoteRows) printRemoteScan(scan, localRows);
+    }
+    console.log('');
+  }
+
+  if (scope !== 'remote') {
+    console.log(`LOCALES (${localRows.length})`);
+    if (localRows.length === 0) {
+      console.log('  No hay copias locales descargadas.');
+    } else {
+      for (const scan of localRows) printLocalScan(scan);
+    }
+    console.log('');
+  }
+
+  if (scope === 'all') {
+    console.log('Acciones rápidas:');
+    console.log('  Descargar último: ./ansys-scans pull latest');
+    console.log('  Ver local:        ./ansys-scans show <id>');
+    console.log('  Ayuda completa:   ./ansys-scans help');
+  }
+}
+
+async function fetchRemoteScans(): Promise<RemoteScanSummary[]> {
+  const connection = readConnection();
+  const response = await request(connection, '/api/scans');
+  if (!response.ok) throw new Error(`Backend respondió HTTP ${response.status}.`);
+  const body = await response.json() as { scans?: RemoteScanSummary[] };
+  return Array.isArray(body.scans) ? body.scans : [];
+}
+
+function printRemoteScan(scan: RemoteScanSummary, localRows: CachedScanMetadata[]): void {
+  const downloaded = localRows.some((row) => row.scanId === scan.id);
+  const role = scan.origin?.deviceRole?.toUpperCase() ?? 'DESCONOCIDO';
+  const scanner = scan.origin?.scanner ?? scan.source;
+  const root = scan.origin?.rootPath ?? '-';
+  const state = downloaded ? 'REMOTO + LOCAL' : 'REMOTO';
+
+  console.log(`  ${scan.id}`);
+  console.log(`    Estado:   ${state}`);
+  console.log(`    Origen:   ${role} · ${scan.computer}`);
+  console.log(`    Motor:    ${scanner}`);
+  console.log(`    Entradas: ${scan.entries}`);
+  console.log(`    Ruta:     ${root}`);
+  console.log(`    Fecha:    ${scan.createdAt}`);
+}
+
+function printLocalScan(scan: CachedScanMetadata): void {
+  console.log(`  ${scan.scanId}`);
+  console.log('    Estado:   LOCAL · offline');
+  console.log(`    Origen:   ${scan.computer}`);
+  console.log(`    Motor:    ${scan.source}`);
+  console.log(`    Entradas: ${scan.entries}`);
+  console.log(`    Escaneo:  ${scan.createdAt}`);
+  console.log(`    Descarga: ${scan.cachedAt}`);
+}
+
+function formatOrigin(scan: ScanDocument): string {
+  if (!scan.origin) return scan.computer;
+  return `${scan.origin.deviceRole.toUpperCase()} · ${scan.origin.hostname} · ${scan.origin.scanner}`;
+}
+
+function normalizeListScope(value: string | undefined): ListScope {
+  if (!value || value === 'all') return 'all';
+  if (value === 'local' || value === 'remote') return value;
+  throw new Error(`Vista desconocida: ${value}. Usa all, local o remote.`);
 }
 
 function readConnection(): { backendUrl: string; token: string } {
