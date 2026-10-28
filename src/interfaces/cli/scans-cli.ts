@@ -12,15 +12,17 @@ interface RemoteScanSummary {
 
 function usage(): never {
   console.log('Uso:');
-  console.log('  ./ansys scans remote');
-  console.log('  ./ansys scans pull <id|latest>');
-  console.log('  ./ansys scans local');
-  console.log('  ./ansys scans show <id>');
+  console.log('  ./ansys-scans remote');
+  console.log('  ./ansys-scans pull <id|latest>');
+  console.log('  ./ansys-scans local');
+  console.log('  ./ansys-scans show <id>');
+  console.log('  ./ansys-scans delete local <id>');
+  console.log('  ./ansys-scans delete local --all');
   process.exit(1);
 }
 
 async function main(): Promise<void> {
-  const [, , command, value] = process.argv;
+  const [, , command, value, extra] = process.argv;
   const cache = new ScanCache();
 
   if (command === 'local') {
@@ -42,6 +44,21 @@ async function main(): Promise<void> {
     const cached = await cache.get(value);
     if (!cached) throw new Error(`No existe una copia local válida del escaneo ${value}.`);
     console.log(JSON.stringify(cached.scan, null, 2));
+    return;
+  }
+
+  if (command === 'delete') {
+    if (value !== 'local' || !extra) usage();
+
+    if (extra === '--all') {
+      const count = await cache.deleteAll();
+      console.log(`Escaneos locales eliminados: ${count}`);
+      return;
+    }
+
+    const removed = await cache.delete(extra);
+    if (!removed) throw new Error(`No existe el escaneo local ${extra}.`);
+    console.log(`Escaneo local eliminado: ${extra}`);
     return;
   }
 
