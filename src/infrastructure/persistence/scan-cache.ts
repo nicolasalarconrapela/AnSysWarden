@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isScanDocument, type ScanDocument } from '../../core/contracts/backend-protocol';
@@ -98,6 +98,32 @@ export class ScanCache {
     }
 
     return rows.sort((a, b) => b.cachedAt.localeCompare(a.cachedAt));
+  }
+
+  async delete(scanId: string): Promise<boolean> {
+    const scanPath = join(this.root, `${scanId}.json`);
+    const metadataPath = join(this.root, `${scanId}.meta.json`);
+    let removed = false;
+
+    for (const path of [scanPath, metadataPath]) {
+      try {
+        await unlink(path);
+        removed = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+
+    return removed;
+  }
+
+  async deleteAll(): Promise<number> {
+    const rows = await this.list();
+    let removed = 0;
+    for (const row of rows) {
+      if (await this.delete(row.scanId)) removed += 1;
+    }
+    return removed;
   }
 }
 
