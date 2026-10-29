@@ -3,7 +3,11 @@ import { BackendStorage } from '../backend/storage';
 import { isScanDocument, type ScanDocument, type ScanEntry } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
 import { ScanCache } from '../infrastructure/persistence/scan-cache';
-import { analyzeAmbiguousCandidates, type ReclaimAiResult } from './reclaim-ai';
+import {
+  analyzeAmbiguousCandidates,
+  type ReclaimAiProgressEvent,
+  type ReclaimAiResult,
+} from './reclaim-ai';
 import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
 
 function usage(): never {
@@ -179,6 +183,89 @@ function printAiResult(result: ReclaimAiResult): void {
   }
 }
 
+function createAiProgressHandler(): (event: ReclaimAiProgressEvent) => void {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let startedAt = 0;
+  let liveLabel = '';
+  const tty = Boolean(process.stdout.isTTY);
+
+  const clearTimer = (): void => {
+    if (timer) clearInterval(timer);
+    timer = undefined;
+  };
+
+  const clearLiveLine = (): void => {
+    if (tty) process.stdout.write('\r\x1b[2K');
+  };
+
+  const renderLive = (): void => {
+    if (!tty || !liveLabel) return;
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    process.stdout.write(`\r\x1b[2K${liveLabel} · ${elapsedSeconds} s…`);
+  };
+
+  const startLive = (label: string): void => {
+    clearTimer();
+    clearLiveLine();
+    liveLabel = label;
+    startedAt = Date.now();
+    if (tty) {
+      renderLive();
+      timer = setInterval(renderLive, 1000);
+    } else {
+      console.log(label);
+    }
+  };
+
+  const finishLive = (label: string, durationMs: number): void => {
+    clearTimer();
+    clearLiveLine();
+    liveLabel = '';
+    console.log(`${label} · ${formatDuration(durationMs)}`);
+  };
+
+  return (event: ReclaimAiProgressEvent): void => {
+    if (event.type === 'selection') {
+      console.log(`  Seleccionados para Gemma: ${event.selected}/${event.requested} · modelo ${event.model}`);
+      return;
+    }
+
+    if (event.type === 'warmup-start') {
+      startLive(`  [··] Preparando ${event.model}`);
+      return;
+    }
+
+    if (event.type === 'warmup-done') {
+      finishLive(`  [✓] ${event.model} preparado`, event.durationMs);
+      return;
+    }
+
+    if (event.type === 'warmup-failed') {
+      finishLive(`  [!] No se pudo preparar ${event.model}`, event.durationMs);
+      return;
+    }
+
+    if (event.type === 'candidate-start') {
+      startLive(`  [${event.index}/${event.total}] Analizando ${displayName(event.path)}`);
+      return;
+    }
+
+    if (event.type === 'candidate-done') {
+      finishLive(`  [✓] [${event.index}/${event.total}] ${displayName(event.path)} analizado`, event.durationMs);
+      return;
+    }
+
+    if (event.type === 'candidate-failed') {
+      finishLive(`  [!] [${event.index}/${event.total}] ${displayName(event.path)} sin resultado`, event.durationMs);
+    }
+  };
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${durationMs} ms`;
+  return `${(durationMs / 1000).toFixed(1)} s`;
+}
+
 async function printReport(
   scan: ScanDocument,
   report: ReturnType<typeof buildReclaimReport>,
@@ -215,7 +302,8 @@ async function printReport(
 
   if (ai) {
     console.log(`\nAnalizando con Gemma hasta ${aiMax} candidato(s) ambiguo(s) principal(es)...`);
-    const result = await analyzeAmbiguousCandidates(scan, report, aiMax);
+    const progress = createAiProgressHandler();
+    const result = await analyzeAmbiguousCandidates(scan, report, aiMax, progress);
     printAiResult(result);
   }
 }
