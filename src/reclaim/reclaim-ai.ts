@@ -24,10 +24,22 @@ export interface ReclaimAiResult {
   failures: Array<{ path: string; error: string }>;
 }
 
+export type ReclaimAiProgressEvent =
+  | { type: 'selection'; requested: number; selected: number; model: string }
+  | { type: 'warmup-start'; model: string }
+  | { type: 'warmup-done'; model: string; durationMs: number }
+  | { type: 'warmup-failed'; model: string; durationMs: number; error: string }
+  | { type: 'candidate-start'; index: number; total: number; path: string }
+  | { type: 'candidate-done'; index: number; total: number; path: string; durationMs: number }
+  | { type: 'candidate-failed'; index: number; total: number; path: string; durationMs: number; error: string };
+
+export type ReclaimAiProgressHandler = (event: ReclaimAiProgressEvent) => void;
+
 export async function analyzeAmbiguousCandidates(
   scan: ScanDocument,
   report: ReclaimReport,
   limit = 3,
+  onProgress?: ReclaimAiProgressHandler,
 ): Promise<ReclaimAiResult> {
   const client = new OllamaClient(
     process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
@@ -37,16 +49,37 @@ export async function analyzeAmbiguousCandidates(
   const analyzed: ReclaimAiFinding[] = [];
   const failures: Array<{ path: string; error: string }> = [];
 
+  onProgress?.({
+    type: 'selection',
+    requested: limit,
+    selected: selected.length,
+    model: client.getModel(),
+  });
+
   if (selected.length === 0) {
     return { model: client.getModel(), analyzed, failures };
   }
 
   let warmupMs: number | undefined;
+  const warmupStartedAt = Date.now();
+  onProgress?.({ type: 'warmup-start', model: client.getModel() });
   try {
     const warmup = await client.warmup(RECLAIM_AI_WARMUP_TIMEOUT_MS);
     warmupMs = warmup.durationMs;
+    onProgress?.({
+      type: 'warmup-done',
+      model: client.getModel(),
+      durationMs: warmup.durationMs,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const durationMs = Date.now() - warmupStartedAt;
+    onProgress?.({
+      type: 'warmup-failed',
+      model: client.getModel(),
+      durationMs,
+      error: message,
+    });
     for (const candidate of selected) {
       failures.push({
         path: candidate.path,
@@ -56,20 +89,48 @@ export async function analyzeAmbiguousCandidates(
     return { model: client.getModel(), analyzed, failures };
   }
 
-  for (const candidate of selected) {
+  for (let index = 0; index < selected.length; index += 1) {
+    const candidate = selected[index];
+    const position = index + 1;
+    const startedAt = Date.now();
+    onProgress?.({
+      type: 'candidate-start',
+      index: position,
+      total: selected.length,
+      path: candidate.path,
+    });
+
     try {
       const context = buildContext(scan, candidate);
       const evidence = await client.analyzePath(context, RECLAIM_AI_TIMEOUT_MS);
+      const durationMs = Date.now() - startedAt;
       analyzed.push({
         path: candidate.path,
         sizeBytes: candidate.sizeBytes,
         evidence,
         model: client.getModel(),
       });
+      onProgress?.({
+        type: 'candidate-done',
+        index: position,
+        total: selected.length,
+        path: candidate.path,
+        durationMs,
+      });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const durationMs = Date.now() - startedAt;
       failures.push({
         path: candidate.path,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
+      });
+      onProgress?.({
+        type: 'candidate-failed',
+        index: position,
+        total: selected.length,
+        path: candidate.path,
+        durationMs,
+        error: message,
       });
     }
   }
