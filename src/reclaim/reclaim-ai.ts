@@ -45,7 +45,7 @@ export async function analyzeAmbiguousCandidates(
     process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
     RECLAIM_AI_MODEL,
   );
-  const selected = selectTopLevelAmbiguous(report.reviewCandidates, limit);
+  const selected = selectAmbiguousCandidates(scan, report.reviewCandidates, limit);
   const analyzed: ReclaimAiFinding[] = [];
   const failures: Array<{ path: string; error: string }> = [];
 
@@ -138,6 +138,32 @@ export async function analyzeAmbiguousCandidates(
   return { model: client.getModel(), warmupMs, analyzed, failures };
 }
 
+function selectAmbiguousCandidates(
+  scan: ScanDocument,
+  candidates: ReclaimCandidate[],
+  limit: number,
+): ReclaimCandidate[] {
+  const cargoBuilds = candidates
+    .filter((candidate) => basename(candidate.path).toLowerCase() === 'build')
+    .filter((candidate) => /(^|\/)target\/[^/]+\/build$/i.test(normalizePath(candidate.path)))
+    .filter((candidate) => hasHashedGenerationDescendant(scan, candidate.path))
+    .sort((a, b) => b.sizeBytes - a.sizeBytes);
+
+  if (cargoBuilds.length > 0) {
+    return cargoBuilds.slice(0, limit);
+  }
+
+  return selectTopLevelAmbiguous(candidates, limit);
+}
+
+function hasHashedGenerationDescendant(scan: ScanDocument, parentPath: string): boolean {
+  return scan.entries.some((entry) => {
+    if (entry.path === parentPath || !isSameOrDescendant(entry.path, parentPath)) return false;
+    const relative = relativeTo(parentPath, entry.path);
+    return /^[^/]+-[0-9a-f]{12,}$/i.test(relative);
+  });
+}
+
 function selectTopLevelAmbiguous(candidates: ReclaimCandidate[], limit: number): ReclaimCandidate[] {
   const selected: ReclaimCandidate[] = [];
   for (const candidate of [...candidates].sort((a, b) => b.sizeBytes - a.sizeBytes)) {
@@ -158,13 +184,22 @@ function buildContext(scan: ScanDocument, candidate: ReclaimCandidate): string {
     .map((entry) => `${relativeTo(candidate.path, entry.path)}:${entry.sizeBytes}`);
 
   const signals = detectStructuralSignals(candidate.path, descendants.map((entry) => entry.path));
+  const cargoBuild = /(^|\/)target\/[^/]+\/build$/i.test(normalizePath(candidate.path))
+    && descendants.some((entry) => /^[^/]+-[0-9a-f]{12,}$/i.test(relativeTo(candidate.path, entry.path)));
 
   return [
     `role=${scan.origin?.deviceRole ?? 'unknown'} platform=${scan.origin?.platform ?? 'unknown'}`,
     `root=${basename(scan.origin?.rootPath ?? '')}`,
     `candidate=${basename(candidate.path)} size=${candidate.sizeBytes}`,
+    ...(cargoBuild ? ['artifact_family=cargo-build'] : []),
     ...(signals.length > 0 ? [`machine_signals=${signals.join(';')}`] : []),
     ...(largest.length > 0 ? [`largest_descendants=${largest.join(',')}`] : []),
+    ...(cargoBuild ? [
+      'This structure was deterministically recognized as a Cargo/Rust build-artifact area.',
+      'Treat these entries as build outputs, not user-authored source data.',
+      'Build outputs are generally regenerable, but rebuild cost may be high and current generations may still be valuable.',
+      'Without age or usage evidence, do not claim that a specific generation is obsolete.',
+    ] : []),
     'Machine signals are advisory structural observations, not proof and not deletion authorization.',
     'Directory size is only a prioritization signal. Never infer persistence, uniqueness, or user-data risk from size alone.',
     'Infer artifact type, regenerability and unique-data risk from the structure. Preserve uncertainty when evidence is insufficient.',
@@ -197,7 +232,9 @@ function detectStructuralSignals(candidatePath: string, descendantPaths: string[
   if (candidateName === 'target' && (hasDebugProfile || hasReleaseProfile || profileNames.size >= 2)) {
     signals.push(`multiple-build-profiles:${[...profileNames].slice(0, 4).join(',') || 'detected'}`);
   }
-  if (hashedGenerationCount > 0) {
+  if (candidateName === 'build' && hashedGenerationCount > 0) {
+    signals.push(`cargo-build-generations:${hashedGenerationCount}`);
+  } else if (hashedGenerationCount > 0) {
     signals.push(`hashed-build-like-generations:${hashedGenerationCount}`);
   }
   if (candidateName === 'target' && hasDepsDirectory && hasBuildDirectory && hashedGenerationCount > 0) {
