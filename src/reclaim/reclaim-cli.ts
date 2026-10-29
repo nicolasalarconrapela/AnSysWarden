@@ -14,16 +14,17 @@ import {
   type ReclaimCandidate,
   type ReclaimTreeNode,
 } from './reclaim-engine';
+import type { ProjectLifecycle } from './reclaim-policy';
 
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
   console.log('────────────────────────────────────────');
   console.log('Uso:');
-  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree] [--ai] [--ai-max N]');
-  console.log('  ./ansys-reclaim latest [--max N] [--tree] [--ai] [--ai-max N]');
-  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree] [--ai] [--ai-max N]');
-  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat] [--ai] [--ai-max N]`);
-  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat] [--ai] [--ai-max N]');
+  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
+  console.log('  ./ansys-reclaim latest [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
+  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat] [--ai] [--ai-max N] [--project-state active|paused|finished]`);
+  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat] [--ai] [--ai-max N] [--project-state active|paused|finished]');
   process.exit(1);
 }
 
@@ -44,6 +45,13 @@ function readPositiveInt(args: string[], name: string, fallback: number): number
     throw new Error(`${name} debe ser un entero entre 1 y 1000.`);
   }
   return value;
+}
+
+function readProjectState(args: string[]): ProjectLifecycle | undefined {
+  const raw = readOption(args, '--project-state');
+  if (raw === undefined) return undefined;
+  if (raw === 'active' || raw === 'paused' || raw === 'finished') return raw;
+  throw new Error('--project-state debe ser active, paused o finished.');
 }
 
 function parseScanJson(raw: string): ScanDocument {
@@ -138,6 +146,8 @@ function printQuestions(report: ReturnType<typeof buildReclaimReport>): void {
       console.log(`  - ${option.value}: ${option.label}`);
     }
   }
+  console.log('');
+  console.log('Responde al contexto con --project-state active|paused|finished.');
 }
 
 function printAiResult(result: ReclaimAiResult): void {
@@ -267,6 +277,9 @@ async function printReport(
   if (report.context.domainEvidence.length > 0) {
     console.log(`Señales: ${report.context.domainEvidence.join(', ')}`);
   }
+  if (report.context.projectLifecycle) {
+    console.log(`Estado proyecto: ${formatProjectState(report.context.projectLifecycle)}`);
+  }
   console.log(`Entradas JSON: ${report.totalEntries}`);
   console.log(`Entradas analizadas: ${report.analyzedEntries}`);
   console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
@@ -289,6 +302,12 @@ async function printReport(
   }
 
   printQuestions(report);
+
+  if (ai && report.needsUserInput) {
+    console.log('\nIA pospuesta: primero hay que resolver las preguntas de intención del usuario.');
+    console.log('Gemma no se prepara ni analiza candidatos hasta disponer de ese contexto.');
+    return;
+  }
 
   if (ai) {
     console.log(`\nAnalizando con Gemma hasta ${aiMax} candidato(s) ambiguo(s) principal(es)...`);
@@ -328,6 +347,7 @@ async function run(): Promise<void> {
   const max = readPositiveInt(args, '--max', 30);
   const ai = hasFlag(args, '--ai');
   const aiMax = readPositiveInt(args, '--ai-max', 3);
+  const projectState = readProjectState(args);
 
   if (command === 'scan') {
     const inputPath = args[0];
@@ -349,7 +369,14 @@ async function run(): Promise<void> {
     console.log('Modo: solo lectura · no se eliminará ningún archivo');
 
     const result = await scanner.scan(inputPath, { depth, minSize });
-    await printReport(result.scan, buildReclaimReport(result.scan), max, tree, ai, aiMax);
+    await printReport(
+      result.scan,
+      buildReclaimReport(result.scan, { projectLifecycle: projectState }),
+      max,
+      tree,
+      ai,
+      aiMax,
+    );
     return;
   }
 
@@ -357,7 +384,14 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
-    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
+    await printReport(
+      scan,
+      buildReclaimReport(scan, { projectLifecycle: projectState }),
+      max,
+      tree,
+      ai,
+      aiMax,
+    );
     return;
   }
 
@@ -367,7 +401,14 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
-    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
+    await printReport(
+      scan,
+      buildReclaimReport(scan, { projectLifecycle: projectState }),
+      max,
+      tree,
+      ai,
+      aiMax,
+    );
     return;
   }
 
@@ -380,7 +421,14 @@ async function run(): Promise<void> {
     console.log('────────────────────────────────────────');
     console.log(`Entrada: ${source}`);
     console.log('Persistencia: no se guarda; solo se analiza en memoria.');
-    await printReport(scan, buildReclaimReport(scan), max, tree, ai, aiMax);
+    await printReport(
+      scan,
+      buildReclaimReport(scan, { projectLifecycle: projectState }),
+      max,
+      tree,
+      ai,
+      aiMax,
+    );
     return;
   }
 
@@ -414,6 +462,12 @@ function formatDomain(domain: ReturnType<typeof buildReclaimReport>['context']['
   if (domain === 'backup') return 'BACKUP';
   if (domain === 'downloads') return 'DESCARGAS';
   return 'DESCONOCIDO';
+}
+
+function formatProjectState(state: ProjectLifecycle): string {
+  if (state === 'active') return 'EN DESARROLLO';
+  if (state === 'paused') return 'PAUSADO';
+  return 'FINALIZADO';
 }
 
 run().catch((error: unknown) => {
