@@ -202,10 +202,19 @@ function segmentScopes(scan: ScanDocument): ScopeCandidate[] {
   }
 
   const root = roots[0];
-  if (!root.entryId) return [makeScope(root, 'root', children)];
+  const rootScope = makeScope(root, root.entryId ?? 'root', children);
+  const rootDomain = detectDomain(rootScope);
+
+  // Si la raíz completa ya representa una unidad reconocible (por ejemplo un
+  // proyecto con .git + target), no la fragmentamos por sus carpetas internas.
+  if (rootDomain.domain !== 'unknown' && rootDomain.confidence >= 0.7) {
+    return [rootScope];
+  }
+
+  if (!root.entryId) return [rootScope];
 
   const directChildren = children.get(root.entryId) ?? [];
-  if (directChildren.length <= 1) return [makeScope(root, root.entryId, children)];
+  if (directChildren.length <= 1) return [rootScope];
 
   const childScopes = directChildren.map((child, index) =>
     makeScope(child, child.entryId ?? `child-${index + 1}`, children));
@@ -214,12 +223,11 @@ function segmentScopes(scan: ScanDocument): ScopeCandidate[] {
     return detected.domain !== 'unknown' && detected.confidence >= 0.7;
   });
 
-  // A project root such as Krokiet contains target/.git children that are not
-  // independent domains. A workspace with A/B projects does contain child
-  // subtrees that can be classified independently, so split it there.
+  // Solo tratamos los hijos como ámbitos independientes cuando la raíz es un
+  // contenedor genérico y al menos uno de sus hijos sí puede clasificarse.
   if (identifiableChildren.length > 0) return childScopes;
 
-  return [makeScope(root, root.entryId, children)];
+  return [rootScope];
 }
 
 function makeScope(
