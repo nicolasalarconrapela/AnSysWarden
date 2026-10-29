@@ -2,6 +2,8 @@ import {
   getConfigPath,
   normalizeConfigLanguage,
   readAppConfig,
+  writeApiToken,
+  writeBackendUrl,
   writeConfiguredLanguage,
   type ConfigLanguage,
 } from './app-config';
@@ -64,6 +66,8 @@ function usage(): never {
   console.log('  ./ansys config show');
   console.log('  ./ansys config path');
   console.log('  ./ansys config language <en|es>');
+  console.log('  ./ansys config backend <http://PC_IP:8787>');
+  console.log('  ./ansys config token <token>');
   process.exit(1);
 }
 
@@ -87,6 +91,8 @@ async function main(): Promise<void> {
     console.log(`${pick('Language', 'Idioma', language)}:   ${language}`);
     console.log(`${pick('Source', 'Origen', language)}:     ${state.source}`);
     console.log(`${pick('Configured', 'Configurado', language)}: ${state.configured ? pick('yes', 'sí', language) : 'no'}`);
+    console.log(`${pick('Backend', 'Backend', language)}:    ${config.backendUrl ?? pick('not configured', 'no configurado', language)}`);
+    console.log(`${pick('API token', 'Token API', language)}: ${config.apiToken ? pick('configured', 'configurado', language) : pick('not configured', 'no configurado', language)}`);
     console.log(`Schema:     ${config.schema}`);
 
     if (state.source === 'default') {
@@ -130,6 +136,26 @@ async function main(): Promise<void> {
       console.log(`File: ${getConfigPath()}`);
       console.log('It will be applied automatically to future commands.');
     }
+    return;
+  }
+
+  if (command === 'backend') {
+    if (!value) usage();
+    const config = writeBackendUrl(value);
+    const language = currentLanguage();
+    console.log(pick('Backend URL saved.', 'URL del backend guardada.', language));
+    console.log(`Backend: ${config.backendUrl}`);
+    console.log(`Archivo: ${getConfigPath()}`);
+    return;
+  }
+
+  if (command === 'token') {
+    if (!value) usage();
+    writeApiToken(value);
+    const language = currentLanguage();
+    console.log(pick('API token saved.', 'Token API guardado.', language));
+    console.log(pick('The token value is not displayed.', 'El valor del token no se muestra.', language));
+    console.log(`Archivo: ${getConfigPath()}`);
     return;
   }
 

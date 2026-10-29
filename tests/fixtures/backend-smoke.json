@@ -1,0 +1,59 @@
+{
+  "schema": "ansyswarden.backend-smoke.v1",
+  "documents": [
+    {
+      "schema": "ansyswarden.scan.v1",
+      "id": "smoke-scan-001",
+      "createdAt": "2026-10-28T10:00:00.000Z",
+      "source": "backend-smoke",
+      "computer": "standalone-test",
+      "entries": [
+        {
+          "entryId": "root",
+          "depth": 0,
+          "path": "/tmp/example-project",
+          "sizeBytes": 104857600,
+          "files": 1200,
+          "directories": 30
+        },
+        {
+          "entryId": "node-modules",
+          "parentId": "root",
+          "depth": 1,
+          "path": "/tmp/example-project/node_modules",
+          "sizeBytes": 94371840,
+          "files": 1100,
+          "directories": 25
+        }
+      ]
+    },
+    {
+      "schema": "ansyswarden.ai-job.v1",
+      "id": "smoke-ai-job-001",
+      "createdAt": "2026-10-28T10:00:01.000Z",
+      "profile": {
+        "path": "/tmp/example-project/cache-KEEP-important",
+        "sizeBytes": 2684354560,
+        "fileCount": 9420,
+        "directoryCount": 186,
+        "skippedEntries": 0,
+        "newestMtimeMs": 1793191200000,
+        "oldestMtimeMs": 1788249600000,
+        "extensions": [
+          {
+            "extension": ".bin",
+            "files": 8900,
+            "bytes": 2300000000
+          },
+          {
+            "extension": ".json",
+            "files": 520,
+            "bytes": 384354560
+          }
+        ],
+        "profileComplete": true,
+        "limitReason": null
+      }
+    }
+  ]
+}

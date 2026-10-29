@@ -8,6 +8,8 @@ export type ConfigLanguage = 'en' | 'es';
 export interface AppConfig {
   schema: typeof APP_CONFIG_SCHEMA;
   language?: ConfigLanguage;
+  backendUrl?: string;
+  apiToken?: string;
   [key: string]: unknown;
 }
 
@@ -25,6 +27,18 @@ export function normalizeConfigLanguage(value: unknown): ConfigLanguage | null {
   return null;
 }
 
+function normalizeBackendUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(normalized) ? normalized : undefined;
+}
+
+function normalizeApiToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized.length >= 24 ? normalized : undefined;
+}
+
 export function readAppConfig(): AppConfig {
   const path = getConfigPath();
   try {
@@ -35,12 +49,22 @@ export function readAppConfig(): AppConfig {
 
     const object = parsed as Record<string, unknown>;
     const language = normalizeConfigLanguage(object.language);
-    const { language: _discardedLanguage, schema: _discardedSchema, ...rest } = object;
+    const backendUrl = normalizeBackendUrl(object.backendUrl);
+    const apiToken = normalizeApiToken(object.apiToken);
+    const {
+      language: _discardedLanguage,
+      backendUrl: _discardedBackendUrl,
+      apiToken: _discardedApiToken,
+      schema: _discardedSchema,
+      ...rest
+    } = object;
 
     return {
       ...rest,
       schema: APP_CONFIG_SCHEMA,
       ...(language ? { language } : {}),
+      ...(backendUrl ? { backendUrl } : {}),
+      ...(apiToken ? { apiToken } : {}),
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -54,15 +78,37 @@ export function readConfiguredLanguage(): ConfigLanguage | null {
   return readAppConfig().language ?? null;
 }
 
-export function writeConfiguredLanguage(language: ConfigLanguage): AppConfig {
+function writeAppConfig(config: AppConfig): AppConfig {
   const path = getConfigPath();
-  const config: AppConfig = {
-    ...readAppConfig(),
-    schema: APP_CONFIG_SCHEMA,
-    language,
-  };
-
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   return config;
+}
+
+export function writeConfiguredLanguage(language: ConfigLanguage): AppConfig {
+  return writeAppConfig({
+    ...readAppConfig(),
+    schema: APP_CONFIG_SCHEMA,
+    language,
+  });
+}
+
+export function writeBackendUrl(backendUrl: string): AppConfig {
+  const normalized = normalizeBackendUrl(backendUrl);
+  if (!normalized) throw new Error(`Invalid backend URL: ${backendUrl}`);
+  return writeAppConfig({
+    ...readAppConfig(),
+    schema: APP_CONFIG_SCHEMA,
+    backendUrl: normalized,
+  });
+}
+
+export function writeApiToken(apiToken: string): AppConfig {
+  const normalized = normalizeApiToken(apiToken);
+  if (!normalized) throw new Error('API token must contain at least 24 characters.');
+  return writeAppConfig({
+    ...readAppConfig(),
+    schema: APP_CONFIG_SCHEMA,
+    apiToken: normalized,
+  });
 }

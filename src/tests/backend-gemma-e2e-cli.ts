@@ -5,6 +5,7 @@ import {
   type AiJobResultDocument,
 } from '../backend/types';
 import type { ArtifactProfile } from '../profiler/artifact-profiler';
+import { readAppConfig } from '../config/app-config';
 import { t } from '../i18n';
 
 const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8787';
@@ -160,8 +161,10 @@ async function main(): Promise<void> {
 }
 
 function readOptions(args: string[]): E2EOptions {
+  const config = readAppConfig();
   const backendUrl = readOption(args, '--backend')
     ?? process.env.ANSYSWARDEN_PC_BACKEND_URL
+    ?? config.backendUrl
     ?? DEFAULT_BACKEND_URL;
   const token = process.env.ANSYSWARDEN_API_TOKEN?.trim() ?? '';
   if (token.length < 24) throw new Error(t('e2e.token_missing'));

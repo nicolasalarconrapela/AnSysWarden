@@ -173,13 +173,23 @@ export async function startBackendServer(options: BackendServerOptions): Promise
       }
 
       const scanMatch = path.match(/^\/api\/scans\/([^/]+)$/);
-      if (req.method === 'GET' && scanMatch) {
+      if (scanMatch) {
         const scanId = decodeURIComponent(scanMatch[1]);
         if (!isSafeId(scanId)) return sendJson(res, 400, { error: 'INVALID_SCAN_ID' });
-        const scan = await storage.getScan(scanId);
-        if (!scan) return sendJson(res, 404, { error: 'SCAN_NOT_FOUND' });
-        sendJson(res, 200, scan);
-        return;
+
+        if (req.method === 'GET') {
+          const scan = await storage.getScan(scanId);
+          if (!scan) return sendJson(res, 404, { error: 'SCAN_NOT_FOUND' });
+          sendJson(res, 200, scan);
+          return;
+        }
+
+        if (req.method === 'DELETE') {
+          const removed = await storage.deleteScan(scanId);
+          if (!removed) return sendJson(res, 404, { error: 'SCAN_NOT_FOUND' });
+          sendJson(res, 200, { ok: true, id: scanId });
+          return;
+        }
       }
 
       sendJson(res, 404, { error: 'NOT_FOUND' });
