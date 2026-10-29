@@ -6,9 +6,10 @@ import {
   type ReclaimDecision,
   type ReclaimPolicyInput,
   type ReclaimQuestion,
+  type ReclaimScopeContext,
 } from './reclaim-policy';
 
-export type ReclaimAction = 'DELETE' | 'REVIEW' | 'PROTECT';
+export type ReclaimAction = 'DELETE' | 'REVIEW' | 'PROTECT' | 'KEEP' | 'OPTIMIZE';
 export type ReclaimTreeDecision = ReclaimDecision | 'ROOT';
 
 export interface ReclaimCandidate {
@@ -17,7 +18,7 @@ export interface ReclaimCandidate {
   sizeBytes: number;
   reason: string;
   confidence: number;
-  source: 'rule' | 'fallback';
+  source: 'rule' | 'fallback' | 'policy';
 }
 
 export interface ReclaimTreeNode {
@@ -43,6 +44,8 @@ export interface ReclaimReport {
   deleteCandidates: ReclaimCandidate[];
   reviewCandidates: ReclaimCandidate[];
   protectCandidates: ReclaimCandidate[];
+  keepCandidates: ReclaimCandidate[];
+  optimizeCandidates: ReclaimCandidate[];
 }
 
 export function buildReclaimReport(
@@ -52,15 +55,17 @@ export function buildReclaimReport(
   const nonRootEntries = scan.entries.filter((entry) => !isScanRoot(entry, scan));
   const rootFallbackUsed = nonRootEntries.length === 0;
   const entriesToAnalyze = rootFallbackUsed ? scan.entries : nonRootEntries;
+  const policy = buildReclaimPolicyState(scan, policyInput);
 
   const candidates = entriesToAnalyze
-    .map(toCandidate)
+    .map((entry) => toCandidate(entry, policy.context))
     .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
   const deleteCandidates = candidates.filter((candidate) => candidate.action === 'DELETE');
   const reviewCandidates = candidates.filter((candidate) => candidate.action === 'REVIEW');
   const protectCandidates = candidates.filter((candidate) => candidate.action === 'PROTECT');
-  const policy = buildReclaimPolicyState(scan, policyInput);
+  const keepCandidates = candidates.filter((candidate) => candidate.action === 'KEEP');
+  const optimizeCandidates = candidates.filter((candidate) => candidate.action === 'OPTIMIZE');
 
   return {
     scanId: scan.id,
@@ -75,10 +80,16 @@ export function buildReclaimReport(
     deleteCandidates,
     reviewCandidates,
     protectCandidates,
+    keepCandidates,
+    optimizeCandidates,
   };
 }
 
-function toCandidate(entry: ScanEntry): ReclaimCandidate {
+function toCandidate(entry: ScanEntry, context: ReclaimContext): ReclaimCandidate {
+  return applyContextPolicy(entry, classifyEntry(entry), context);
+}
+
+function classifyEntry(entry: ScanEntry): ReclaimCandidate {
   const classification = classifyByRules(entry.path);
 
   if (!classification) {
@@ -122,6 +133,66 @@ function toCandidate(entry: ScanEntry): ReclaimCandidate {
     confidence: classification.confidence,
     source: classification.source === 'rule' ? 'rule' : 'fallback',
   };
+}
+
+function applyContextPolicy(
+  entry: ScanEntry,
+  base: ReclaimCandidate,
+  context: ReclaimContext,
+): ReclaimCandidate {
+  // A contextual policy may make a deletion recommendation more conservative,
+  // but it must never weaken deterministic protection of user data.
+  if (base.action === 'PROTECT') return base;
+
+  const scope = findScope(context, entry.path);
+  if (!scope || scope.domain !== 'development') return base;
+
+  if (scope.projectLifecycle === 'active') {
+    const relative = relativeTo(scope.path, entry.path);
+
+    if (isActiveDevelopmentDependency(relative)) {
+      return {
+        action: 'KEEP',
+        path: entry.path,
+        sizeBytes: entry.sizeBytes,
+        reason: 'Proyecto activo: dependencia o estado de compilación regenerable pero útil para continuar trabajando sin recompilar innecesariamente.',
+        confidence: 0.95,
+        source: 'policy',
+      };
+    }
+
+    if (isBuildGenerationArea(relative)) {
+      return {
+        action: 'REVIEW',
+        path: entry.path,
+        sizeBytes: entry.sizeBytes,
+        reason: 'Proyecto activo: es un artefacto de build regenerable, pero faltan antigüedad/uso para demostrar que esta generación ya es obsoleta.',
+        confidence: Math.max(base.confidence, 0.7),
+        source: 'policy',
+      };
+    }
+  }
+
+  return base;
+}
+
+function findScope(context: ReclaimContext, path: string): ReclaimScopeContext | undefined {
+  const matches = context.scopes.filter((scope) => isSameOrDescendant(path, scope.path));
+  return matches.sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length)[0];
+}
+
+function isActiveDevelopmentDependency(relativePath: string): boolean {
+  const relative = normalizeRelative(relativePath);
+  return /(^|\/)target\/[^/]+\/deps(\/|$)/i.test(relative)
+    || /(^|\/)target\/[^/]+\/incremental(\/|$)/i.test(relative)
+    || /(^|\/)node_modules(\/|$)/i.test(relative)
+    || /(^|\/)(\.venv|venv)(\/|$)/i.test(relative)
+    || /(^|\/)\.gradle\/caches(\/|$)/i.test(relative);
+}
+
+function isBuildGenerationArea(relativePath: string): boolean {
+  const relative = normalizeRelative(relativePath);
+  return /(^|\/)target\/[^/]+\/build(\/|$)/i.test(relative);
 }
 
 function buildReclaimTree(
@@ -219,6 +290,18 @@ function sumNonOverlapping(candidates: ReclaimCandidate[]): number {
   }
 
   return total;
+}
+
+function relativeTo(parent: string, child: string): string {
+  const normalizedParent = normalizePath(parent).replace(/\/$/, '');
+  const normalizedChild = normalizePath(child);
+  if (normalizedChild === normalizedParent) return '';
+  if (!normalizedChild.startsWith(`${normalizedParent}/`)) return normalizedChild;
+  return normalizedChild.slice(normalizedParent.length + 1);
+}
+
+function normalizeRelative(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\//, '').replace(/\/$/, '').toLowerCase();
 }
 
 function isSameOrDescendant(path: string, parent: string): boolean {
