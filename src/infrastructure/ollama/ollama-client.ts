@@ -278,8 +278,13 @@ export class OllamaClient {
     ].join(' ');
 
     const prompt = [
-      'Return ONLY the requested JSON.',
-      'Fields: regenerability=likely|unlikely|unknown; userDataRisk=low|medium|high|unknown; confidence=0..1; evidence=1..3 short sentences; reason=short sentence.',
+      'Return ONLY one JSON object. No markdown and no prose outside JSON.',
+      'Use exactly these fields: regenerability, userDataRisk, confidence, evidence, reason.',
+      'regenerability must be likely|unlikely|unknown.',
+      'userDataRisk must be low|medium|high|unknown.',
+      'confidence must be a number from 0 to 1.',
+      'evidence MUST be a JSON array containing 1 to 3 short strings. Never use a number, object, boolean or plain string for evidence.',
+      'Example shape: {"regenerability":"unknown","userDataRisk":"unknown","confidence":0.5,"evidence":["Insufficient evidence from path structure."],"reason":"More context is required."}',
       'Do not return classification or SAFE_CACHE/USER_DATA/REVIEW_REQUIRED.',
       'likely or low require concrete evidence of regenerability; names such as cache/temp/build/generated/index/runtime are not enough.',
       'Use unlikely or high when there are clear signals of persistent, personal, or potentially unique content.',
@@ -299,7 +304,7 @@ export class OllamaClient {
       has_artifact_profile: Boolean(profile),
       structured_output: gemma4,
       thinking_disabled: gemma4,
-      prompt_mode: 'compact-v1-ram-safe',
+      prompt_mode: 'compact-v2-evidence-array',
       num_ctx: gemma4 ? this.numCtx : null,
       num_predict: this.numPredict,
       keep_alive: this.keepAlive,
@@ -441,8 +446,6 @@ export class OllamaClient {
       );
     } else if (typeof evidence === 'string' && evidence.trim().length > 0) {
       normalizedEvidence.push(evidence.trim());
-    } else if (evidence !== undefined && evidence !== null) {
-      throw new Error(`Model returned unsupported evidence type: ${typeof evidence}`);
     }
 
     if (normalizedEvidence.length === 0) {
