@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createInterface } from 'node:readline/promises';
 import { BackendStorage } from '../backend/storage';
 import { isScanDocument, type ScanDocument } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
@@ -12,9 +13,10 @@ import {
   buildReclaimReport,
   formatBytes,
   type ReclaimCandidate,
+  type ReclaimReport,
   type ReclaimTreeNode,
 } from './reclaim-engine';
-import type { ProjectLifecycle } from './reclaim-policy';
+import type { ProjectLifecycle, ReclaimQuestion } from './reclaim-policy';
 
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
@@ -76,15 +78,13 @@ async function loadScanJson(input: string): Promise<{ scan: ScanDocument; source
     return { scan: parseScanJson(trimmed), source: 'argumento JSON' };
   }
 
-  let raw: string;
   try {
-    raw = await readFile(input, 'utf8');
+    const raw = await readFile(input, 'utf8');
+    return { scan: parseScanJson(raw), source: input };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`No se pudo leer el archivo JSON ${input}: ${reason}`);
   }
-
-  return { scan: parseScanJson(raw), source: input };
 }
 
 function printGroup(title: string, rows: ReclaimCandidate[], max: number): void {
@@ -101,7 +101,7 @@ function printGroup(title: string, rows: ReclaimCandidate[], max: number): void 
   }
 }
 
-function printTree(report: ReturnType<typeof buildReclaimReport>, max: number): void {
+function printTree(report: ReclaimReport, max: number): void {
   console.log(`\nÁRBOL (${Math.min(report.totalEntries, max)}/${report.totalEntries})`);
   console.log('────────────────────────────────────────');
 
@@ -133,7 +133,7 @@ function printTree(report: ReturnType<typeof buildReclaimReport>, max: number): 
   console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = falta evidencia técnica · PREGUNTAR = falta intención del usuario · PROTEGER = datos protegidos');
 }
 
-function printQuestions(report: ReturnType<typeof buildReclaimReport>): void {
+function printQuestions(report: ReclaimReport): void {
   if (report.questions.length === 0) return;
 
   console.log('\nPREGUNTAS PENDIENTES');
@@ -146,8 +146,58 @@ function printQuestions(report: ReturnType<typeof buildReclaimReport>): void {
       console.log(`  - ${option.value}: ${option.label}`);
     }
   }
-  console.log('');
-  console.log('Responde al contexto con --project-state active|paused|finished.');
+}
+
+function canAskInteractively(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+async function promptProjectLifecycle(question: ReclaimQuestion): Promise<ProjectLifecycle> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+  try {
+    console.log('\nPREGUNTA NECESARIA');
+    console.log('────────────────────────────────────────');
+    console.log(`? ${question.prompt}`);
+    console.log(`  ${question.reason}`);
+    console.log('');
+
+    question.options.forEach((option, index) => {
+      console.log(`  ${index + 1}) ${option.label} (${option.value})`);
+    });
+
+    while (true) {
+      const answer = (await rl.question('\nElige [1-3]: ')).trim().toLowerCase();
+      const numeric = Number.parseInt(answer, 10);
+      const selected = Number.isInteger(numeric) && numeric >= 1 && numeric <= question.options.length
+        ? question.options[numeric - 1]?.value
+        : answer;
+
+      if (selected === 'active' || selected === 'paused' || selected === 'finished') {
+        console.log(`Respuesta: ${formatProjectState(selected)}`);
+        return selected;
+      }
+
+      console.log('Opción no válida. Escribe 1, 2, 3, active, paused o finished.');
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function buildReportWithContext(
+  scan: ScanDocument,
+  projectState?: ProjectLifecycle,
+): Promise<ReclaimReport> {
+  let report = buildReclaimReport(scan, { projectLifecycle: projectState });
+  if (!report.needsUserInput || projectState || !canAskInteractively()) return report;
+
+  const lifecycleQuestion = report.questions.find((question) => question.kind === 'project_lifecycle');
+  if (!lifecycleQuestion) return report;
+
+  const selectedState = await promptProjectLifecycle(lifecycleQuestion);
+  report = buildReclaimReport(scan, { projectLifecycle: selectedState });
+  return report;
 }
 
 function printAiResult(result: ReclaimAiResult): void {
@@ -163,11 +213,11 @@ function printAiResult(result: ReclaimAiResult): void {
   }
 
   for (const finding of result.analyzed) {
-    const e = finding.evidence;
+    const evidence = finding.evidence;
     console.log(`\n${formatBytes(finding.sizeBytes).padStart(10)}  ${finding.path}`);
-    console.log(`  Regenerable: ${e.regenerability} · Riesgo datos: ${e.userDataRisk} · Confianza: ${Math.round(e.confidence * 100)}%`);
-    console.log(`  Gemma: ${e.reason}`);
-    for (const item of e.evidence) console.log(`  - ${item}`);
+    console.log(`  Regenerable: ${evidence.regenerability} · Riesgo datos: ${evidence.userDataRisk} · Confianza: ${Math.round(evidence.confidence * 100)}%`);
+    console.log(`  Gemma: ${evidence.reason}`);
+    for (const item of evidence.evidence) console.log(`  - ${item}`);
     console.log('  Decisión efectiva: REVISAR');
   }
 
@@ -262,7 +312,7 @@ function formatDuration(durationMs: number): string {
 
 async function printReport(
   scan: ScanDocument,
-  report: ReturnType<typeof buildReclaimReport>,
+  report: ReclaimReport,
   max: number,
   tree: boolean,
   ai: boolean,
@@ -303,9 +353,14 @@ async function printReport(
 
   printQuestions(report);
 
-  if (ai && report.needsUserInput) {
-    console.log('\nIA pospuesta: primero hay que resolver las preguntas de intención del usuario.');
-    console.log('Gemma no se prepara ni analiza candidatos hasta disponer de ese contexto.');
+  if (report.needsUserInput) {
+    if (!canAskInteractively()) {
+      console.log('\nNo hay terminal interactiva disponible para responder.');
+      console.log('Usa --project-state active|paused|finished para aportar el contexto.');
+    }
+    if (ai) {
+      console.log('IA pospuesta: primero hay que resolver las preguntas de intención del usuario.');
+    }
     return;
   }
 
@@ -369,14 +424,8 @@ async function run(): Promise<void> {
     console.log('Modo: solo lectura · no se eliminará ningún archivo');
 
     const result = await scanner.scan(inputPath, { depth, minSize });
-    await printReport(
-      result.scan,
-      buildReclaimReport(result.scan, { projectLifecycle: projectState }),
-      max,
-      tree,
-      ai,
-      aiMax,
-    );
+    const report = await buildReportWithContext(result.scan, projectState);
+    await printReport(result.scan, report, max, tree, ai, aiMax);
     return;
   }
 
@@ -384,14 +433,8 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
-    await printReport(
-      scan,
-      buildReclaimReport(scan, { projectLifecycle: projectState }),
-      max,
-      tree,
-      ai,
-      aiMax,
-    );
+    const report = await buildReportWithContext(scan, projectState);
+    await printReport(scan, report, max, tree, ai, aiMax);
     return;
   }
 
@@ -401,14 +444,8 @@ async function run(): Promise<void> {
     const tree = hasFlag(args, '--tree');
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
-    await printReport(
-      scan,
-      buildReclaimReport(scan, { projectLifecycle: projectState }),
-      max,
-      tree,
-      ai,
-      aiMax,
-    );
+    const report = await buildReportWithContext(scan, projectState);
+    await printReport(scan, report, max, tree, ai, aiMax);
     return;
   }
 
@@ -421,14 +458,8 @@ async function run(): Promise<void> {
     console.log('────────────────────────────────────────');
     console.log(`Entrada: ${source}`);
     console.log('Persistencia: no se guarda; solo se analiza en memoria.');
-    await printReport(
-      scan,
-      buildReclaimReport(scan, { projectLifecycle: projectState }),
-      max,
-      tree,
-      ai,
-      aiMax,
-    );
+    const report = await buildReportWithContext(scan, projectState);
+    await printReport(scan, report, max, tree, ai, aiMax);
     return;
   }
 
@@ -451,7 +482,7 @@ function formatTreeDecision(decision: ReclaimTreeNode['decision']): string {
   return 'REVISAR';
 }
 
-function formatDomain(domain: ReturnType<typeof buildReclaimReport>['context']['domain']): string {
+function formatDomain(domain: ReclaimReport['context']['domain']): string {
   if (domain === 'development') return 'DESARROLLO';
   if (domain === 'game') return 'JUEGO';
   if (domain === 'images') return 'IMÁGENES';
