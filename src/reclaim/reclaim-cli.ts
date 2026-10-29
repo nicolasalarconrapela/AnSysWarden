@@ -158,8 +158,10 @@ function printAiResult(result: ReclaimAiResult): void {
   console.log(`Modelo: ${result.model}`);
   console.log('Seguridad: Gemma aporta evidencia; NO puede autorizar ELIMINAR.');
 
-  if (result.analyzed.length === 0) {
-    console.log('  No hubo candidatos ambiguos analizados.');
+  if (result.analyzed.length === 0 && result.failures.length === 0) {
+    console.log('  No había candidatos ambiguos seleccionables para Gemma.');
+  } else if (result.analyzed.length === 0 && result.failures.length > 0) {
+    console.log(`  Se intentaron ${result.failures.length} candidato(s), pero no se obtuvo evidencia válida.`);
   }
 
   for (const finding of result.analyzed) {
