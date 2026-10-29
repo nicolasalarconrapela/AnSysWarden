@@ -5,6 +5,10 @@ import type { ReclaimCandidate, ReclaimReport } from './reclaim-engine';
 
 const RECLAIM_AI_MODEL = process.env.ANSYSWARDEN_RECLAIM_MODEL ?? 'gemma2:2b';
 const RECLAIM_AI_TIMEOUT_MS = readPositiveInt(process.env.ANSYSWARDEN_RECLAIM_AI_TIMEOUT_MS, 45_000);
+const RECLAIM_AI_WARMUP_TIMEOUT_MS = readPositiveInt(
+  process.env.ANSYSWARDEN_RECLAIM_AI_WARMUP_TIMEOUT_MS,
+  120_000,
+);
 
 export interface ReclaimAiFinding {
   path: string;
@@ -15,6 +19,7 @@ export interface ReclaimAiFinding {
 
 export interface ReclaimAiResult {
   model: string;
+  warmupMs?: number;
   analyzed: ReclaimAiFinding[];
   failures: Array<{ path: string; error: string }>;
 }
@@ -24,10 +29,32 @@ export async function analyzeAmbiguousCandidates(
   report: ReclaimReport,
   limit = 3,
 ): Promise<ReclaimAiResult> {
-  const client = new OllamaClient(process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434', RECLAIM_AI_MODEL);
+  const client = new OllamaClient(
+    process.env.OLLAMA_HOST_URL ?? 'http://127.0.0.1:11434',
+    RECLAIM_AI_MODEL,
+  );
   const selected = selectTopLevelAmbiguous(report.reviewCandidates, limit);
   const analyzed: ReclaimAiFinding[] = [];
   const failures: Array<{ path: string; error: string }> = [];
+
+  if (selected.length === 0) {
+    return { model: client.getModel(), analyzed, failures };
+  }
+
+  let warmupMs: number | undefined;
+  try {
+    const warmup = await client.warmup(RECLAIM_AI_WARMUP_TIMEOUT_MS);
+    warmupMs = warmup.durationMs;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const candidate of selected) {
+      failures.push({
+        path: candidate.path,
+        error: `No se pudo preparar ${client.getModel()}: ${message}`,
+      });
+    }
+    return { model: client.getModel(), analyzed, failures };
+  }
 
   for (const candidate of selected) {
     try {
@@ -47,7 +74,7 @@ export async function analyzeAmbiguousCandidates(
     }
   }
 
-  return { model: client.getModel(), analyzed, failures };
+  return { model: client.getModel(), warmupMs, analyzed, failures };
 }
 
 function selectTopLevelAmbiguous(candidates: ReclaimCandidate[], limit: number): ReclaimCandidate[] {
