@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { BackendStorage } from '../backend/storage';
-import { isScanDocument, type ScanDocument, type ScanEntry } from '../backend/types';
+import { isScanDocument, type ScanDocument } from '../backend/types';
 import { DustScanner } from '../dust/dust-scanner';
 import { ScanCache } from '../infrastructure/persistence/scan-cache';
 import {
@@ -8,7 +8,12 @@ import {
   type ReclaimAiProgressEvent,
   type ReclaimAiResult,
 } from './reclaim-ai';
-import { buildReclaimReport, formatBytes, type ReclaimCandidate } from './reclaim-engine';
+import {
+  buildReclaimReport,
+  formatBytes,
+  type ReclaimCandidate,
+  type ReclaimTreeNode,
+} from './reclaim-engine';
 
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
@@ -88,72 +93,51 @@ function printGroup(title: string, rows: ReclaimCandidate[], max: number): void 
   }
 }
 
-function printTree(scan: ScanDocument, report: ReturnType<typeof buildReclaimReport>, max: number): void {
-  console.log(`\nÁRBOL (${Math.min(scan.entries.length, max)}/${scan.entries.length})`);
+function printTree(report: ReturnType<typeof buildReclaimReport>, max: number): void {
+  console.log(`\nÁRBOL (${Math.min(report.totalEntries, max)}/${report.totalEntries})`);
   console.log('────────────────────────────────────────');
 
-  const candidateByPath = new Map<string, ReclaimCandidate>();
-  for (const candidate of [
-    ...report.deleteCandidates,
-    ...report.reviewCandidates,
-    ...report.protectCandidates,
-  ]) {
-    candidateByPath.set(normalizePath(candidate.path), candidate);
-  }
-
-  const byId = new Map<string, ScanEntry>();
-  const children = new Map<string, ScanEntry[]>();
-  const roots: ScanEntry[] = [];
-
-  for (const entry of scan.entries) {
-    if (entry.entryId) byId.set(entry.entryId, entry);
-  }
-
-  for (const entry of scan.entries) {
-    if (entry.parentId && byId.has(entry.parentId)) {
-      const siblings = children.get(entry.parentId) ?? [];
-      siblings.push(entry);
-      children.set(entry.parentId, siblings);
-    } else {
-      roots.push(entry);
-    }
-  }
-
-  const sortBySize = (a: ScanEntry, b: ScanEntry): number => b.sizeBytes - a.sizeBytes;
-  roots.sort(sortBySize);
-  for (const siblings of children.values()) siblings.sort(sortBySize);
-
   let printed = 0;
-  const render = (entry: ScanEntry, prefix: string, last: boolean, isRoot: boolean): void => {
+  const render = (node: ReclaimTreeNode, prefix: string, last: boolean, isRoot: boolean): void => {
     if (printed >= max) return;
     printed += 1;
 
-    const candidate = candidateByPath.get(normalizePath(entry.path));
-    const decision = candidate ? formatDecision(candidate.action) : 'RAÍZ';
     const branch = isRoot ? '' : `${prefix}${last ? '└── ' : '├── '}`;
-    console.log(`${branch}${displayName(entry.path)} · ${formatBytes(entry.sizeBytes)} · ${decision}`);
+    console.log(`${branch}${node.name} · ${formatBytes(node.sizeBytes)} · ${formatTreeDecision(node.decision)}`);
 
-    if (!entry.entryId) return;
-    const directChildren = children.get(entry.entryId) ?? [];
     const childPrefix = isRoot ? '' : `${prefix}${last ? '    ' : '│   '}`;
-
-    for (let index = 0; index < directChildren.length; index += 1) {
+    for (let index = 0; index < node.children.length; index += 1) {
       if (printed >= max) break;
-      render(directChildren[index], childPrefix, index === directChildren.length - 1, false);
+      render(node.children[index], childPrefix, index === node.children.length - 1, false);
     }
   };
 
-  for (let index = 0; index < roots.length; index += 1) {
+  for (let index = 0; index < report.tree.length; index += 1) {
     if (printed >= max) break;
-    render(roots[index], '', index === roots.length - 1, true);
+    render(report.tree[index], '', index === report.tree.length - 1, true);
   }
 
-  if (scan.entries.length > printed) {
-    console.log(`… ${scan.entries.length - printed} entradas omitidas por --max ${max}`);
+  if (report.totalEntries > printed) {
+    console.log(`… ${report.totalEntries - printed} entradas omitidas por --max ${max}`);
   }
 
   console.log('');
-  console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = sin prueba suficiente · PROTEGER = datos protegidos');
+  console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = falta evidencia técnica · PREGUNTAR = falta intención del usuario · PROTEGER = datos protegidos');
+}
+
+function printQuestions(report: ReturnType<typeof buildReclaimReport>): void {
+  if (report.questions.length === 0) return;
+
+  console.log('\nPREGUNTAS PENDIENTES');
+  console.log('────────────────────────────────────────');
+  for (const question of report.questions) {
+    console.log(`? ${question.prompt}`);
+    console.log(`  Ruta: ${question.path}`);
+    console.log(`  Motivo: ${question.reason}`);
+    for (const option of question.options) {
+      console.log(`  - ${option.value}: ${option.label}`);
+    }
+  }
 }
 
 function printAiResult(result: ReclaimAiResult): void {
@@ -279,10 +263,14 @@ async function printReport(
   console.log(`Scan ID: ${scan.id}`);
   console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
   console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
+  console.log(`Dominio: ${formatDomain(report.context.domain)} · confianza ${Math.round(report.context.domainConfidence * 100)}%`);
+  if (report.context.domainEvidence.length > 0) {
+    console.log(`Señales: ${report.context.domainEvidence.join(', ')}`);
+  }
   console.log(`Entradas JSON: ${report.totalEntries}`);
   console.log(`Entradas analizadas: ${report.analyzedEntries}`);
   console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
-  console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.protectCandidates.length} proteger`);
+  console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.protectCandidates.length} proteger · ${report.questions.length} preguntar`);
   console.log('Seguridad: esta orden NO borra archivos. Solo reglas locales deterministas pueden proponer ELIMINAR.');
 
   if (report.rootFallbackUsed) {
@@ -293,12 +281,14 @@ async function printReport(
   }
 
   if (tree) {
-    printTree(scan, report, max);
+    printTree(report, max);
   } else {
     printGroup('ELIMINAR', report.deleteCandidates, max);
     printGroup('REVISAR', report.reviewCandidates, max);
     printGroup('PROTEGER', report.protectCandidates, max);
   }
+
+  printQuestions(report);
 
   if (ai) {
     console.log(`\nAnalizando con Gemma hasta ${aiMax} candidato(s) ambiguo(s) principal(es)...`);
@@ -403,14 +393,27 @@ function displayName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '').toLowerCase();
+function formatTreeDecision(decision: ReclaimTreeNode['decision']): string {
+  if (decision === 'DELETE') return 'ELIMINAR';
+  if (decision === 'PROTECT') return 'PROTEGER';
+  if (decision === 'KEEP') return 'CONSERVAR';
+  if (decision === 'OPTIMIZE') return 'OPTIMIZAR';
+  if (decision === 'ASK') return 'PREGUNTAR';
+  if (decision === 'ROOT') return 'RAÍZ';
+  return 'REVISAR';
 }
 
-function formatDecision(action: ReclaimCandidate['action']): string {
-  if (action === 'DELETE') return 'ELIMINAR';
-  if (action === 'PROTECT') return 'PROTEGER';
-  return 'REVISAR';
+function formatDomain(domain: ReturnType<typeof buildReclaimReport>['context']['domain']): string {
+  if (domain === 'development') return 'DESARROLLO';
+  if (domain === 'game') return 'JUEGO';
+  if (domain === 'images') return 'IMÁGENES';
+  if (domain === 'videos') return 'VÍDEOS';
+  if (domain === 'documents') return 'DOCUMENTOS';
+  if (domain === 'application') return 'APLICACIÓN';
+  if (domain === 'system') return 'SISTEMA';
+  if (domain === 'backup') return 'BACKUP';
+  if (domain === 'downloads') return 'DESCARGAS';
+  return 'DESCONOCIDO';
 }
 
 run().catch((error: unknown) => {
