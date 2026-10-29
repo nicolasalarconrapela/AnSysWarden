@@ -18,15 +18,20 @@ import {
 } from './reclaim-engine';
 import type { ContentDomain, ProjectLifecycle, ReclaimQuestion } from './reclaim-policy';
 
+const useColor = Boolean(process.stdout.isTTY && !process.env.NO_COLOR);
+
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
   console.log('────────────────────────────────────────');
   console.log('Uso:');
-  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
-  console.log('  ./ansys-reclaim latest [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
-  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree] [--ai] [--ai-max N] [--project-state active|paused|finished]');
-  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat] [--ai] [--ai-max N] [--project-state active|paused|finished]`);
-  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat] [--ai] [--ai-max N] [--project-state active|paused|finished]');
+  console.log('  ./ansys-reclaim scan <ruta> [--depth N] [--min-size SIZE] [--max N] [--tree] [--ai] [--ai-max N] [--details] [--project-state active|paused|finished]');
+  console.log('  ./ansys-reclaim latest [--max N] [--tree] [--ai] [--ai-max N] [--details] [--project-state active|paused|finished]');
+  console.log('  ./ansys-reclaim show <scan-id> [--max N] [--tree] [--ai] [--ai-max N] [--details] [--project-state active|paused|finished]');
+  console.log(`  ./ansys-reclaim json '<scan-json>' [--max N] [--flat] [--ai] [--ai-max N] [--details] [--project-state active|paused|finished]`);
+  console.log('  ./ansys-reclaim json <archivo.json> [--max N] [--flat] [--ai] [--ai-max N] [--details] [--project-state active|paused|finished]');
+  console.log('');
+  console.log('Vista normal: resumen claro + rutas principales.');
+  console.log('--details: añade IDs, confianza, motivos técnicos y evidencias completas.');
   process.exit(1);
 }
 
@@ -87,8 +92,99 @@ async function loadScanJson(input: string): Promise<{ scan: ScanDocument; source
   }
 }
 
-function printGroup(title: string, rows: ReclaimCandidate[], max: number): void {
-  console.log(`\n${title} (${Math.min(rows.length, max)}/${rows.length})`);
+function paint(text: string, color: number): string {
+  return useColor ? `\x1b[${color}m${text}\x1b[0m` : text;
+}
+
+function actionBadge(action: ReclaimCandidate['action'] | 'ASK' | 'ROOT'): string {
+  if (action === 'KEEP') return `🟢 ${paint('CONSERVAR', 32)}`;
+  if (action === 'REVIEW') return `🟡 ${paint('REVISAR', 33)}`;
+  if (action === 'DELETE') return `🔴 ${paint('ELIMINAR', 31)}`;
+  if (action === 'PROTECT') return `🔒 ${paint('PROTEGER', 36)}`;
+  if (action === 'OPTIMIZE') return `🔵 ${paint('OPTIMIZAR', 34)}`;
+  if (action === 'ASK') return `❓ ${paint('PREGUNTAR', 35)}`;
+  return '• RAÍZ';
+}
+
+function actionHint(action: ReclaimCandidate['action']): string {
+  if (action === 'KEEP') return 'Útil ahora o costoso de regenerar.';
+  if (action === 'REVIEW') return 'Puede sobrar, pero falta evidencia para decidir con seguridad.';
+  if (action === 'DELETE') return 'Regla local determinista: regenerable y seguro de proponer.';
+  if (action === 'PROTECT') return 'Código, historial o datos que no deben tocarse.';
+  return 'Se puede mejorar o reducir sin tratarlo como borrado seguro.';
+}
+
+function normalizePathForView(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function isSameOrDescendantForView(path: string, parent: string): boolean {
+  const normalizedPath = normalizePathForView(path);
+  const normalizedParent = normalizePathForView(parent);
+  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
+}
+
+function sumNonOverlappingForView(rows: ReclaimCandidate[]): number {
+  const selected: ReclaimCandidate[] = [];
+  let total = 0;
+
+  for (const row of [...rows].sort((a, b) => b.sizeBytes - a.sizeBytes)) {
+    if (selected.some((parent) => isSameOrDescendantForView(row.path, parent.path))) continue;
+    selected.push(row);
+    total += row.sizeBytes;
+  }
+
+  return total;
+}
+
+function printSummary(scan: ScanDocument, report: ReclaimReport): void {
+  const primaryScope = report.context.scopes[0];
+
+  console.log('\nAnSysWarden · Resultado');
+  console.log('════════════════════════════════════════');
+  console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
+
+  if (primaryScope) {
+    console.log(`Proyecto: ${primaryScope.name}`);
+    console.log(`Estado: ${primaryScope.projectLifecycle ? formatProjectState(primaryScope.projectLifecycle) : 'POR CONFIRMAR'}`);
+  } else {
+    console.log(`Tipo: ${formatDomain(report.context.domain)}`);
+  }
+
+  console.log('');
+  printSummaryRow('KEEP', report.keepCandidates);
+  printSummaryRow('REVIEW', report.reviewCandidates);
+  printSummaryRow('DELETE', report.deleteCandidates, report.confirmedRecoverableBytes);
+  printSummaryRow('PROTECT', report.protectCandidates);
+  if (report.optimizeCandidates.length > 0) printSummaryRow('OPTIMIZE', report.optimizeCandidates);
+
+  if (report.questions.length > 0) {
+    console.log(`❓ ${paint('PREGUNTAR', 35).padEnd(useColor ? 20 : 12)} ${report.questions.length} decisión(es) necesitan tu respuesta`);
+  }
+
+  console.log('');
+  console.log('Seguridad: no se borra nada. ELIMINAR solo puede venir de reglas locales deterministas.');
+}
+
+function printSummaryRow(
+  action: ReclaimCandidate['action'],
+  rows: ReclaimCandidate[],
+  forcedBytes?: number,
+): void {
+  const bytes = forcedBytes ?? sumNonOverlappingForView(rows);
+  const size = formatBytes(bytes).padStart(9);
+  console.log(`${actionBadge(action).padEnd(useColor ? 31 : 18)} ${size} · ${rows.length} elemento(s)`);
+  console.log(`   ${actionHint(action)}`);
+}
+
+function printGroup(
+  title: string,
+  action: ReclaimCandidate['action'],
+  rows: ReclaimCandidate[],
+  max: number,
+  details: boolean,
+): void {
+  console.log(`\n${actionBadge(action)} · ${title} (${Math.min(rows.length, max)}/${rows.length})`);
   console.log('────────────────────────────────────────');
   if (rows.length === 0) {
     console.log('  Ninguno.');
@@ -97,12 +193,15 @@ function printGroup(title: string, rows: ReclaimCandidate[], max: number): void 
 
   for (const row of rows.slice(0, max)) {
     console.log(`${formatBytes(row.sizeBytes).padStart(10)}  ${row.path}`);
-    console.log(`            ${row.reason}`);
+    if (details) {
+      console.log(`            ${row.reason}`);
+      console.log(`            fuente=${row.source} · confianza=${Math.round(row.confidence * 100)}%`);
+    }
   }
 }
 
 function printTree(report: ReclaimReport, max: number): void {
-  console.log(`\nÁRBOL (${Math.min(report.totalEntries, max)}/${report.totalEntries})`);
+  console.log(`\nDETALLE PRINCIPAL (${Math.min(report.totalEntries, max)}/${report.totalEntries})`);
   console.log('────────────────────────────────────────');
 
   let printed = 0;
@@ -128,9 +227,6 @@ function printTree(report: ReclaimReport, max: number): void {
   if (report.totalEntries > printed) {
     console.log(`… ${report.totalEntries - printed} entradas omitidas por --max ${max}`);
   }
-
-  console.log('');
-  console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = falta evidencia técnica · PREGUNTAR = falta intención del usuario · PROTEGER = datos protegidos');
 }
 
 function printScopes(report: ReclaimReport): void {
@@ -158,6 +254,19 @@ function printQuestions(report: ReclaimReport): void {
     console.log(`  Ruta: ${question.path}`);
     console.log(`  Motivo: ${question.reason}`);
   }
+}
+
+function printTechnicalDetails(scan: ScanDocument, report: ReclaimReport): void {
+  console.log('\nDETALLES TÉCNICOS');
+  console.log('────────────────────────────────────────');
+  console.log(`Scan ID: ${scan.id}`);
+  console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
+  console.log(`Dominio global: ${formatDomain(report.context.domain)} · confianza ${Math.round(report.context.domainConfidence * 100)}%`);
+  console.log(`Entradas JSON: ${report.totalEntries}`);
+  console.log(`Entradas analizadas: ${report.analyzedEntries}`);
+  console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
+  console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.keepCandidates.length} conservar · ${report.protectCandidates.length} proteger · ${report.optimizeCandidates.length} optimizar · ${report.questions.length} preguntar`);
+  printScopes(report);
 }
 
 function canAskInteractively(): boolean {
@@ -227,7 +336,15 @@ async function buildReportWithContext(
   return report;
 }
 
-function printAiResult(result: ReclaimAiResult): void {
+function printAiResult(result: ReclaimAiResult, details: boolean): void {
+  if (!details) {
+    console.log('\nGemma');
+    console.log('────────────────────────────────────────');
+    console.log(`Analizados: ${result.analyzed.length} · Sin resultado: ${result.failures.length}`);
+    console.log('Gemma solo aporta pistas: cualquier caso analizado sigue siendo REVISAR.');
+    return;
+  }
+
   console.log('\nGEMMA · EVIDENCIA SOBRE CASOS AMBIGUOS');
   console.log('────────────────────────────────────────');
   console.log(`Modelo: ${result.model}`);
@@ -344,34 +461,29 @@ async function printReport(
   tree: boolean,
   ai: boolean,
   aiMax: number,
+  details: boolean,
 ): Promise<void> {
-  console.log('\nAnSysWarden · Propuestas de espacio');
-  console.log('════════════════════════════════════════');
-  console.log(`Scan ID: ${scan.id}`);
-  console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
-  console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
-  console.log(`Dominio global: ${formatDomain(report.context.domain)} · confianza ${Math.round(report.context.domainConfidence * 100)}%`);
-  console.log(`Entradas JSON: ${report.totalEntries}`);
-  console.log(`Entradas analizadas: ${report.analyzedEntries}`);
-  console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
-  console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.protectCandidates.length} proteger · ${report.questions.length} preguntar`);
-  console.log('Seguridad: esta orden NO borra archivos. Solo reglas locales deterministas pueden proponer ELIMINAR.');
+  printSummary(scan, report);
 
-  printScopes(report);
+  if (details) printTechnicalDetails(scan, report);
 
   if (report.rootFallbackUsed) {
-    console.log('Aviso: el escaneo no contiene hijos utilizables; se analiza la raíz como REVISAR/PROTEGER/ELIMINAR según reglas.');
-    console.log('Para propuestas más precisas, genera un escaneo con mayor profundidad o menor --min-size.');
+    console.log('\n⚠ El escaneo no contiene hijos utilizables; la propuesta será más general.');
+    if (details) console.log('Para mayor precisión, aumenta --depth o reduce --min-size.');
   } else if (report.totalEntries <= 3) {
-    console.log('Aviso: el escaneo contiene muy pocas entradas; las propuestas pueden ser demasiado generales.');
+    console.log('\n⚠ Hay muy pocas entradas; las propuestas pueden ser demasiado generales.');
   }
 
   if (tree) {
     printTree(report, max);
   } else {
-    printGroup('ELIMINAR', report.deleteCandidates, max);
-    printGroup('REVISAR', report.reviewCandidates, max);
-    printGroup('PROTEGER', report.protectCandidates, max);
+    printGroup('Conservar', 'KEEP', report.keepCandidates, max, details);
+    printGroup('Revisar', 'REVIEW', report.reviewCandidates, max, details);
+    printGroup('Eliminar', 'DELETE', report.deleteCandidates, max, details);
+    printGroup('Proteger', 'PROTECT', report.protectCandidates, max, details);
+    if (report.optimizeCandidates.length > 0) {
+      printGroup('Optimizar', 'OPTIMIZE', report.optimizeCandidates, max, details);
+    }
   }
 
   printQuestions(report);
@@ -379,7 +491,7 @@ async function printReport(
   if (report.needsUserInput) {
     if (!canAskInteractively()) {
       console.log('\nNo hay terminal interactiva disponible para responder las preguntas pendientes.');
-      console.log('En este caso hay que aportar el contexto mediante opciones no interactivas específicas.');
+      if (details) console.log('Aporta el contexto mediante las opciones no interactivas disponibles.');
     }
     if (ai) {
       console.log('IA pospuesta: primero hay que resolver las preguntas de contexto del usuario.');
@@ -391,7 +503,7 @@ async function printReport(
     console.log(`\nAnalizando con Gemma hasta ${aiMax} candidato(s) ambiguo(s) principal(es)...`);
     const progress = createAiProgressHandler();
     const result = await analyzeAmbiguousCandidates(scan, report, aiMax, progress);
-    printAiResult(result);
+    printAiResult(result, details);
   }
 }
 
@@ -425,6 +537,7 @@ async function run(): Promise<void> {
   const max = readPositiveInt(args, '--max', 30);
   const ai = hasFlag(args, '--ai');
   const aiMax = readPositiveInt(args, '--ai-max', 3);
+  const details = hasFlag(args, '--details');
   const projectState = readProjectState(args);
 
   if (command === 'scan') {
@@ -448,7 +561,7 @@ async function run(): Promise<void> {
 
     const result = await scanner.scan(inputPath, { depth, minSize });
     const report = await buildReportWithContext(result.scan, projectState);
-    await printReport(result.scan, report, max, tree, ai, aiMax);
+    await printReport(result.scan, report, max, tree, ai, aiMax, details);
     return;
   }
 
@@ -457,7 +570,7 @@ async function run(): Promise<void> {
     const scan = await findLatestScanHere(storage, cache);
     if (!scan) throw new Error('No hay ningún escaneo disponible en este dispositivo.');
     const report = await buildReportWithContext(scan, projectState);
-    await printReport(scan, report, max, tree, ai, aiMax);
+    await printReport(scan, report, max, tree, ai, aiMax, details);
     return;
   }
 
@@ -468,7 +581,7 @@ async function run(): Promise<void> {
     const scan = await findScanHere(storage, cache, id);
     if (!scan) throw new Error(`No existe el escaneo ${id} en este dispositivo.`);
     const report = await buildReportWithContext(scan, projectState);
-    await printReport(scan, report, max, tree, ai, aiMax);
+    await printReport(scan, report, max, tree, ai, aiMax, details);
     return;
   }
 
@@ -477,12 +590,14 @@ async function run(): Promise<void> {
     if (!input || input.startsWith('--')) usage();
     const { scan, source } = await loadScanJson(input);
     const tree = !hasFlag(args, '--flat');
-    console.log('AnSysWarden · JSON directo');
-    console.log('────────────────────────────────────────');
-    console.log(`Entrada: ${source}`);
-    console.log('Persistencia: no se guarda; solo se analiza en memoria.');
+    if (details) {
+      console.log('AnSysWarden · JSON directo');
+      console.log('────────────────────────────────────────');
+      console.log(`Entrada: ${source}`);
+      console.log('Persistencia: no se guarda; solo se analiza en memoria.');
+    }
     const report = await buildReportWithContext(scan, projectState);
-    await printReport(scan, report, max, tree, ai, aiMax);
+    await printReport(scan, report, max, tree, ai, aiMax, details);
     return;
   }
 
@@ -496,13 +611,13 @@ function displayName(path: string): string {
 }
 
 function formatTreeDecision(decision: ReclaimTreeNode['decision']): string {
-  if (decision === 'DELETE') return 'ELIMINAR';
-  if (decision === 'PROTECT') return 'PROTEGER';
-  if (decision === 'KEEP') return 'CONSERVAR';
-  if (decision === 'OPTIMIZE') return 'OPTIMIZAR';
-  if (decision === 'ASK') return 'PREGUNTAR';
-  if (decision === 'ROOT') return 'RAÍZ';
-  return 'REVISAR';
+  if (decision === 'DELETE') return actionBadge('DELETE');
+  if (decision === 'PROTECT') return actionBadge('PROTECT');
+  if (decision === 'KEEP') return actionBadge('KEEP');
+  if (decision === 'OPTIMIZE') return actionBadge('OPTIMIZE');
+  if (decision === 'ASK') return actionBadge('ASK');
+  if (decision === 'ROOT') return actionBadge('ROOT');
+  return actionBadge('REVIEW');
 }
 
 function formatDomain(domain: ContentDomain): string {
