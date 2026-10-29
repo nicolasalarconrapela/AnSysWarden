@@ -430,14 +430,20 @@ export class OllamaClient {
     if (typeof reason !== 'string' || reason.trim().length === 0) {
       throw new Error('Model did not return a valid reason.');
     }
-    if (!Array.isArray(evidence)) {
-      throw new Error('Model did not return evidence as an array.');
-    }
 
-    const normalizedEvidence = evidence
-      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      .slice(0, 4)
-      .map((item) => item.trim());
+    const normalizedEvidence: string[] = [];
+    if (Array.isArray(evidence)) {
+      normalizedEvidence.push(
+        ...evidence
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .slice(0, 4)
+          .map((item) => item.trim()),
+      );
+    } else if (typeof evidence === 'string' && evidence.trim().length > 0) {
+      normalizedEvidence.push(evidence.trim());
+    } else if (evidence !== undefined && evidence !== null) {
+      throw new Error(`Model returned unsupported evidence type: ${typeof evidence}`);
+    }
 
     if (normalizedEvidence.length === 0) {
       normalizedEvidence.push(reason.trim());
