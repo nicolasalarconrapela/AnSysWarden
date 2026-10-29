@@ -16,7 +16,7 @@ import {
   type ReclaimReport,
   type ReclaimTreeNode,
 } from './reclaim-engine';
-import type { ProjectLifecycle, ReclaimQuestion } from './reclaim-policy';
+import type { ContentDomain, ProjectLifecycle, ReclaimQuestion } from './reclaim-policy';
 
 function usage(): never {
   console.log('AnSysWarden · Reclaim');
@@ -133,6 +133,21 @@ function printTree(report: ReclaimReport, max: number): void {
   console.log('Leyenda: ELIMINAR = regla determinista · REVISAR = falta evidencia técnica · PREGUNTAR = falta intención del usuario · PROTEGER = datos protegidos');
 }
 
+function printScopes(report: ReclaimReport): void {
+  if (report.context.scopes.length === 0) return;
+
+  console.log('\nÁMBITOS DETECTADOS');
+  console.log('────────────────────────────────────────');
+  for (const scope of report.context.scopes) {
+    const confidence = Math.round(scope.domainConfidence * 100);
+    console.log(`${scope.name} · ${formatDomain(scope.domain)} · ${confidence}%`);
+    console.log(`  ${scope.path}`);
+    if (scope.projectLifecycle) {
+      console.log(`  Estado: ${formatProjectState(scope.projectLifecycle)}`);
+    }
+  }
+}
+
 function printQuestions(report: ReclaimReport): void {
   if (report.questions.length === 0) return;
 
@@ -142,9 +157,6 @@ function printQuestions(report: ReclaimReport): void {
     console.log(`? ${question.prompt}`);
     console.log(`  Ruta: ${question.path}`);
     console.log(`  Motivo: ${question.reason}`);
-    for (const option of question.options) {
-      console.log(`  - ${option.value}: ${option.label}`);
-    }
   }
 }
 
@@ -152,33 +164,35 @@ function canAskInteractively(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-async function promptProjectLifecycle(question: ReclaimQuestion): Promise<ProjectLifecycle> {
+async function promptQuestion(question: ReclaimQuestion): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
   try {
     console.log('\nPREGUNTA NECESARIA');
     console.log('────────────────────────────────────────');
     console.log(`? ${question.prompt}`);
+    console.log(`  Ruta: ${question.path}`);
     console.log(`  ${question.reason}`);
     console.log('');
 
     question.options.forEach((option, index) => {
-      console.log(`  ${index + 1}) ${option.label} (${option.value})`);
+      console.log(`  ${index + 1}) ${option.label}`);
     });
 
     while (true) {
-      const answer = (await rl.question('\nElige [1-3]: ')).trim().toLowerCase();
+      const answer = (await rl.question(`\nElige [1-${question.options.length}]: `)).trim().toLowerCase();
       const numeric = Number.parseInt(answer, 10);
       const selected = Number.isInteger(numeric) && numeric >= 1 && numeric <= question.options.length
         ? question.options[numeric - 1]?.value
         : answer;
 
-      if (selected === 'active' || selected === 'paused' || selected === 'finished') {
-        console.log(`Respuesta: ${formatProjectState(selected)}`);
-        return selected;
+      const option = question.options.find((candidate) => candidate.value === selected);
+      if (option) {
+        console.log(`Respuesta: ${option.label}`);
+        return option.value;
       }
 
-      console.log('Opción no válida. Escribe 1, 2, 3, active, paused o finished.');
+      console.log(`Opción no válida. Escribe un número entre 1 y ${question.options.length} o uno de los valores mostrados.`);
     }
   } finally {
     rl.close();
@@ -189,14 +203,27 @@ async function buildReportWithContext(
   scan: ScanDocument,
   projectState?: ProjectLifecycle,
 ): Promise<ReclaimReport> {
-  let report = buildReclaimReport(scan, { projectLifecycle: projectState });
-  if (!report.needsUserInput || projectState || !canAskInteractively()) return report;
+  const answers: Record<string, string> = {};
+  let report = buildReclaimReport(scan, {
+    projectLifecycle: projectState,
+    answers,
+  });
 
-  const lifecycleQuestion = report.questions.find((question) => question.kind === 'project_lifecycle');
-  if (!lifecycleQuestion) return report;
+  if (!report.needsUserInput || !canAskInteractively()) return report;
 
-  const selectedState = await promptProjectLifecycle(lifecycleQuestion);
-  report = buildReclaimReport(scan, { projectLifecycle: selectedState });
+  while (report.needsUserInput) {
+    const question = report.questions[0];
+    if (!question) break;
+
+    const answer = await promptQuestion(question);
+    answers[question.id] = answer;
+
+    report = buildReclaimReport(scan, {
+      projectLifecycle: projectState,
+      answers,
+    });
+  }
+
   return report;
 }
 
@@ -323,18 +350,14 @@ async function printReport(
   console.log(`Scan ID: ${scan.id}`);
   console.log(`Origen: ${scan.origin?.deviceRole ?? 'desconocido'} · ${scan.origin?.platform ?? scan.computer}`);
   console.log(`Ruta: ${scan.origin?.rootPath ?? '-'}`);
-  console.log(`Dominio: ${formatDomain(report.context.domain)} · confianza ${Math.round(report.context.domainConfidence * 100)}%`);
-  if (report.context.domainEvidence.length > 0) {
-    console.log(`Señales: ${report.context.domainEvidence.join(', ')}`);
-  }
-  if (report.context.projectLifecycle) {
-    console.log(`Estado proyecto: ${formatProjectState(report.context.projectLifecycle)}`);
-  }
+  console.log(`Dominio global: ${formatDomain(report.context.domain)} · confianza ${Math.round(report.context.domainConfidence * 100)}%`);
   console.log(`Entradas JSON: ${report.totalEntries}`);
   console.log(`Entradas analizadas: ${report.analyzedEntries}`);
   console.log(`Recuperable confirmado: ${formatBytes(report.confirmedRecoverableBytes)}`);
   console.log(`Propuestas: ${report.deleteCandidates.length} eliminar · ${report.reviewCandidates.length} revisar · ${report.protectCandidates.length} proteger · ${report.questions.length} preguntar`);
   console.log('Seguridad: esta orden NO borra archivos. Solo reglas locales deterministas pueden proponer ELIMINAR.');
+
+  printScopes(report);
 
   if (report.rootFallbackUsed) {
     console.log('Aviso: el escaneo no contiene hijos utilizables; se analiza la raíz como REVISAR/PROTEGER/ELIMINAR según reglas.');
@@ -355,11 +378,11 @@ async function printReport(
 
   if (report.needsUserInput) {
     if (!canAskInteractively()) {
-      console.log('\nNo hay terminal interactiva disponible para responder.');
-      console.log('Usa --project-state active|paused|finished para aportar el contexto.');
+      console.log('\nNo hay terminal interactiva disponible para responder las preguntas pendientes.');
+      console.log('En este caso hay que aportar el contexto mediante opciones no interactivas específicas.');
     }
     if (ai) {
-      console.log('IA pospuesta: primero hay que resolver las preguntas de intención del usuario.');
+      console.log('IA pospuesta: primero hay que resolver las preguntas de contexto del usuario.');
     }
     return;
   }
@@ -482,16 +505,17 @@ function formatTreeDecision(decision: ReclaimTreeNode['decision']): string {
   return 'REVISAR';
 }
 
-function formatDomain(domain: ReclaimReport['context']['domain']): string {
+function formatDomain(domain: ContentDomain): string {
   if (domain === 'development') return 'DESARROLLO';
-  if (domain === 'game') return 'JUEGO';
-  if (domain === 'images') return 'IMÁGENES';
-  if (domain === 'videos') return 'VÍDEOS';
-  if (domain === 'documents') return 'DOCUMENTOS';
+  if (domain === 'game') return 'JUEGOS';
+  if (domain === 'media') return 'MEDIA';
+  if (domain === 'private') return 'PRIVADO';
   if (domain === 'application') return 'APLICACIÓN';
   if (domain === 'system') return 'SISTEMA';
   if (domain === 'backup') return 'BACKUP';
   if (domain === 'downloads') return 'DESCARGAS';
+  if (domain === 'other') return 'OTRO';
+  if (domain === 'mixed') return 'MIXTO';
   return 'DESCONOCIDO';
 }
 
