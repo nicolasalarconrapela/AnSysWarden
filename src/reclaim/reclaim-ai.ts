@@ -89,18 +89,61 @@ function selectTopLevelAmbiguous(candidates: ReclaimCandidate[], limit: number):
 
 function buildContext(scan: ScanDocument, candidate: ReclaimCandidate): string {
   const descendants = scan.entries
-    .filter((entry) => entry.path !== candidate.path && isSameOrDescendant(entry.path, candidate.path))
+    .filter((entry) => entry.path !== candidate.path && isSameOrDescendant(entry.path, candidate.path));
+
+  const largest = [...descendants]
     .sort((a, b) => b.sizeBytes - a.sizeBytes)
-    .slice(0, 5)
+    .slice(0, 6)
     .map((entry) => `${relativeTo(candidate.path, entry.path)}:${entry.sizeBytes}`);
+
+  const signals = detectStructuralSignals(candidate.path, descendants.map((entry) => entry.path));
 
   return [
     `role=${scan.origin?.deviceRole ?? 'unknown'} platform=${scan.origin?.platform ?? 'unknown'}`,
     `root=${basename(scan.origin?.rootPath ?? '')}`,
     `candidate=${basename(candidate.path)} size=${candidate.sizeBytes}`,
-    ...(descendants.length > 0 ? [`children=${descendants.join(',')}`] : []),
-    'Infer artifact type, regenerability and unique-data risk. Do not authorize deletion.',
+    ...(signals.length > 0 ? [`machine_signals=${signals.join(';')}`] : []),
+    ...(largest.length > 0 ? [`largest_descendants=${largest.join(',')}`] : []),
+    'Machine signals are advisory structural observations, not proof and not deletion authorization.',
+    'Directory size is only a prioritization signal. Never infer persistence, uniqueness, or user-data risk from size alone.',
+    'Infer artifact type, regenerability and unique-data risk from the structure. Preserve uncertainty when evidence is insufficient.',
+    'Do not authorize deletion.',
   ].join('\n');
+}
+
+function detectStructuralSignals(candidatePath: string, descendantPaths: string[]): string[] {
+  const signals: string[] = [];
+  const relatives = descendantPaths.map((path) => relativeTo(candidatePath, path));
+  const candidateName = basename(candidatePath).toLowerCase();
+
+  const hasDepsDirectory = relatives.some((path) => /(^|\/)deps$/i.test(path));
+  const hasBuildDirectory = relatives.some((path) => /(^|\/)build$/i.test(path));
+  const hasDebugProfile = relatives.some((path) => /^debug(\/|$)/i.test(path));
+  const hasReleaseProfile = relatives.some((path) => /^release(\/|$)/i.test(path));
+  const hashedGenerationCount = relatives.filter((path) => /(^|\/)[^/]+-[0-9a-f]{12,}$/i.test(path)).length;
+
+  const profileNames = new Set<string>();
+  for (const path of relatives) {
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length >= 2 && ['deps', 'build'].includes(parts[1].toLowerCase())) {
+      profileNames.add(parts[0]);
+    }
+  }
+
+  if (candidateName === 'target' && hasDepsDirectory && hasBuildDirectory) {
+    signals.push('target-with-deps-and-build');
+  }
+  if (candidateName === 'target' && (hasDebugProfile || hasReleaseProfile || profileNames.size >= 2)) {
+    signals.push(`multiple-build-profiles:${[...profileNames].slice(0, 4).join(',') || 'detected'}`);
+  }
+  if (hashedGenerationCount > 0) {
+    signals.push(`hashed-build-like-generations:${hashedGenerationCount}`);
+  }
+  if (candidateName === 'target' && hasDepsDirectory && hasBuildDirectory && hashedGenerationCount > 0) {
+    signals.push('cargo-like-build-tree-unconfirmed');
+  }
+
+  return signals;
 }
 
 function relativeTo(parent: string, child: string): string {
