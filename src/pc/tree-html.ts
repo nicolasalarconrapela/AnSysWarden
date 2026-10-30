@@ -15,7 +15,6 @@ interface ViewerNode {
 }
 
 interface ViewerPayload {
-  scanId: string;
   createdAt: string;
   rootPath: string;
   scanner: string;
@@ -28,7 +27,6 @@ interface ViewerPayload {
 export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): string {
   const effectiveReport = report ?? buildReclaimReport(scan);
   const payload: ViewerPayload = {
-    scanId: scan.id,
     createdAt: scan.createdAt,
     rootPath: scan.origin?.rootPath ?? scan.entries[0]?.path ?? '-',
     scanner: scan.origin?.scanner ?? scan.source,
@@ -38,8 +36,6 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     tree: effectiveReport.tree.map(toViewerNode),
   };
 
-  const json = serializeForScript(payload);
-
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -47,8 +43,8 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AnSysWarden · Vista de disco</title>
 <style>
-:root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#2a2a2a;--line:#353535;--text:#f3f3f3;--muted:#a8a8a8;--bar:#565656;--bar-strong:#686868;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.section-toggle{display:inline-flex;align-items:center;gap:6px}.section-chevron{display:inline-block;width:12px;text-align:center;font-size:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.treecell.collapsible{cursor:pointer}.treecell.collapsible:hover .name{text-decoration:underline;text-decoration-color:#777;text-underline-offset:2px}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
+:root{color-scheme:dark;--bg:#171717;--text:#f3f3f3;--muted:#aaa;--line:#303030;--bar:#555;--bar0:#666;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;padding:14px 18px;background:#151515;border-bottom:1px solid var(--line)}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px;color:var(--muted)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:14px;flex-wrap:wrap;padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.depth0 .bar{background:var(--bar0)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.treecell.collapsible{cursor:pointer}.toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -66,12 +62,9 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       <option value="ASK">PREGUNTAR</option>
       <option value="OPTIMIZE">OPTIMIZAR</option>
     </select>
-    <button id="toggleLabels" class="section-toggle" type="button" aria-expanded="true" title="Plegar o desplegar las labels de estado">
-      <span id="labelsChevron" class="section-chevron">⌄</span>
-      <span>Estados</span>
-    </button>
-    <button id="expand">Expandir 3 niveles</button>
-    <button id="collapse">Colapsar todo</button>
+    <button id="toggleLabels" type="button">⌄ Estados</button>
+    <button id="expand" type="button">Expandir 3 niveles</button>
+    <button id="collapse" type="button">Colapsar todo</button>
   </div>
 </header>
 <div class="summary">
@@ -81,18 +74,17 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
   <span>Escaneo: <strong id="created"></strong></span>
 </div>
 <main><div class="tree" id="rows"></div></main>
-<script id="payload" type="application/json">${json}</script>
+<script id="payload" type="application/json">${serializeForScript(payload)}</script>
 <script>
 (() => {
   const data = JSON.parse(document.getElementById('payload').textContent);
   const rows = document.getElementById('rows');
   const search = document.getElementById('search');
-  const decisionFilter = document.getElementById('decisionFilter');
-  const toggleLabels = document.getElementById('toggleLabels');
-  const labelsChevron = document.getElementById('labelsChevron');
+  const filter = document.getElementById('decisionFilter');
+  const labelButton = document.getElementById('toggleLabels');
   const expanded = new Set();
   const roots = data.tree || [];
-  const rootTotal = Math.max(1, ...roots.map(node => node.sizeBytes || 0));
+  const rootTotal = Math.max(1, ...roots.map(n => n.sizeBytes || 0));
   const labels = {KEEP:'CONSERVAR',REVIEW:'REVISAR',DELETE:'ELIMINAR',PROTECT:'PROTEGER',ASK:'PREGUNTAR',OPTIMIZE:'OPTIMIZAR',ROOT:'RAÍZ'};
   let labelsCollapsed = false;
 
@@ -109,43 +101,45 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     const units = ['B','KB','MB','GB','TB'];
     let value = bytes, unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-    const decimals = unit >= 3 ? 1 : unit >= 2 ? 1 : 0;
-    return value.toFixed(decimals) + ' ' + units[unit];
+    return value.toFixed(unit >= 2 ? 1 : 0) + ' ' + units[unit];
   }
 
-  function nodeKey(node) { return node.path; }
+  function key(node) { return node.path; }
 
   function toggleNode(node) {
     if (!(node.children || []).length) return;
-    const key = nodeKey(node);
-    if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+    const id = key(node);
+    if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
     render();
   }
 
   function matches(node, query, decision) {
-    const textMatch = !query || node.path.toLowerCase().includes(query);
-    const decisionMatch = decision === 'ALL' || node.decision === decision;
-    return textMatch && decisionMatch;
+    return (!query || node.path.toLowerCase().includes(query))
+      && (decision === 'ALL' || node.decision === decision);
   }
 
   function hasMatchingDescendant(node, query, decision) {
-    return (node.children || []).some(child => matches(child, query, decision) || hasMatchingDescendant(child, query, decision));
+    return (node.children || []).some(child =>
+      matches(child, query, decision) || hasMatchingDescendant(child, query, decision));
   }
 
   function render() {
     const query = search.value.trim().toLowerCase();
-    const decision = decisionFilter.value;
+    const decision = filter.value;
+    const filtering = Boolean(query) || decision !== 'ALL';
     rows.textContent = '';
-    let visibleCount = 0;
+    let visible = 0;
 
     function append(node, depth) {
       const direct = matches(node, query, decision);
-      const descendant = hasMatchingDescendant(node, query, decision);
+      const descendant = filtering && hasMatchingDescendant(node, query, decision);
       if (!direct && !descendant) return;
 
-      visibleCount++;
+      visible++;
       const hasChildren = (node.children || []).length > 0;
-      const open = expanded.has(nodeKey(node)) || Boolean(query);
+      const forcedOpen = filtering && descendant;
+      const open = expanded.has(key(node)) || forcedOpen;
+
       const row = document.createElement('div');
       row.className = 'row depth' + depth;
       row.title = node.path;
@@ -153,7 +147,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       const bar = document.createElement('div');
       bar.className = 'bar';
       bar.style.left = (depth * 18) + 'px';
-      bar.style.width = Math.max(0.3, Math.min(100, (node.sizeBytes / rootTotal) * 100)) + '%';
+      bar.style.width = Math.max(.3, Math.min(100, node.sizeBytes / rootTotal * 100)) + '%';
 
       const content = document.createElement('div');
       content.className = 'content';
@@ -162,32 +156,20 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       const treeCell = document.createElement('div');
       treeCell.className = 'treecell' + (hasChildren ? ' collapsible' : '');
       if (hasChildren) {
-        treeCell.setAttribute('role', 'button');
-        treeCell.setAttribute('tabindex', '0');
-        treeCell.setAttribute('aria-expanded', String(open));
         treeCell.onclick = () => toggleNode(node);
-        treeCell.onkeydown = event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            toggleNode(node);
-          }
-        };
+        treeCell.setAttribute('role', 'button');
+        treeCell.setAttribute('aria-expanded', String(open));
       }
 
       const toggle = document.createElement('button');
-      toggle.className = 'toggle' + (hasChildren ? '' : ' empty');
       toggle.type = 'button';
+      toggle.className = 'toggle' + (hasChildren ? '' : ' empty');
       toggle.textContent = open ? '⌄' : '›';
-      toggle.setAttribute('aria-label', open ? 'Colapsar nodo' : 'Expandir nodo');
-      toggle.setAttribute('aria-expanded', String(open));
-      toggle.onclick = event => {
-        event.stopPropagation();
-        toggleNode(node);
-      };
+      toggle.onclick = event => { event.stopPropagation(); toggleNode(node); };
 
       const folder = document.createElement('span');
       folder.className = 'folder';
-      folder.textContent = hasChildren ? (open ? '📂' : '📁') : '📄';
+      folder.textContent = hasChildren ? '📁' : '📄';
 
       const size = document.createElement('span');
       size.className = 'size';
@@ -197,25 +179,25 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       name.className = 'name';
       name.textContent = node.name;
 
+      const state = document.createElement('span');
+      state.className = 'decision ' + node.decision;
+      state.textContent = labels[node.decision] || node.decision;
+
       treeCell.append(toggle, folder, size, name);
-
-      const decisionCell = document.createElement('span');
-      decisionCell.className = 'decision ' + node.decision;
-      decisionCell.textContent = labels[node.decision] || node.decision;
-
-      content.append(treeCell, decisionCell);
+      content.append(treeCell, state);
       row.append(bar, content);
       rows.append(row);
 
-      if (open || descendant) {
-        const children = [...(node.children || [])].sort((a,b) => b.sizeBytes - a.sizeBytes);
-        for (const child of children) append(child, depth + 1);
+      if (open) {
+        [...(node.children || [])]
+          .sort((a, b) => b.sizeBytes - a.sizeBytes)
+          .forEach(child => append(child, depth + 1));
       }
     }
 
     [...roots].sort((a,b) => b.sizeBytes - a.sizeBytes).forEach(node => append(node, 0));
 
-    if (!visibleCount) {
+    if (!visible) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = 'No hay resultados para este filtro.';
@@ -225,23 +207,25 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 
   function expandToDepth(nodes, depth, maxDepth) {
     for (const node of nodes) {
-      if (depth < maxDepth && (node.children || []).length) expanded.add(nodeKey(node));
+      if (depth < maxDepth && (node.children || []).length) expanded.add(key(node));
       expandToDepth(node.children || [], depth + 1, maxDepth);
     }
   }
 
-  toggleLabels.onclick = () => {
+  labelButton.onclick = () => {
     labelsCollapsed = !labelsCollapsed;
     document.body.classList.toggle('labels-collapsed', labelsCollapsed);
-    labelsChevron.textContent = labelsCollapsed ? '›' : '⌄';
-    toggleLabels.setAttribute('aria-expanded', String(!labelsCollapsed));
-    toggleLabels.title = labelsCollapsed ? 'Desplegar labels de estado' : 'Plegar labels de estado';
+    labelButton.textContent = labelsCollapsed ? '› Estados' : '⌄ Estados';
   };
 
-  document.getElementById('expand').onclick = () => { expanded.clear(); expandToDepth(roots, 0, 3); render(); };
+  document.getElementById('expand').onclick = () => {
+    expanded.clear();
+    expandToDepth(roots, 0, 3);
+    render();
+  };
   document.getElementById('collapse').onclick = () => { expanded.clear(); render(); };
   search.addEventListener('input', render);
-  decisionFilter.addEventListener('change', render);
+  filter.addEventListener('change', render);
 
   expandToDepth(roots, 0, 4);
   render();
