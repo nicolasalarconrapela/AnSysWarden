@@ -1,6 +1,9 @@
+import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { installDust } from './dust-installer';
 import { DustScanner } from './dust-scanner';
 import { getLanguage } from '../i18n';
+import { buildPcTreeHtml } from '../pc/tree-html';
 
 function pick(en: string, es: string): string {
   return getLanguage() === 'es' ? es : en;
@@ -10,13 +13,20 @@ function usage(): never {
   console.log(pick('Usage:', 'Uso:'));
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
-  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]`);
+  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]`);
   process.exit(1);
 }
 
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function readOptionalPathOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name);
+  if (index < 0) return null;
+  const next = args[index + 1];
+  return !next || next.startsWith('--') ? '' : next;
 }
 
 function readIntegerOption(args: string[], name: string): number | undefined {
@@ -118,6 +128,7 @@ async function run(): Promise<void> {
     const aiTreeDepth = readIntegerOption(args, '--ai-depth');
     const aiTreeMaxEntries = readIntegerOption(args, '--ai-max-entries');
     const minSize = readOption(args, '--min-size');
+    const htmlOption = readOptionalPathOption(args, '--html');
 
     console.log(`\nAnSysWarden · ${pick('Dust Scan', 'Escaneo Dust')}`);
     console.log('────────────────────────────────────────');
@@ -125,6 +136,7 @@ async function run(): Promise<void> {
     console.log(`${pick('Depth', 'Profundidad')}:       ${depth === undefined ? pick('default', 'por defecto') : String(depth)}`);
     console.log(`${pick('Min size', 'Tamaño mínimo')}:    ${minSize ?? pick('default', 'por defecto')}`);
     console.log(`${pick('AI tree', 'Árbol IA')}:     ${pick('depth', 'profundidad')} ${aiTreeDepth ?? 6} · max ${aiTreeMaxEntries ?? 2000} ${pick('visible entries', 'entradas visibles')}`);
+    console.log(`${pick('HTML view', 'Vista HTML')}:  ${htmlOption === null ? pick('disabled', 'desactivada') : pick('enabled', 'activada')}`);
     console.log(`${pick('Progress', 'Progreso')}:    ${pick('live elapsed time; Dust does not expose a reliable percentage', 'tiempo transcurrido en vivo; Dust no expone un porcentaje fiable')}`);
 
     const stopProgress = startScanProgress();
@@ -133,6 +145,13 @@ async function run(): Promise<void> {
       result = await dust.scan(inputPath, { depth, minSize, aiTreeDepth, aiTreeMaxEntries });
     } finally {
       stopProgress();
+    }
+
+    let htmlPath: string | undefined;
+    if (htmlOption !== null) {
+      htmlPath = resolve(htmlOption || `${result.scan.id}.html`);
+      const html = buildPcTreeHtml(result.scan);
+      await writeFile(htmlPath, html, 'utf8');
     }
 
     const ecosystems = result.aiInput.summary.ecosystems.length > 0
@@ -149,6 +168,7 @@ async function run(): Promise<void> {
     console.log(`${pick('Min size', 'Tamaño mínimo')}:     ${result.minSize}`);
     console.log(`${pick('Saved', 'Guardado')}:        ${result.filePath}`);
     console.log(`${pick('AI tree', 'Árbol IA')}:      ${result.aiInputPath}`);
+    if (htmlPath) console.log(`HTML:         ${htmlPath}`);
     console.log(`  ${pick('visible', 'visibles')}:    ${result.aiInput.summary.visibleEntries}`);
     console.log(`  ${pick('omitted', 'omitidas')}:    ${result.aiInput.summary.omittedEntries}`);
     console.log(`  local:      ${result.aiInput.summary.resolvedLocally}`);
