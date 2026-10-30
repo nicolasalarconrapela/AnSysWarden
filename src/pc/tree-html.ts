@@ -48,7 +48,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 <title>AnSysWarden · Vista de disco</title>
 <style>
 :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#2a2a2a;--line:#353535;--text:#f3f3f3;--muted:#a8a8a8;--bar:#565656;--bar-strong:#686868;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:12px}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}.empty-state{padding:30px;text-align:center;color:var(--muted)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:12px}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -66,6 +66,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       <option value="ASK">PREGUNTAR</option>
       <option value="OPTIMIZE">OPTIMIZAR</option>
     </select>
+    <button id="toggleLabels">Ocultar estados</button>
     <button id="expand">Expandir 3 niveles</button>
     <button id="collapse">Colapsar</button>
   </div>
@@ -84,10 +85,12 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
   const rows = document.getElementById('rows');
   const search = document.getElementById('search');
   const decisionFilter = document.getElementById('decisionFilter');
+  const toggleLabels = document.getElementById('toggleLabels');
   const expanded = new Set();
   const roots = data.tree || [];
   const rootTotal = Math.max(1, ...roots.map(node => node.sizeBytes || 0));
   const labels = {KEEP:'CONSERVAR',REVIEW:'REVISAR',DELETE:'ELIMINAR',PROTECT:'PROTEGER',ASK:'PREGUNTAR',OPTIMIZE:'OPTIMIZAR',ROOT:'RAÍZ'};
+  let labelsCollapsed = false;
 
   document.getElementById('root').textContent = data.rootPath;
   document.getElementById('scanner').textContent = 'Scanner: ' + data.scanner;
@@ -201,6 +204,12 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       expandToDepth(node.children || [], depth + 1, maxDepth);
     }
   }
+
+  toggleLabels.onclick = () => {
+    labelsCollapsed = !labelsCollapsed;
+    document.body.classList.toggle('labels-collapsed', labelsCollapsed);
+    toggleLabels.textContent = labelsCollapsed ? 'Mostrar estados' : 'Ocultar estados';
+  };
 
   document.getElementById('expand').onclick = () => { expanded.clear(); expandToDepth(roots, 0, 3); render(); };
   document.getElementById('collapse').onclick = () => { expanded.clear(); render(); };
