@@ -44,7 +44,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 <title>AnSysWarden · Vista de disco</title>
 <style>
 :root{color-scheme:dark;--bg:#171717;--text:#f3f3f3;--muted:#aaa;--line:#303030;--bar:#555;--bar0:#666;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;padding:14px 18px;background:#151515;border-bottom:1px solid var(--line)}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px;color:var(--muted)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:14px;flex-wrap:wrap;padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.depth0 .bar{background:var(--bar0)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.treecell.collapsible{cursor:pointer}.toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;padding:14px 18px;background:#151515;border-bottom:1px solid var(--line)}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px;color:var(--muted)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:14px;flex-wrap:wrap;padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.depth0 .bar{background:var(--bar0)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.treecell.collapsible{cursor:pointer}.toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.name-link{color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis}.name-link:hover{text-decoration:underline;text-underline-offset:2px}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -102,6 +102,14 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     let value = bytes, unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
     return value.toFixed(unit >= 2 ? 1 : 0) + ' ' + units[unit];
+  }
+
+  function fileUrl(path) {
+    const normalized = String(path).replace(/\\/g, '/');
+    if (/^[A-Za-z]:\//.test(normalized)) return 'file:///' + encodeURI(normalized);
+    if (normalized.startsWith('//')) return 'file:' + encodeURI(normalized);
+    if (normalized.startsWith('/')) return 'file://' + encodeURI(normalized);
+    return 'file:///' + encodeURI(normalized);
   }
 
   function key(node) { return node.path; }
@@ -175,9 +183,19 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       size.className = 'size';
       size.textContent = formatBytes(node.sizeBytes);
 
-      const name = document.createElement('span');
-      name.className = 'name';
-      name.textContent = node.name;
+      let name;
+      if (hasChildren) {
+        name = document.createElement('a');
+        name.className = 'name-link';
+        name.href = fileUrl(node.path);
+        name.textContent = node.name;
+        name.title = 'Abrir carpeta: ' + node.path;
+        name.onclick = event => event.stopPropagation();
+      } else {
+        name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = node.name;
+      }
 
       const state = document.createElement('span');
       state.className = 'decision ' + node.decision;
