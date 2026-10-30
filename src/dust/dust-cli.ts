@@ -13,13 +13,17 @@ function usage(): never {
   console.log(pick('Usage:', 'Uso:'));
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
-  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]`);
+  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]`);
   process.exit(1);
 }
 
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function hasFlag(args: string[], name: string): boolean {
+  return args.includes(name);
 }
 
 function readOptionalPathOption(args: string[], name: string): string | null {
@@ -124,6 +128,7 @@ async function run(): Promise<void> {
     const inputPath = args[0];
     if (!inputPath || inputPath.startsWith('--')) usage();
 
+    const full = hasFlag(args, '--full');
     const depth = readIntegerOption(args, '--depth');
     const aiTreeDepth = readIntegerOption(args, '--ai-depth');
     const aiTreeMaxEntries = readIntegerOption(args, '--ai-max-entries');
@@ -133,8 +138,10 @@ async function run(): Promise<void> {
     console.log(`\nAnSysWarden · ${pick('Dust Scan', 'Escaneo Dust')}`);
     console.log('────────────────────────────────────────');
     console.log(`${pick('Source', 'Fuente')}:      ${inputPath}`);
-    console.log(`${pick('Depth', 'Profundidad')}:       ${depth === undefined ? pick('default', 'por defecto') : String(depth)}`);
-    console.log(`${pick('Min size', 'Tamaño mínimo')}:    ${minSize ?? pick('default', 'por defecto')}`);
+    console.log(`${pick('Mode', 'Modo')}:        ${full ? pick('FULL · maximum directory detail', 'FULL · máximo detalle de directorios') : pick('normal', 'normal')}`);
+    console.log(`${pick('Depth', 'Profundidad')}:       ${depth === undefined ? (full ? '32' : pick('default', 'por defecto')) : String(depth)}`);
+    console.log(`${pick('Min size', 'Tamaño mínimo')}:    ${minSize ?? (full ? '0B' : pick('default', 'por defecto'))}`);
+    if (full) console.log(`${pick('Full limit', 'Límite full')}: 100000 ${pick('directories · 256 MB JSON safety cap', 'directorios · tope de seguridad JSON 256 MB')}`);
     console.log(`${pick('AI tree', 'Árbol IA')}:     ${pick('depth', 'profundidad')} ${aiTreeDepth ?? 6} · max ${aiTreeMaxEntries ?? 2000} ${pick('visible entries', 'entradas visibles')}`);
     console.log(`${pick('HTML view', 'Vista HTML')}:  ${htmlOption === null ? pick('disabled', 'desactivada') : pick('enabled', 'activada')}`);
     console.log(`${pick('Progress', 'Progreso')}:    ${pick('live elapsed time; Dust does not expose a reliable percentage', 'tiempo transcurrido en vivo; Dust no expone un porcentaje fiable')}`);
@@ -142,7 +149,7 @@ async function run(): Promise<void> {
     const stopProgress = startScanProgress();
     let result: Awaited<ReturnType<DustScanner['scan']>>;
     try {
-      result = await dust.scan(inputPath, { depth, minSize, aiTreeDepth, aiTreeMaxEntries });
+      result = await dust.scan(inputPath, { full, depth, minSize, aiTreeDepth, aiTreeMaxEntries });
     } finally {
       stopProgress();
     }
@@ -163,6 +170,7 @@ async function run(): Promise<void> {
 
     console.log('────────────────────────────────────────');
     console.log(`Scan ID:      ${result.scan.id}`);
+    console.log(`${pick('Mode', 'Modo')}:         ${result.full ? 'FULL' : 'NORMAL'}`);
     console.log(`${pick('Entries', 'Entradas')}:      ${result.scan.entries.length}`);
     console.log(`${pick('Depth', 'Profundidad')}:        ${result.depth}`);
     console.log(`${pick('Min size', 'Tamaño mínimo')}:     ${result.minSize}`);
@@ -176,7 +184,7 @@ async function run(): Promise<void> {
     console.log(`  ${pick('ecosystems', 'ecosistemas')}: ${ecosystems}`);
     console.log(`  Enry:       ${result.aiInput.summary.enryAvailable ? pick('active', 'activo') : pick('manifest fallback', 'fallback por manifiestos')}`);
     console.log(`  ${pick('languages', 'lenguajes')}:  ${languages}`);
-    console.log(`${pick('Status', 'Estado')}:       ${pick('full scan + project context + ai-input.v1 persisted on the PC backend', 'escaneo completo + contexto de proyecto + ai-input.v1 persistidos en el backend del PC')}`);
+    console.log(`${pick('Status', 'Estado')}:       ${pick('scan + project context + ai-input.v1 persisted on the PC backend', 'escaneo + contexto de proyecto + ai-input.v1 persistidos en el backend del PC')}`);
     return;
   }
 
