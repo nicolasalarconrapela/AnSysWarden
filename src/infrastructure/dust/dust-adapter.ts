@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import type { ScanEntry } from '../../backend/types';
 import { resolveDustBin } from '../../dust/dust-path';
 
-const MAX_ENTRIES = 100_000;
+const DEFAULT_MAX_ENTRIES = 100_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 interface DustJsonNode {
@@ -16,6 +16,9 @@ export interface DustExecutionOptions {
   depth: number;
   minSize: string;
   target: string;
+  maxDisplayedEntries?: number;
+  maxEntries?: number;
+  maxOutputBytes?: number;
 }
 
 export interface DustExecutionResult {
@@ -53,13 +56,20 @@ export class DustAdapter {
       'b',
       '-d',
       String(options.depth),
-      '-z',
-      options.minSize,
-      options.target,
     ];
 
+    if (options.maxDisplayedEntries !== undefined) {
+      args.push('-n', String(options.maxDisplayedEntries));
+    }
+
+    args.push('-z', options.minSize, options.target);
+
     const binary = this.getBinary();
-    const result = await runProcess(binary.path, args, this.maxOutputBytes);
+    const result = await runProcess(
+      binary.path,
+      args,
+      options.maxOutputBytes ?? this.maxOutputBytes,
+    );
 
     let parsed: unknown;
     try {
@@ -70,7 +80,7 @@ export class DustAdapter {
     }
 
     const root = parseDustNode(parsed);
-    const entries = flattenDustTree(root);
+    const entries = flattenDustTree(root, options.maxEntries ?? DEFAULT_MAX_ENTRIES);
     if (entries.length === 0) throw new Error('Dust returned no usable scan entries.');
 
     return { entries, binary };
@@ -100,7 +110,7 @@ function parseDustNode(value: unknown): DustJsonNode {
   };
 }
 
-function flattenDustTree(root: DustJsonNode): ScanEntry[] {
+function flattenDustTree(root: DustJsonNode, maxEntries: number): ScanEntry[] {
   const entries = new Map<string, ScanEntry>();
 
   const visit = (node: DustJsonNode, parentId: string | undefined, depth: number): void => {
@@ -117,8 +127,8 @@ function flattenDustTree(root: DustJsonNode): ScanEntry[] {
       });
       currentParentId = entryId;
 
-      if (entries.size > MAX_ENTRIES) {
-        throw new Error(`Dust produced more than ${MAX_ENTRIES} entries; reduce --depth or increase --min-size.`);
+      if (entries.size > maxEntries) {
+        throw new Error(`Dust produced more than ${maxEntries} entries; reduce --depth or increase --min-size.`);
       }
     }
 
