@@ -9,12 +9,17 @@ import { DustAdapter } from '../infrastructure/dust/dust-adapter';
 
 const DEFAULT_DEPTH = 5;
 const DEFAULT_MIN_SIZE = '50M';
+const FULL_DEPTH = 32;
+const FULL_MIN_SIZE = '0B';
+const FULL_MAX_ENTRIES = 100_000;
+const FULL_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
 
 export interface DustScanOptions {
   depth?: number;
   minSize?: string;
   aiTreeDepth?: number;
   aiTreeMaxEntries?: number;
+  full?: boolean;
 }
 
 export interface DustScanResult {
@@ -24,6 +29,7 @@ export interface DustScanResult {
   aiInputPath: string;
   depth: number;
   minSize: string;
+  full: boolean;
 }
 
 export class DustScanner {
@@ -50,18 +56,34 @@ export class DustScanner {
   }
 
   async scan(inputPath: string, options: DustScanOptions = {}): Promise<DustScanResult> {
-    const depth = options.depth ?? readPositiveInt(process.env.ANSYSWARDEN_DUST_DEPTH, DEFAULT_DEPTH);
+    const full = options.full === true;
+    const depth = full
+      ? options.depth ?? FULL_DEPTH
+      : options.depth ?? readPositiveInt(process.env.ANSYSWARDEN_DUST_DEPTH, DEFAULT_DEPTH);
+
     if (!Number.isInteger(depth) || depth < 1 || depth > 32) {
       throw new Error(`Invalid Dust depth: ${depth}. It must be between 1 and 32.`);
     }
 
-    const minSize = options.minSize ?? process.env.ANSYSWARDEN_DUST_MIN_SIZE ?? DEFAULT_MIN_SIZE;
+    const minSize = full
+      ? options.minSize ?? FULL_MIN_SIZE
+      : options.minSize ?? process.env.ANSYSWARDEN_DUST_MIN_SIZE ?? DEFAULT_MIN_SIZE;
+
     if (!/^[0-9]+(?:\.[0-9]+)?(?:B|K|KB|KIB|M|MB|MIB|G|GB|GIB|T|TB|TIB)?$/i.test(minSize)) {
       throw new Error(`Invalid Dust minimum size: ${minSize}`);
     }
 
     const target = resolve(inputPath);
-    const { entries } = await this.adapter.execute({ depth, minSize, target });
+    const { entries } = await this.adapter.execute({
+      depth,
+      minSize,
+      target,
+      ...(full ? {
+        maxDisplayedEntries: FULL_MAX_ENTRIES,
+        maxEntries: FULL_MAX_ENTRIES,
+        maxOutputBytes: FULL_MAX_OUTPUT_BYTES,
+      } : {}),
+    });
     const currentHostname = hostname();
 
     const scan: ScanDocument = {
@@ -94,6 +116,7 @@ export class DustScanner {
       aiInputPath: join(this.storage.aiInputsDir, `${scan.id}.ai.json`),
       depth,
       minSize,
+      full,
     };
   }
 }
