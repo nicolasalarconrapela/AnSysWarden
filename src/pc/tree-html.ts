@@ -45,10 +45,10 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AnSysWarden · Tree</title>
+<title>AnSysWarden · Vista de disco</title>
 <style>
-:root{color-scheme:dark;--bg:#101317;--panel:#171b21;--panel2:#1d222a;--line:#2a313b;--text:#eef2f6;--muted:#9aa6b2;--accent:#68a7ff;--keep:#4fd17a;--review:#f0bf4c;--delete:#ef6461;--protect:#61c3d9;--ask:#b58cff;--optimize:#6ea8fe}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:4;background:rgba(16,19,23,.96);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:18px 22px}.title{font-size:20px;font-weight:700}.meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);margin-top:6px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.toolbar input,.toolbar select,.toolbar button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px}.toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:var(--accent)}main{padding:18px 22px}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}.card .label{color:var(--muted);font-size:12px}.card .value{font-size:20px;font-weight:700;margin-top:2px}.table{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}.row{display:grid;grid-template-columns:minmax(330px,1fr) 110px 90px 135px;min-height:34px;align-items:center;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.row.head{position:sticky;top:133px;z-index:3;background:var(--panel2);font-weight:700;color:var(--muted)}.cell{padding:7px 10px;min-width:0}.name{display:flex;align-items:center;gap:6px}.toggle{border:0;background:transparent;color:var(--muted);cursor:pointer;width:20px;padding:0;font-size:13px}.toggle.empty{visibility:hidden}.node-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.size,.percent{text-align:right;font-variant-numeric:tabular-nums}.bar-wrap{height:7px;background:#0d0f12;border-radius:4px;overflow:hidden;margin-top:3px}.bar{height:100%;background:var(--accent);min-width:1px}.decision{font-size:12px;font-weight:700}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}.hidden{display:none}.empty-state{padding:34px;text-align:center;color:var(--muted)}@media(max-width:760px){.row{grid-template-columns:minmax(220px,1fr) 95px 110px}.percent-col{display:none}.row.head{top:169px}.toolbar input{min-width:180px}}
+:root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#2a2a2a;--line:#353535;--text:#f3f3f3;--muted:#a8a8a8;--bar:#565656;--bar-strong:#686868;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:12px}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -66,28 +66,17 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       <option value="ASK">PREGUNTAR</option>
       <option value="OPTIMIZE">OPTIMIZAR</option>
     </select>
-    <button id="expand">Expandir 2 niveles</button>
+    <button id="expand">Expandir 3 niveles</button>
     <button id="collapse">Colapsar</button>
   </div>
 </header>
-<main>
-  <section class="summary">
-    <div class="card"><div class="label">Entradas</div><div class="value" id="entries"></div></div>
-    <div class="card"><div class="label">Tamaño raíz</div><div class="value" id="totalSize"></div></div>
-    <div class="card"><div class="label">Recuperable confirmado</div><div class="value" id="recoverable"></div></div>
-    <div class="card"><div class="label">Escaneo</div><div class="value" id="created"></div></div>
-  </section>
-
-  <section class="table">
-    <div class="row head">
-      <div class="cell">Nombre</div>
-      <div class="cell size">Tamaño</div>
-      <div class="cell percent percent-col">%</div>
-      <div class="cell">Estado</div>
-    </div>
-    <div id="rows"></div>
-  </section>
-</main>
+<div class="summary">
+  <span>Entradas: <strong id="entries"></strong></span>
+  <span>Tamaño raíz: <strong id="totalSize"></strong></span>
+  <span>Recuperable confirmado: <strong id="recoverable"></strong></span>
+  <span>Escaneo: <strong id="created"></strong></span>
+</div>
+<main><div class="tree" id="rows"></div></main>
 <script id="payload" type="application/json">${json}</script>
 <script>
 (() => {
@@ -97,16 +86,14 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
   const decisionFilter = document.getElementById('decisionFilter');
   const expanded = new Set();
   const roots = data.tree || [];
-  const totalBytes = roots.reduce((sum, node) => sum + (node.sizeBytes || 0), 0) || 1;
-
+  const rootTotal = Math.max(1, ...roots.map(node => node.sizeBytes || 0));
   const labels = {KEEP:'CONSERVAR',REVIEW:'REVISAR',DELETE:'ELIMINAR',PROTECT:'PROTEGER',ASK:'PREGUNTAR',OPTIMIZE:'OPTIMIZAR',ROOT:'RAÍZ'};
-  const icons = {KEEP:'●',REVIEW:'●',DELETE:'●',PROTECT:'◆',ASK:'?',OPTIMIZE:'●',ROOT:'•'};
 
   document.getElementById('root').textContent = data.rootPath;
   document.getElementById('scanner').textContent = 'Scanner: ' + data.scanner;
   document.getElementById('computer').textContent = 'Equipo: ' + data.computer;
   document.getElementById('entries').textContent = Number(data.totalEntries).toLocaleString('es-ES');
-  document.getElementById('totalSize').textContent = formatBytes(totalBytes);
+  document.getElementById('totalSize').textContent = formatBytes(rootTotal);
   document.getElementById('recoverable').textContent = formatBytes(data.confirmedRecoverableBytes || 0);
   document.getElementById('created').textContent = new Date(data.createdAt).toLocaleString('es-ES');
 
@@ -115,7 +102,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     const units = ['B','KB','MB','GB','TB'];
     let value = bytes, unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-    const decimals = unit >= 3 ? 2 : unit >= 2 ? 1 : 0;
+    const decimals = unit >= 3 ? 1 : unit >= 2 ? 1 : 0;
     return value.toFixed(decimals) + ' ' + units[unit];
   }
 
@@ -128,10 +115,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
   }
 
   function hasMatchingDescendant(node, query, decision) {
-    for (const child of node.children || []) {
-      if (matches(child, query, decision) || hasMatchingDescendant(child, query, decision)) return true;
-    }
-    return false;
+    return (node.children || []).some(child => matches(child, query, decision) || hasMatchingDescendant(child, query, decision));
   }
 
   function render() {
@@ -146,49 +130,53 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       if (!direct && !descendant) return;
 
       visibleCount++;
+      const open = expanded.has(nodeKey(node)) || Boolean(query);
       const row = document.createElement('div');
-      row.className = 'row';
+      row.className = 'row depth' + depth;
       row.title = node.path;
 
-      const nameCell = document.createElement('div');
-      nameCell.className = 'cell name';
-      nameCell.style.paddingLeft = (10 + depth * 18) + 'px';
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.left = (depth * 18) + 'px';
+      bar.style.width = Math.max(0.3, Math.min(100, (node.sizeBytes / rootTotal) * 100)) + '%';
+
+      const content = document.createElement('div');
+      content.className = 'content';
+      content.style.paddingLeft = (8 + depth * 18) + 'px';
+
+      const treeCell = document.createElement('div');
+      treeCell.className = 'treecell';
 
       const toggle = document.createElement('button');
       toggle.className = 'toggle' + ((node.children || []).length ? '' : ' empty');
-      const open = expanded.has(nodeKey(node)) || Boolean(query);
-      toggle.textContent = open ? '▼' : '▶';
-      toggle.onclick = () => {
+      toggle.textContent = open ? '⌄' : '›';
+      toggle.onclick = event => {
+        event.stopPropagation();
         const key = nodeKey(node);
         if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
         render();
       };
 
-      const nodeName = document.createElement('span');
-      nodeName.className = 'node-name';
-      nodeName.textContent = node.name;
-      nameCell.append(toggle, nodeName);
+      const folder = document.createElement('span');
+      folder.className = 'folder';
+      folder.textContent = (node.children || []).length ? '📁' : '📄';
 
-      const sizeCell = document.createElement('div');
-      sizeCell.className = 'cell size';
-      sizeCell.textContent = formatBytes(node.sizeBytes);
-      const barWrap = document.createElement('div');
-      barWrap.className = 'bar-wrap';
-      const bar = document.createElement('div');
-      bar.className = 'bar';
-      bar.style.width = Math.max(0.4, Math.min(100, (node.sizeBytes / totalBytes) * 100)) + '%';
-      barWrap.append(bar);
-      sizeCell.append(barWrap);
+      const size = document.createElement('span');
+      size.className = 'size';
+      size.textContent = formatBytes(node.sizeBytes);
 
-      const pctCell = document.createElement('div');
-      pctCell.className = 'cell percent percent-col';
-      pctCell.textContent = ((node.sizeBytes / totalBytes) * 100).toFixed(1) + '%';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = node.name;
 
-      const decisionCell = document.createElement('div');
-      decisionCell.className = 'cell decision ' + node.decision;
-      decisionCell.textContent = (icons[node.decision] || '•') + ' ' + (labels[node.decision] || node.decision);
+      treeCell.append(toggle, folder, size, name);
 
-      row.append(nameCell, sizeCell, pctCell, decisionCell);
+      const decisionCell = document.createElement('span');
+      decisionCell.className = 'decision ' + node.decision;
+      decisionCell.textContent = labels[node.decision] || node.decision;
+
+      content.append(treeCell, decisionCell);
+      row.append(bar, content);
       rows.append(row);
 
       if (open || descendant) {
@@ -198,6 +186,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     }
 
     [...roots].sort((a,b) => b.sizeBytes - a.sizeBytes).forEach(node => append(node, 0));
+
     if (!visibleCount) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -213,12 +202,12 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
     }
   }
 
-  document.getElementById('expand').onclick = () => { expanded.clear(); expandToDepth(roots, 0, 2); render(); };
+  document.getElementById('expand').onclick = () => { expanded.clear(); expandToDepth(roots, 0, 3); render(); };
   document.getElementById('collapse').onclick = () => { expanded.clear(); render(); };
   search.addEventListener('input', render);
   decisionFilter.addEventListener('change', render);
 
-  expandToDepth(roots, 0, 1);
+  expandToDepth(roots, 0, 4);
   render();
 })();
 </script>
