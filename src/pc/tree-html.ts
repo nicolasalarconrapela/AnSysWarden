@@ -48,7 +48,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 <title>AnSysWarden · Vista de disco</title>
 <style>
 :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#2a2a2a;--line:#353535;--text:#f3f3f3;--muted:#a8a8a8;--bar:#565656;--bar-strong:#686868;--keep:#59d47f;--review:#f0bf4c;--delete:#f06a67;--protect:#68c7d9;--ask:#b78fff;--optimize:#76aefc}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.section-toggle{display:inline-flex;align-items:center;gap:6px}.section-chevron{display:inline-block;width:12px;text-align:center;font-size:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:12px}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:#151515;border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-top:4px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:260px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}.section-toggle{display:inline-flex;align-items:center;gap:6px}.section-chevron{display:inline-block;width:12px;text-align:center;font-size:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#1b1b1b;border-bottom:1px solid var(--line);color:var(--muted)}.summary strong{color:var(--text)}main{padding:0}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row:hover{background:#262626}.bar{position:absolute;left:0;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar-strong)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:720px;padding:3px 12px}.treecell{display:flex;align-items:center;min-width:0;flex:1}.treecell.collapsible{cursor:pointer}.treecell.collapsible:hover .name{text-decoration:underline;text-decoration-color:#777;text-underline-offset:2px}.toggle{width:18px;border:0;background:transparent;color:#d8d8d8;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.folder{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.decision{margin-left:auto;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#242424;border:1px solid #444}.decision.KEEP{color:var(--keep)}.decision.REVIEW{color:var(--review)}.decision.DELETE{color:var(--delete)}.decision.PROTECT{color:var(--protect)}.decision.ASK{color:var(--ask)}.decision.OPTIMIZE{color:var(--optimize)}.decision.ROOT{color:var(--muted)}body.labels-collapsed .decision{display:none}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -71,7 +71,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       <span>Estados</span>
     </button>
     <button id="expand">Expandir 3 niveles</button>
-    <button id="collapse">Colapsar</button>
+    <button id="collapse">Colapsar todo</button>
   </div>
 </header>
 <div class="summary">
@@ -115,6 +115,13 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
 
   function nodeKey(node) { return node.path; }
 
+  function toggleNode(node) {
+    if (!(node.children || []).length) return;
+    const key = nodeKey(node);
+    if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+    render();
+  }
+
   function matches(node, query, decision) {
     const textMatch = !query || node.path.toLowerCase().includes(query);
     const decisionMatch = decision === 'ALL' || node.decision === decision;
@@ -137,6 +144,7 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       if (!direct && !descendant) return;
 
       visibleCount++;
+      const hasChildren = (node.children || []).length > 0;
       const open = expanded.has(nodeKey(node)) || Boolean(query);
       const row = document.createElement('div');
       row.className = 'row depth' + depth;
@@ -152,21 +160,34 @@ export function buildPcTreeHtml(scan: ScanDocument, report?: ReclaimReport): str
       content.style.paddingLeft = (8 + depth * 18) + 'px';
 
       const treeCell = document.createElement('div');
-      treeCell.className = 'treecell';
+      treeCell.className = 'treecell' + (hasChildren ? ' collapsible' : '');
+      if (hasChildren) {
+        treeCell.setAttribute('role', 'button');
+        treeCell.setAttribute('tabindex', '0');
+        treeCell.setAttribute('aria-expanded', String(open));
+        treeCell.onclick = () => toggleNode(node);
+        treeCell.onkeydown = event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleNode(node);
+          }
+        };
+      }
 
       const toggle = document.createElement('button');
-      toggle.className = 'toggle' + ((node.children || []).length ? '' : ' empty');
+      toggle.className = 'toggle' + (hasChildren ? '' : ' empty');
+      toggle.type = 'button';
       toggle.textContent = open ? '⌄' : '›';
+      toggle.setAttribute('aria-label', open ? 'Colapsar nodo' : 'Expandir nodo');
+      toggle.setAttribute('aria-expanded', String(open));
       toggle.onclick = event => {
         event.stopPropagation();
-        const key = nodeKey(node);
-        if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
-        render();
+        toggleNode(node);
       };
 
       const folder = document.createElement('span');
       folder.className = 'folder';
-      folder.textContent = (node.children || []).length ? '📁' : '📄';
+      folder.textContent = hasChildren ? (open ? '📂' : '📁') : '📄';
 
       const size = document.createElement('span');
       size.className = 'size';
