@@ -3,18 +3,27 @@ import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
+import { writeNativeTreeHtml } from './tree-html';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
   console.log('Uso:');
-  console.log('  ./ansys tree scan <ruta> [--out indice.jsonl]');
-  console.log('  ./ansys tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
+  console.log('  ./ansys-tree scan <ruta> [--out indice.jsonl] [--html [archivo.html]]');
+  console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
+  console.log('  ./ansys-tree html [--out archivo.html] [--index indice.jsonl]');
   process.exit(1);
 }
 
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function readOptionalPathOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name);
+  if (index < 0) return null;
+  const next = args[index + 1];
+  return !next || next.startsWith('--') ? '' : next;
 }
 
 function readPositiveInt(args: string[], name: string): number | undefined {
@@ -48,6 +57,7 @@ async function runScan(args: string[]): Promise<void> {
   if (!inputPath || inputPath.startsWith('--')) usage();
 
   const outputPath = readOption(args, '--out');
+  const htmlOption = readOptionalPathOption(args, '--html');
   const scanner = new NativeTreeScanner();
   const startedAt = Date.now();
 
@@ -57,6 +67,7 @@ async function runScan(args: string[]): Promise<void> {
   console.log('Modo:       scanner nativo completo');
   console.log('Incluye:    carpetas + archivos + tamaños + fechas + errores');
   console.log('Escritura:  índice JSONL incremental');
+  console.log(`HTML:       ${htmlOption === null ? 'no' : 'sí'}`);
 
   const result = await scanner.scan(inputPath, {
     ...(outputPath ? { outputPath } : {}),
@@ -67,6 +78,16 @@ async function runScan(args: string[]): Promise<void> {
   });
 
   process.stdout.write('\n');
+
+  let htmlPath: string | undefined;
+  if (htmlOption !== null) {
+    htmlPath = await writeNativeTreeHtml({
+      metadata: result,
+      indexPath: result.indexPath,
+      outputPath: resolve(htmlOption || `${result.id}.html`),
+    });
+  }
+
   console.log('────────────────────────────────────────');
   console.log(`Scan ID:     ${result.id}`);
   console.log(`Entradas:    ${result.entries.toLocaleString('es-ES')}`);
@@ -76,6 +97,7 @@ async function runScan(args: string[]): Promise<void> {
   console.log(`Errores:     ${result.errors.toLocaleString('es-ES')}`);
   console.log(`Tamaño:      ${formatBytes(result.sizeBytes)}`);
   console.log(`Índice:      ${result.indexPath}`);
+  if (htmlPath) console.log(`HTML:        ${htmlPath}`);
 }
 
 async function runShow(args: string[]): Promise<void> {
@@ -105,6 +127,8 @@ async function runShow(args: string[]): Promise<void> {
     entries.push(record);
   }
 
+  if (entries.length === 0) throw new Error(`No se encontraron entradas bajo: ${rootFilter}`);
+
   const rootEntry = entries.find((entry) => entry.path.toLowerCase() === rootFilter.toLowerCase());
   const baseDepth = rootEntry?.depth ?? Math.min(...entries.map((entry) => entry.depth));
   const visible = entries
@@ -130,10 +154,23 @@ async function runShow(args: string[]): Promise<void> {
   }
 }
 
+async function runHtml(args: string[]): Promise<void> {
+  const metadata = await loadLatestMetadata();
+  const indexPath = resolve(readOption(args, '--index') ?? metadata.indexPath);
+  const outputPath = resolve(readOption(args, '--out') ?? `${metadata.id}.html`);
+  const htmlPath = await writeNativeTreeHtml({ metadata, indexPath, outputPath });
+
+  console.log('\nAnSysWarden · Tree HTML');
+  console.log('────────────────────────────────────────');
+  console.log(`Índice: ${indexPath}`);
+  console.log(`HTML:   ${htmlPath}`);
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command === 'scan') return runScan(args);
   if (command === 'show') return runShow(args);
+  if (command === 'html') return runHtml(args);
   usage();
 }
 
