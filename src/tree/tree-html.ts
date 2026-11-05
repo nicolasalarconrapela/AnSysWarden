@@ -1,8 +1,10 @@
 import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, rename, rm } from 'node:fs/promises';
+import { finished } from 'node:stream/promises';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { basename, resolve } from 'node:path';
-import type { TreeEntryRecord, TreeIndexRecord, TreeScanMetadata } from './native-tree-scanner';
+import { dirname, resolve } from 'node:path';
+import type { TreeIndexRecord, TreeScanMetadata } from './native-tree-scanner';
 
 interface TreeHtmlOptions {
   indexPath: string;
@@ -10,22 +12,28 @@ interface TreeHtmlOptions {
   metadata: TreeScanMetadata;
 }
 
+// Los nodos se guardan como tuplas compactas [padre, tipo, nombre, bytes, mtime].
+// El navegador solo crea elementos DOM para las filas visibles (paginadas).
+// El HTML es autónomo: abre directamente con file:// sin servidor ni CDN.
 export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<string> {
   const indexPath = resolve(options.indexPath);
   const outputPath = resolve(options.outputPath);
-  const summaries = new Map<string, number>();
+  await mkdir(dirname(outputPath), { recursive: true });
 
-  await readIndex(indexPath, (record) => {
+  const summaries = new Map<string, number>();
+  await readIndex(indexPath, record => {
     if (record.record === 'directory-summary') summaries.set(record.path, record.sizeBytes);
   });
 
-  const output = createWriteStream(outputPath, { encoding: 'utf8', flags: 'w' });
+  // Nunca dejar un HTML incompleto como si estuviera listo.
+  const tempPath = outputPath + '.tmp-' + process.pid;
+  const output = createWriteStream(tempPath, { encoding: 'utf8', flags: 'w' });
   const write = async (text: string): Promise<void> => {
     if (!output.write(text)) await once(output, 'drain');
   };
 
-  const metadataJson = safeJson(options.metadata);
-  await write(`<!doctype html>
+  try {
+    await write(String.raw`<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -33,7 +41,23 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
 <title>AnSysWarden · Tree</title>
 <style>
 :root{color-scheme:dark;--bg:#171717;--panel:#151515;--line:#303030;--text:#f3f3f3;--muted:#aaa;--bar:#555;--bar0:#686868;--link:#8ec5ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);padding:14px 18px}.title{font-size:19px;font-weight:700}.meta,.summary{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted)}.meta{margin-top:4px}.summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}.toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}.row.hidden{display:none}.row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}.row.depth0 .bar{background:var(--bar0)}.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:760px;padding:3px 12px}.toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1}.toggle.empty{visibility:hidden}.icon{width:20px;text-align:center;margin-right:4px}.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px}.name{overflow:hidden;text-overflow:ellipsis}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis}.name-link:hover{text-decoration:underline;text-underline-offset:2px}.type{margin-left:auto;color:var(--muted);font-size:11px}.error{color:#ff8585}.empty-state{padding:30px;text-align:center;color:var(--muted)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);padding:14px 18px}
+.title{font-size:19px;font-weight:700}.meta,.summary{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted)}.meta{margin-top:4px}
+.summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
+.toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}
+.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}
+.row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
+.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:760px;padding:3px 12px;gap:0}
+.toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
+.toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
+.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px;flex-shrink:0}
+.name{overflow:hidden;text-overflow:ellipsis}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis}
+.name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{margin-left:auto;color:var(--muted);font-size:11px;padding-left:12px}
+.error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
+.foot button{background:#303030;color:var(--text);border:1px solid #555;border-radius:4px;padding:5px 12px;cursor:pointer}
+#status{color:var(--muted)}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -42,7 +66,10 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
   <div class="meta"><span id="root"></span><span id="computer"></span><span>Scanner: native</span></div>
   <div class="toolbar">
     <input id="search" type="search" placeholder="Buscar archivo, carpeta o ruta…" autocomplete="off">
-    <select id="typeFilter"><option value="all">Todo</option><option value="directory">Carpetas</option><option value="file">Archivos</option><option value="symlink">Enlaces</option></select>
+    <select id="typeFilter">
+      <option value="all">Todo</option><option value="directory">Carpetas</option>
+      <option value="file">Archivos</option><option value="symlink">Enlaces</option><option value="error">Errores</option>
+    </select>
     <button id="expand3" type="button">Expandir 3 niveles</button>
     <button id="collapse" type="button">Colapsar todo</button>
   </div>
@@ -54,55 +81,89 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
   <span>Tamaño: <strong id="totalSize"></strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
-<main><div class="tree" id="rows">
-<script id="metadata" type="application/json">${metadataJson}</script>
-`);
+<main><div class="tree" id="rows"><div class="empty-state">Preparando árbol…</div></div></main>
+<div class="foot">
+  <span id="status" role="status">Preparando índice…</span>
+  <button id="more" type="button" hidden>Mostrar 400 más</button>
+</div>
+<script id="payload" type="application/json">{"metadata":` + safeScriptJson(options.metadata) + String.raw`,"nodes":[`);
+    const branch: number[] = [];
+    const directoryIds = new Map<string, number>();
+    let count = 0;
+    let first = true;
 
-  const rootSize = Math.max(1, options.metadata.sizeBytes);
-  await readIndex(indexPath, async (record) => {
-    if (record.record !== 'entry') return;
-    const entry = record as TreeEntryRecord;
-    const size = entry.type === 'directory' ? summaries.get(entry.path) ?? 0 : entry.sizeBytes;
-    const hasChildren = entry.type === 'directory';
-    const path = escapeHtml(entry.path);
-    const parent = escapeHtml(entry.parentPath ?? '');
-    const name = escapeHtml(entry.name || basename(entry.path));
-    const fileUrl = escapeHtmlAttribute(toFileUrl(entry.path));
-    const icon = entry.type === 'directory' ? '📁' : entry.type === 'file' ? '📄' : entry.type === 'symlink' ? '↗' : '•';
-    const width = Math.max(0.3, Math.min(100, (size / rootSize) * 100));
-    const nameHtml = entry.type === 'directory'
-      ? `<a class="name-link" href="${fileUrl}" title="Abrir carpeta: ${path}" onclick="event.stopPropagation()">${name}</a>`
-      : `<span class="name">${name}</span>`;
+    await readIndex(indexPath, async record => {
+      if (record.record === 'directory-summary') return;
 
-    await write(`<div class="row depth${entry.depth}" data-path="${escapeHtmlAttribute(entry.path)}" data-parent="${escapeHtmlAttribute(entry.parentPath ?? '')}" data-depth="${entry.depth}" data-type="${entry.type}" data-collapsed="false">
-  <div class="bar" style="left:${entry.depth * 18}px;width:${width}%"></div>
-  <div class="content" style="padding-left:${8 + entry.depth * 18}px">
-    <button class="toggle${hasChildren ? '' : ' empty'}" type="button">${hasChildren ? '⌄' : '›'}</button>
-    <span class="icon">${icon}</span>
-    <span class="size">${formatBytes(size)}</span>
-    ${nameHtml}
-    <span class="type">${entry.type === 'directory' ? 'carpeta' : entry.type === 'file' ? 'archivo' : entry.type}</span>
-  </div>
-</div>\n`);
-  });
+      if (record.record === 'entry') {
+        const parentId = record.depth === 0 ? -1 : branch[record.depth - 1] ?? -1;
+        const type = record.type === 'directory' ? 0 : record.type === 'file' ? 1 : record.type === 'symlink' ? 2 : 3;
+        const size = type === 0 ? summaries.get(record.path) ?? 0 : record.sizeBytes;
+        const row = [parentId, type, record.name, size, record.mtimeMs];
+        if (!first) await write(',');
+        await write(safeScriptJson(row));
+        first = false;
+        branch.length = record.depth + 1;
+        branch[record.depth] = count;
+        if (type === 0) directoryIds.set(record.path, count);
+        count++;
+        return;
+      }
 
-  await readIndex(indexPath, async (record) => {
-    if (record.record !== 'error') return;
-    await write(`<div class="row error" data-path="${escapeHtmlAttribute(record.path)}" data-parent="${escapeHtmlAttribute(record.parentPath ?? '')}" data-depth="${record.depth}" data-type="error"><div class="content" style="padding-left:${8 + record.depth * 18}px"><span class="toggle empty">›</span><span class="icon">⚠</span><span class="size">—</span><span class="name">${escapeHtml(record.name)}</span><span class="type">${escapeHtml(record.code ?? 'error')}</span></div></div>\n`);
-  });
+      if (record.record === 'error') {
+        // Los errores se muestran como hijos del directorio afectado, si existe.
+        const parentId = directoryIds.get(record.path)
+          ?? (record.parentPath ? directoryIds.get(record.parentPath) : undefined) ?? -1;
+        const row = [parentId, 4, record.name + ' · ' + (record.code ?? 'ERROR'), 0, 0];
+        if (!first) await write(',');
+        await write(safeScriptJson(row));
+        first = false;
+        count++;
+      }
+    });
 
-  await write(`</div></main>
+    await write(String.raw`]}</script>
 <script>
 (() => {
-  const metadata = JSON.parse(document.getElementById('metadata').textContent);
-  const rows = [...document.querySelectorAll('.row')];
-  const byPath = new Map(rows.map(row => [row.dataset.path, row]));
-  const children = new Map();
-  for (const row of rows) {
-    const parent = row.dataset.parent || '';
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push(row);
+  'use strict';
+  const rowsHost = document.getElementById('rows');
+  const status = document.getElementById('status');
+  const more = document.getElementById('more');
+  const search = document.getElementById('search');
+  const filter = document.getElementById('typeFilter');
+  const expand3 = document.getElementById('expand3');
+  const collapse = document.getElementById('collapse');
+  const PAGE_SIZE = 400;
+  let limit = PAGE_SIZE;
+  let mask = null;
+  let filtering = false;
+  const expanded = new Set();
+  const collapsed = new Set();
+  const sorted = new Map();
+  const names = ['directory','file','symlink','other','error'];
+  const icons = ['📁','📄','↗','•','⚠'];
+
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById('payload').textContent);
+  } catch (error) {
+    rowsHost.textContent = 'No se pudo interpretar el índice: ' + String(error);
+    status.textContent = 'Error en los datos del visor';
+    return;
   }
+  const metadata = payload.metadata;
+  const nodes = payload.nodes;
+  document.getElementById('payload').remove();
+
+  const children = new Map();
+  for (let i = 0; i < nodes.length; i++) {
+    const parentId = nodes[i][0];
+    let siblings = children.get(parentId);
+    if (!siblings) { siblings = []; children.set(parentId, siblings); }
+    siblings.push(i);
+  }
+  const roots = children.get(-1) || [];
+  roots.forEach(id => expanded.add(id));
 
   document.getElementById('root').textContent = metadata.rootPath;
   document.getElementById('computer').textContent = 'Equipo: ' + metadata.computer;
@@ -110,94 +171,223 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
   document.getElementById('files').textContent = Number(metadata.files).toLocaleString('es-ES');
   document.getElementById('directories').textContent = Number(metadata.directories).toLocaleString('es-ES');
   document.getElementById('errors').textContent = Number(metadata.errors).toLocaleString('es-ES');
-  document.getElementById('totalSize').textContent = ${JSON.stringify(formatBytes(options.metadata.sizeBytes))};
 
-  function descendants(path) {
-    const result = [];
-    const stack = [...(children.get(path) || [])];
-    while (stack.length) {
-      const row = stack.pop();
-      result.push(row);
-      stack.push(...(children.get(row.dataset.path) || []));
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B','KB','MB','GB','TB','PB'];
+    let value = bytes, unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    return value.toFixed(unit >= 2 ? 1 : 0) + ' ' + units[unit];
+  }
+  document.getElementById('totalSize').textContent = formatBytes(metadata.sizeBytes);
+
+  const slash = metadata.rootPath.includes(String.fromCharCode(92)) ? String.fromCharCode(92) : '/';
+  function pathOf(id) {
+    const parts = [];
+    while (id >= 0 && nodes[id][0] >= 0) {
+      parts.push(nodes[id][2]);
+      id = nodes[id][0];
     }
-    return result;
+    return metadata.rootPath + (parts.length && !metadata.rootPath.endsWith(slash) ? slash : '') + parts.reverse().join(slash);
+  }
+  function fileUrl(path) {
+    const normalized = path.split(String.fromCharCode(92)).join('/');
+    const encoded = encodeURI(normalized).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    if (normalized.startsWith('//')) return 'file:' + encoded;
+    if (normalized.startsWith('/')) return 'file://' + encoded;
+    return 'file:///' + encoded;
   }
 
-  function isHiddenByCollapsedAncestor(row) {
-    let parent = row.dataset.parent;
-    while (parent) {
-      const ancestor = byPath.get(parent);
-      if (ancestor && ancestor.dataset.collapsed === 'true') return true;
-      parent = ancestor?.dataset.parent || '';
-    }
-    return false;
+  function childrenSorted(parentId) {
+    let list = sorted.get(parentId);
+    if (list) return list;
+    const original = children.get(parentId) || [];
+    list = original.slice().sort((a, b) =>
+      nodes[b][3] - nodes[a][3] || String(nodes[a][2]).localeCompare(String(nodes[b][2])));
+    sorted.set(parentId, list);
+    return list;
   }
 
-  function refresh() {
-    const query = document.getElementById('search').value.trim().toLowerCase();
-    const type = document.getElementById('typeFilter').value;
-    const filtering = Boolean(query) || type !== 'all';
+  function computeMatches() {
+    const query = search.value.trim().toLowerCase();
+    const kind = filter.value;
+    filtering = Boolean(query) || kind !== 'all';
+    if (!filtering) { mask = null; return; }
 
-    for (const row of rows) {
-      const typeMatch = type === 'all' || row.dataset.type === type;
-      const textMatch = !query || (row.dataset.path || '').toLowerCase().includes(query);
-      let visible = typeMatch && textMatch;
+    mask = new Uint8Array(nodes.length);
+    const pathQuery = query.includes('/') || query.includes(String.fromCharCode(92));
+    for (let i = 0; i < nodes.length; i++) {
+      if (kind !== 'all' && names[nodes[i][1]] !== kind) continue;
+      if (query && !String(nodes[i][2]).toLowerCase().includes(query)
+          && (!pathQuery || !pathOf(i).toLowerCase().includes(query))) continue;
 
-      if (!filtering && isHiddenByCollapsedAncestor(row)) visible = false;
-      if (filtering && !visible) {
-        const path = row.dataset.path || '';
-        visible = descendants(path).some(child => {
-          const childType = type === 'all' || child.dataset.type === type;
-          const childText = !query || (child.dataset.path || '').toLowerCase().includes(query);
-          return childType && childText;
-        });
+      let parent = i;
+      while (parent >= 0 && mask[parent] === 0) {
+        mask[parent] = 1;
+        parent = nodes[parent][0];
       }
-
-      row.classList.toggle('hidden', !visible);
-      const toggle = row.querySelector('.toggle');
-      if (toggle && !toggle.classList.contains('empty')) toggle.textContent = row.dataset.collapsed === 'true' ? '›' : '⌄';
     }
   }
 
-  for (const row of rows) {
-    const toggle = row.querySelector('.toggle');
-    if (!toggle || toggle.classList.contains('empty')) continue;
-    const toggleRow = (event) => {
-      event?.stopPropagation();
-      row.dataset.collapsed = row.dataset.collapsed === 'true' ? 'false' : 'true';
-      refresh();
-    };
-    toggle.addEventListener('click', toggleRow);
-    row.addEventListener('dblclick', toggleRow);
+  function makeRow(id, depth) {
+    const node = nodes[id];
+    const type = node[1];
+    const hasChildren = type === 0 && (children.get(id) || []).length > 0;
+    const open = hasChildren && !collapsed.has(id) && (expanded.has(id) || filtering);
+
+    const row = document.createElement('div');
+    row.className = 'row' + (type === 4 ? ' error' : '');
+    row.title = pathOf(id);
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.left = Math.min(depth, 40) * 18 + 'px';
+    bar.style.width = Math.max(.3, Math.min(100, node[3] / Math.max(1, metadata.sizeBytes) * 100)) + '%';
+
+    const content = document.createElement('div');
+    content.className = 'content';
+    content.style.paddingLeft = (8 + Math.min(depth, 40) * 18) + 'px';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'toggle' + (hasChildren ? '' : ' empty');
+    toggle.textContent = open ? '⌄' : '›';
+    toggle.setAttribute('aria-label', open ? 'Colapsar carpeta' : 'Expandir carpeta');
+    if (hasChildren) toggle.addEventListener('click', event => {
+      event.stopPropagation();
+      if (open) { collapsed.add(id); expanded.delete(id); }
+      else { collapsed.delete(id); expanded.add(id); }
+      render();
+    });
+
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = icons[type];
+    const size = document.createElement('span');
+    size.className = 'size';
+    size.textContent = type === 4 ? '—' : formatBytes(node[3]);
+
+    let name;
+    if (type === 0) {
+      name = document.createElement('a');
+      name.className = 'name-link';
+      name.href = fileUrl(pathOf(id));
+      name.title = 'Abrir carpeta local: ' + pathOf(id);
+      name.textContent = node[2];
+      name.addEventListener('click', event => event.stopPropagation());
+    } else {
+      name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = node[2];
+    }
+
+    const kind = document.createElement('span');
+    kind.className = 'kind';
+    kind.textContent = type === 0 ? 'carpeta' : type === 1 ? 'archivo' : names[type];
+    content.append(toggle, icon, size, name, kind);
+    row.append(bar, content);
+    if (hasChildren) {
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', event => {
+        if (event.target === toggle || event.target === name) return;
+        if (open) { collapsed.add(id); expanded.delete(id); }
+        else { collapsed.delete(id); expanded.add(id); }
+        render();
+      });
+    }
+    return row;
   }
 
-  document.getElementById('collapse').onclick = () => {
-    for (const row of rows) if (row.dataset.type === 'directory') row.dataset.collapsed = 'true';
-    refresh();
-  };
+  function render() {
+    const oldScroll = rowsHost.scrollTop;
+    const fragment = document.createDocumentFragment();
+    const stack = childrenSorted(-1).slice().reverse().map(id => [id, 0]);
+    let count = 0;
+    let truncated = false;
 
-  document.getElementById('expand3').onclick = () => {
-    for (const row of rows) {
-      if (row.dataset.type !== 'directory') continue;
-      row.dataset.collapsed = Number(row.dataset.depth) >= 3 ? 'true' : 'false';
+    while (stack.length) {
+      const pair = stack.pop();
+      const id = pair[0], depth = pair[1];
+      if (mask && !mask[id]) continue;
+      if (count >= limit) { truncated = true; break; }
+      fragment.appendChild(makeRow(id, depth));
+      count++;
+      if (nodes[id][1] === 0 && !collapsed.has(id) && (expanded.has(id) || filtering)) {
+        const childIds = childrenSorted(id);
+        for (let i = childIds.length - 1; i >= 0; i--) {
+          if (!mask || mask[childIds[i]]) stack.push([childIds[i], depth + 1]);
+        }
+      }
     }
-    refresh();
-  };
 
-  document.getElementById('search').addEventListener('input', refresh);
-  document.getElementById('typeFilter').addEventListener('change', refresh);
-  refresh();
+    rowsHost.replaceChildren(fragment);
+    rowsHost.scrollTop = oldScroll;
+    more.hidden = !truncated;
+    status.textContent = (count === 0 ? 'Sin resultados · ' : 'Mostrando ' + count.toLocaleString('es-ES') + ' filas · ')
+      + metadata.entries.toLocaleString('es-ES') + ' entradas indexadas'
+      + (truncated ? ' · Despliega o pulsa «Mostrar más»' : '');
+  }
+
+  let searchTimer;
+  function onFilterChanged() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      limit = PAGE_SIZE;
+      status.textContent = 'Buscando…';
+      computeMatches();
+      render();
+    }, 250);
+  }
+  search.addEventListener('input', onFilterChanged);
+  filter.addEventListener('change', onFilterChanged);
+
+  more.onclick = () => { limit += PAGE_SIZE; render(); };
+  collapse.onclick = () => {
+    expanded.clear();
+    collapsed.clear();
+    for (const id of roots) collapsed.add(id);
+    limit = PAGE_SIZE;
+    render();
+  };
+  expand3.onclick = () => {
+    expanded.clear();
+    collapsed.clear();
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i][1] === 0 && depthOf(i) < 3) expanded.add(i);
+    }
+    limit = PAGE_SIZE;
+    render();
+  };
+  function depthOf(id) {
+    let depth = 0;
+    while (nodes[id][0] >= 0) { depth++; id = nodes[id][0]; }
+    return depth;
+  }
+
+  // Solo se crean como máximo 400 filas al abrir. Más filas se solicitan
+  // explícitamente. El árbol completo sigue disponible en el índice.
+  try { render(); }
+  catch (error) {
+    rowsHost.textContent = 'Error al renderizar el árbol: ' + String(error);
+    status.textContent = 'Error en el visor';
+  }
 })();
 </script>
 </body>
 </html>`);
-
-  output.end();
-  await once(output, 'finish');
-  return outputPath;
+    output.end();
+    await finished(output);
+    await rename(tempPath, outputPath);
+    return outputPath;
+  } catch (error) {
+    output.destroy();
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
-async function readIndex(indexPath: string, visitor: (record: TreeIndexRecord) => void | Promise<void>): Promise<void> {
+async function readIndex(
+  indexPath: string,
+  visitor: (record: TreeIndexRecord) => void | Promise<void>,
+): Promise<void> {
   const input = createReadStream(indexPath, { encoding: 'utf8' });
   const lines = createInterface({ input, crlfDelay: Infinity });
   for await (const line of lines) {
@@ -206,33 +396,11 @@ async function readIndex(indexPath: string, visitor: (record: TreeIndexRecord) =
   }
 }
 
-function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  let value = Math.max(0, bytes);
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(unit >= 2 ? 1 : 0)} ${units[unit]}`;
-}
-
-function toFileUrl(path: string): string {
-  const normalized = path.split(String.fromCharCode(92)).join('/');
-  if (/^[A-Za-z]:\//.test(normalized)) return `file:///${encodeURI(normalized)}`;
-  if (normalized.startsWith('//')) return `file:${encodeURI(normalized)}`;
-  if (normalized.startsWith('/')) return `file://${encodeURI(normalized)}`;
-  return `file:///${encodeURI(normalized)}`;
-}
-
-function safeJson(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return escapeHtml(value);
+function safeScriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
