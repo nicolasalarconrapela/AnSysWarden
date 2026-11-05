@@ -1,7 +1,7 @@
 import { createWriteStream } from 'node:fs';
 import { lstat, mkdir, opendir, writeFile } from 'node:fs/promises';
 import { hostname, platform } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 
@@ -97,7 +97,28 @@ export class NativeTreeScanner {
   }
 
   async scan(inputPath: string, options: TreeScanOptions = {}): Promise<TreeScanMetadata> {
-    const rootPath = resolve(inputPath);
+    const rootPath = resolveTreeInputPath(inputPath);
+    // Validar la raíz ANTES de escribir un índice o actualizar latest.json.
+    // Una ruta inválida no es un escaneo completado con 0 entradas.
+    try {
+      const rootStats = await lstat(rootPath);
+      if (!rootStats.isDirectory()) {
+        throw new Error(`La ruta no es una carpeta: "${rootPath}"`);
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        throw new Error(
+          `No se encontró la carpeta raíz (ENOENT).\n` +
+          `Ruta recibida: "${inputPath}"\n` +
+          `Ruta resuelta: "${rootPath}"\n` +
+          'Desde Git Bash en Windows, utiliza por ejemplo: ' +
+          './ansys-tree scan "C:/Users/nalar/Desktop" --html escritorio.html'
+        );
+      }
+      throw error;
+    }
+
     const id = createTreeScanId();
     const scansDir = join(this.stateDir, 'scans');
     await mkdir(scansDir, { recursive: true });
@@ -258,4 +279,33 @@ export class NativeTreeScanner {
 function createTreeScanId(): string {
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   return `tree-${timestamp}-${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * Acepta rutas nativas de Windows y rutas habituales de Git Bash/Cygwin/WSL.
+ * No intenta reconstruir rutas mal citadas que hayan perdido los separadores.
+ */
+export function resolveTreeInputPath(inputPath: string): string {
+  if (!inputPath || !inputPath.trim()) throw new Error('Debes indicar una carpeta para escanear.');
+  if (platform() !== 'win32') {
+    if (/^[A-Za-z]:/.test(inputPath)) {
+      throw new Error('Esta sesión de Node no está ejecutándose en Windows. Utiliza una ruta de este entorno.');
+    }
+    return resolve(inputPath);
+  }
+
+  if (/^[A-Za-z]:(?![\\/])/.test(inputPath)) {
+    throw new Error(
+      `Ruta de Windows ambigua: "${inputPath}". Usa barras / y ruta absoluta, por ejemplo C:/Users/nalar/Desktop.`
+    );
+  }
+
+  const unixDrive = inputPath.match(/^\/(?:cygdrive\/|mnt\/)?([A-Za-z])(?:\/(.*))?$/);
+  if (unixDrive) {
+    const drive = unixDrive[1].toUpperCase();
+    const rest = unixDrive[2] ?? '';
+    return win32.resolve(`${drive}:/${rest}`);
+  }
+
+  return win32.resolve(inputPath);
 }
