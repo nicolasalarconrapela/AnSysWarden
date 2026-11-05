@@ -156,6 +156,13 @@ async function runShow(args: string[]): Promise<void> {
 
 async function runHtml(args: string[]): Promise<void> {
   const metadata = await loadLatestMetadata();
+  if (metadata.entries === 0) {
+    throw new Error(
+      'El último índice está vacío (0 entradas). No se genera HTML. ' +
+      'Vuelve a escanear una ruta válida, por ejemplo: ' +
+      './ansys-tree scan "C:/Users/nalar/Desktop" --html escritorio.html'
+    );
+  }
   const indexPath = resolve(readOption(args, '--index') ?? metadata.indexPath);
   const outputPath = resolve(readOption(args, '--out') ?? `${metadata.id}.html`);
   const htmlPath = await writeNativeTreeHtml({ metadata, indexPath, outputPath });
