@@ -166,7 +166,6 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   // el índice original. Se crea un único nodo virtual por carpeta con archivos
   // directos y su tamaño es la suma de esos archivos, no espacio adicional.
   const displayParents = new Map();
-  const physicalCount = nodes.length;
   for (const [parentId, siblingIds] of [...children.entries()]) {
     if (parentId < 0 || nodes[parentId]?.[1] !== 0) continue;
     const directFiles = siblingIds.filter(id => nodes[id][1] === 1);
@@ -175,7 +174,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     const groupId = nodes.length;
     nodes.push([
       parentId, 5,
-      '[' + directFiles.length.toLocaleString('es-ES') + ' Archivos]',
+      '[' + directFiles.length.toLocaleString('es-ES') + (directFiles.length === 1 ? ' Archivo]' : ' Archivos]'),
       totalBytes, 0
     ]);
     children.set(parentId, siblingIds.filter(id => nodes[id][1] !== 1).concat(groupId));
