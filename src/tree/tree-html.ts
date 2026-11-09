@@ -140,8 +140,8 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const expanded = new Set();
   const collapsed = new Set();
   const sorted = new Map();
-  const names = ['directory','file','symlink','other','error'];
-  const icons = ['📁','📄','↗','•','⚠'];
+  const names = ['directory','file','symlink','other','error','file-group'];
+  const icons = ['📁','📄','↗','•','⚠','📄'];
 
   let payload;
   try {
@@ -162,6 +162,34 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     if (!siblings) { siblings = []; children.set(parentId, siblings); }
     siblings.push(i);
   }
+  // Agrupación exclusiva de presentación: los archivos siguen estando en
+  // el índice original. Se crea un único nodo virtual por carpeta con archivos
+  // directos y su tamaño es la suma de esos archivos, no espacio adicional.
+  const displayParents = new Map();
+  const physicalCount = nodes.length;
+  for (const [parentId, siblingIds] of [...children.entries()]) {
+    if (parentId < 0 || nodes[parentId]?.[1] !== 0) continue;
+    const directFiles = siblingIds.filter(id => nodes[id][1] === 1);
+    if (directFiles.length === 0) continue;
+    const totalBytes = directFiles.reduce((total, id) => total + nodes[id][3], 0);
+    const groupId = nodes.length;
+    nodes.push([
+      parentId, 5,
+      '[' + directFiles.length.toLocaleString('es-ES') + ' Archivos]',
+      totalBytes, 0
+    ]);
+    children.set(parentId, siblingIds.filter(id => nodes[id][1] !== 1).concat(groupId));
+    children.set(groupId, directFiles);
+    for (const fileId of directFiles) displayParents.set(fileId, groupId);
+    // Los grupos pequeños se muestran abiertos como en TreeSize. Los grandes,
+    // plegados: no creamos miles de filas al abrir el HTML.
+    if (directFiles.length <= 20) expanded.add(groupId);
+  }
+
+  function parentOf(id) {
+    return displayParents.has(id) ? displayParents.get(id) : nodes[id][0];
+  }
+
   const roots = children.get(-1) || [];
   roots.forEach(id => expanded.add(id));
 
@@ -184,9 +212,10 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const slash = metadata.rootPath.includes(String.fromCharCode(92)) ? String.fromCharCode(92) : '/';
   function pathOf(id) {
     const parts = [];
-    while (id >= 0 && nodes[id][0] >= 0) {
-      parts.push(nodes[id][2]);
-      id = nodes[id][0];
+    while (id >= 0 && parentOf(id) >= 0) {
+      // El grupo no existe en disco: nunca se intercala en las rutas locales.
+      if (nodes[id][1] !== 5) parts.push(nodes[id][2]);
+      id = parentOf(id);
     }
     return metadata.rootPath + (parts.length && !metadata.rootPath.endsWith(slash) ? slash : '') + parts.reverse().join(slash);
   }
@@ -224,7 +253,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       let parent = i;
       while (parent >= 0 && mask[parent] === 0) {
         mask[parent] = 1;
-        parent = nodes[parent][0];
+        parent = parentOf(parent);
       }
     }
   }
@@ -232,12 +261,12 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   function makeRow(id, depth) {
     const node = nodes[id];
     const type = node[1];
-    const hasChildren = type === 0 && (children.get(id) || []).length > 0;
+    const hasChildren = (type === 0 || type === 5) && (children.get(id) || []).length > 0;
     const open = hasChildren && !collapsed.has(id) && (expanded.has(id) || filtering);
 
     const row = document.createElement('div');
     row.className = 'row' + (type === 4 ? ' error' : '');
-    row.title = pathOf(id);
+    row.title = type === 5 ? 'Grupo virtual de archivos · ' + pathOf(id) : pathOf(id);
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.style.left = Math.min(depth, 40) * 18 + 'px';
@@ -281,7 +310,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 
     const kind = document.createElement('span');
     kind.className = 'kind';
-    kind.textContent = type === 0 ? 'carpeta' : type === 1 ? 'archivo' : names[type];
+    kind.textContent = type === 0 ? 'carpeta' : type === 1 ? 'archivo' : type === 5 ? 'grupo virtual' : names[type];
     content.append(toggle, icon, size, name, kind);
     row.append(bar, content);
     if (hasChildren) {
@@ -310,7 +339,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       if (count >= limit) { truncated = true; break; }
       fragment.appendChild(makeRow(id, depth));
       count++;
-      if (nodes[id][1] === 0 && !collapsed.has(id) && (expanded.has(id) || filtering)) {
+      if ((nodes[id][1] === 0 || nodes[id][1] === 5) && !collapsed.has(id) && (expanded.has(id) || filtering)) {
         const childIds = childrenSorted(id);
         for (let i = childIds.length - 1; i >= 0; i--) {
           if (!mask || mask[childIds[i]]) stack.push([childIds[i], depth + 1]);
@@ -351,14 +380,14 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     expanded.clear();
     collapsed.clear();
     for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i][1] === 0 && depthOf(i) < 3) expanded.add(i);
+      if ((nodes[i][1] === 0 || nodes[i][1] === 5) && depthOf(i) < 3) expanded.add(i);
     }
     limit = PAGE_SIZE;
     render();
   };
   function depthOf(id) {
     let depth = 0;
-    while (nodes[id][0] >= 0) { depth++; id = nodes[id][0]; }
+    while (parentOf(id) >= 0) { depth++; id = parentOf(id); }
     return depth;
   }
 
