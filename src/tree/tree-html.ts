@@ -52,7 +52,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:760px;padding:3px 12px;gap:0}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
 .toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
-.size{width:92px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;margin-right:10px;flex-shrink:0}
+.size{min-width:95px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;margin-left:auto;flex-shrink:0}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
 .name{overflow:hidden;text-overflow:ellipsis}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis}
 .name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{margin-left:auto;color:var(--muted);font-size:11px;padding-left:12px}
 .error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
@@ -165,6 +165,16 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   // Agrupación exclusiva de presentación: los archivos siguen estando en
   // el índice original. Se crea un único nodo virtual por carpeta con archivos
   // directos y su tamaño es la suma de esos archivos, no espacio adicional.
+  // Conteo recursivo exacto del índice para cada directorio físico.
+  // El índice se emitió en preorden, de modo que la acumulación inversa
+  // agrega cada archivo una sola vez al padre sin recorrer descendientes.
+  const originalNodeCount = nodes.length;
+  const fileCounts = new Float64Array(originalNodeCount);
+  for (let i = originalNodeCount - 1; i >= 0; i--) {
+    if (nodes[i][1] === 1) fileCounts[i] = 1;
+    const parent = nodes[i][0];
+    if (parent >= 0) fileCounts[parent] += fileCounts[i];
+  }
   const displayParents = new Map();
   for (const [parentId, siblingIds] of [...children.entries()]) {
     if (parentId < 0 || nodes[parentId]?.[1] !== 0) continue;
@@ -307,10 +317,25 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       name.textContent = node[2];
     }
 
+    const fileCount = document.createElement('span');
+    fileCount.className = 'file-count';
+    if (type === 0) {
+      const total = fileCounts[id] || 0;
+      fileCount.textContent = '(' + total.toLocaleString('es-ES') + (total === 1 ? ' archivo)' : ' archivos)');
+      fileCount.title = 'Archivos contenidos en esta carpeta y sus subcarpetas';
+      if (total === 0) fileCount.classList.add('zero');
+    } else if (type === 5) {
+      fileCount.textContent = '';
+    }
+
     const kind = document.createElement('span');
     kind.className = 'kind';
     kind.textContent = type === 0 ? 'carpeta' : type === 1 ? 'archivo' : type === 5 ? 'grupo virtual' : names[type];
-    content.append(toggle, icon, size, name, kind);
+    // La jerarquía y el número de archivos quedan juntos; el tamaño se
+    // alinea a la derecha, como en la referencia del usuario.
+    content.append(toggle, icon, name);
+    if (type === 0) content.append(fileCount);
+    content.append(size, kind);
     row.append(bar, content);
     if (hasChildren) {
       row.style.cursor = 'pointer';
