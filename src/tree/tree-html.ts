@@ -47,14 +47,14 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
 .toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}
-.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;border-bottom:1px solid #222;white-space:nowrap;overflow:hidden}
+.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
 .row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
-.content{position:relative;z-index:2;display:flex;align-items:center;width:100%;min-width:760px;padding:3px 12px;gap:0}
+.content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 184px 95px;align-items:center;width:100%;min-width:760px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
 .toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
-.size{min-width:95px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;margin-left:auto;flex-shrink:0}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
-.name{overflow:hidden;text-overflow:ellipsis}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis}
-.name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{margin-left:auto;color:var(--muted);font-size:11px;padding-left:12px}
+.size{display:block;width:184px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
+.name{overflow:hidden;text-overflow:ellipsis;min-width:0}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{color:var(--muted);font-size:11px;text-align:right;padding-left:10px}
 .error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
 .foot button{background:#303030;color:var(--text);border:1px solid #555;border-radius:4px;padding:5px 12px;cursor:pointer}
 #status{color:var(--muted)}.empty-state{padding:30px;text-align:center;color:var(--muted)}
@@ -72,6 +72,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     </select>
     <button id="expand3" type="button">Expandir 3 niveles</button>
     <button id="collapse" type="button">Colapsar todo</button>
+    <button id="sizeIndent" type="button" aria-pressed="false" title="Alternar entre tamaños alineados e indentados por profundidad">Indentar tamaños: No</button>
   </div>
 </header>
 <div class="summary">
@@ -133,6 +134,8 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const filter = document.getElementById('typeFilter');
   const expand3 = document.getElementById('expand3');
   const collapse = document.getElementById('collapse');
+  const sizeIndent = document.getElementById('sizeIndent');
+  let indentSizes = false;
   const PAGE_SIZE = 400;
   let limit = PAGE_SIZE;
   let mask = null;
@@ -283,7 +286,9 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 
     const content = document.createElement('div');
     content.className = 'content';
-    content.style.paddingLeft = (8 + Math.min(depth, 40) * 18) + 'px';
+    const treeCell = document.createElement('div');
+    treeCell.className = 'treecell';
+    treeCell.style.paddingLeft = Math.min(depth, 40) * 18 + 'px';
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'toggle' + (hasChildren ? '' : ' empty');
@@ -302,6 +307,10 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     const size = document.createElement('span');
     size.className = 'size';
     size.textContent = type === 4 ? '—' : formatBytes(node[3]);
+    if (indentSizes) {
+      size.classList.add('size-indented');
+      size.style.setProperty('--size-offset', Math.min(depth, 10) * 14 + 'px');
+    }
 
     let name;
     if (type === 0) {
@@ -333,9 +342,9 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     kind.textContent = type === 0 ? 'carpeta' : type === 1 ? 'archivo' : type === 5 ? 'grupo virtual' : names[type];
     // La jerarquía y el número de archivos quedan juntos; el tamaño se
     // alinea a la derecha, como en la referencia del usuario.
-    content.append(toggle, icon, name);
-    if (type === 0) content.append(fileCount);
-    content.append(size, kind);
+    treeCell.append(toggle, icon, name);
+    if (type === 0) treeCell.append(fileCount);
+    content.append(treeCell, size, kind);
     row.append(bar, content);
     if (hasChildren) {
       row.style.cursor = 'pointer';
@@ -393,6 +402,12 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   filter.addEventListener('change', onFilterChanged);
 
   more.onclick = () => { limit += PAGE_SIZE; render(); };
+  sizeIndent.onclick = () => {
+    indentSizes = !indentSizes;
+    sizeIndent.setAttribute('aria-pressed', String(indentSizes));
+    sizeIndent.textContent = 'Indentar tamaños: ' + (indentSizes ? 'Sí' : 'No');
+    render();
+  };
   collapse.onclick = () => {
     expanded.clear();
     collapsed.clear();
