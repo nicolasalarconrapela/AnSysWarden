@@ -1,8 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { lstat, mkdir, opendir, readlink, stat, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { platform } from 'node:os';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { TreeIndexRecord, TreeScanMetadata } from './native-tree-scanner';
 import { resolveTreeInputPath } from './native-tree-scanner';
 
@@ -77,7 +76,7 @@ function add(into: Counts, from: Counts): void {
 
 function isInside(root: string, candidate: string): boolean {
   const diff = relative(root, candidate);
-  return diff === '' || (diff !== '..' && !diff.startsWith('..' + sep) && !resolve(diff).startsWith('..' + sep) && !diff.startsWith(sep));
+  return diff === '' || (diff !== '..' && !diff.startsWith('..' + sep) && !diff.startsWith(sep));
 }
 
 function directChildPath(root: string, candidate: string): string {
