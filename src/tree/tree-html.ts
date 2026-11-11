@@ -46,7 +46,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .title{font-size:19px;font-weight:700}.meta,.summary{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted)}.meta{margin-top:4px}
 .summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
-.toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.toolbar button:hover{border-color:#777}
+.toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.unit-label{align-self:center;color:var(--muted)}.toolbar button:hover{border-color:#777}
 .tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
 .row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
 .content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 184px 95px;align-items:center;width:100%;min-width:760px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
@@ -73,13 +73,25 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     <button id="expand3" type="button">Expandir 3 niveles</button>
     <button id="collapse" type="button">Colapsar todo</button>
     <button id="sizeIndent" type="button" aria-pressed="false" title="Alternar entre tamaños alineados e indentados por profundidad">Indentar tamaños: No</button>
+    <label for="unitMode" class="unit-label">Unidad</label>
+    <select id="unitMode" aria-label="Unidad para los tamaños">
+      <option value="binary">Automática (base 1024)</option>
+      <option value="decimal">Automática (base 1000)</option>
+      <option value="GiB">GiB</option>
+      <option value="GB">GB</option>
+      <option value="bytes">Bytes</option>
+    </select>
   </div>
 </header>
 <div class="summary">
   <span>Entradas: <strong id="entries"></strong></span>
   <span>Archivos: <strong id="files"></strong></span>
   <span>Carpetas: <strong id="directories"></strong></span>
-  <span>Tamaño: <strong id="totalSize"></strong></span>
+  <span>Tamaño lógico: <strong id="totalSize"></strong></span>
+  <span>GB (decimal): <strong id="decimalTotal"></strong></span>
+  <span>GiB (binario): <strong id="binaryTotal"></strong></span>
+  <span>Bytes exactos: <strong id="exactTotal"></strong></span>
+  <span>Ocupado en disco: <strong id="allocatedTotal" title="El índice actual no incluye los bytes asignados físicamente">No disponible (no medido)</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
 <main><div class="tree" id="rows"><div class="empty-state">Preparando árbol…</div></div></main>
@@ -135,7 +147,9 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const expand3 = document.getElementById('expand3');
   const collapse = document.getElementById('collapse');
   const sizeIndent = document.getElementById('sizeIndent');
+  const unitMode = document.getElementById('unitMode');
   let indentSizes = false;
+  let sizeUnit = 'binary';
   const PAGE_SIZE = 400;
   let limit = PAGE_SIZE;
   let mask = null;
@@ -212,14 +226,32 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   document.getElementById('directories').textContent = Number(metadata.directories).toLocaleString('es-ES');
   document.getElementById('errors').textContent = Number(metadata.errors).toLocaleString('es-ES');
 
-  function formatBytes(bytes) {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    const units = ['B','KB','MB','GB','TB','PB'];
-    let value = bytes, unit = 0;
-    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-    return value.toFixed(unit >= 2 ? 1 : 0) + ' ' + units[unit];
+  // Los bytes del índice son tamaño lógico. GB usa 1000; GiB usa 1024.
+  // Nunca llamar GB a un valor calculado dividiendo entre 1024.
+  function formatNumber(value, maximumFractionDigits = 2) {
+    return value.toLocaleString('es-ES', { maximumFractionDigits });
   }
-  document.getElementById('totalSize').textContent = formatBytes(metadata.sizeBytes);
+  function formatBytes(bytes, mode = sizeUnit) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '—';
+    if (mode === 'bytes') return formatNumber(bytes, 0) + ' B';
+    if (mode === 'GB') return formatNumber(bytes / 1e9) + ' GB';
+    if (mode === 'GiB') return formatNumber(bytes / (1024 ** 3)) + ' GiB';
+    const binary = mode !== 'decimal';
+    const base = binary ? 1024 : 1000;
+    const units = binary ? ['B','KiB','MiB','GiB','TiB','PiB'] : ['B','KB','MB','GB','TB','PB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= base && unit < units.length - 1) { value /= base; unit++; }
+    return formatNumber(value, unit >= 2 ? 2 : 0) + ' ' + units[unit];
+  }
+  const logicalBytes = metadata.sizeBytes;
+  document.getElementById('decimalTotal').textContent = formatBytes(logicalBytes, 'GB');
+  document.getElementById('binaryTotal').textContent = formatBytes(logicalBytes, 'GiB');
+  document.getElementById('exactTotal').textContent = formatBytes(logicalBytes, 'bytes');
+  function refreshTotalSize() {
+    document.getElementById('totalSize').textContent = formatBytes(logicalBytes);
+  }
+  refreshTotalSize();
 
   const slash = metadata.rootPath.includes(String.fromCharCode(92)) ? String.fromCharCode(92) : '/';
   function pathOf(id) {
@@ -278,7 +310,10 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 
     const row = document.createElement('div');
     row.className = 'row' + (type === 4 ? ' error' : '');
-    row.title = type === 5 ? 'Grupo virtual de archivos · ' + pathOf(id) : pathOf(id);
+    row.title = (type === 5 ? 'Grupo virtual de archivos · ' : '') + pathOf(id) +
+      '\nTamaño lógico: ' + formatBytes(node[3], 'bytes') +
+      ' · ' + formatBytes(node[3], 'GB') + ' · ' + formatBytes(node[3], 'GiB') +
+      '\nEspacio ocupado: no medido';
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.style.left = Math.min(depth, 40) * 18 + 'px';
@@ -408,6 +443,11 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     sizeIndent.textContent = 'Indentar tamaños: ' + (indentSizes ? 'Sí' : 'No');
     render();
   };
+  unitMode.addEventListener('change', () => {
+    sizeUnit = unitMode.value;
+    refreshTotalSize();
+    render();
+  });
   collapse.onclick = () => {
     expanded.clear();
     collapsed.clear();
