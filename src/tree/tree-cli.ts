@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
 import { writeNativeTreeHtml } from './tree-html';
+import { runTreeAudit } from './tree-audit';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
@@ -11,6 +12,7 @@ function usage(): never {
   console.log('  ./ansys-tree scan <ruta> [--out indice.jsonl] [--html [archivo.html]]');
   console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
   console.log('  ./ansys-tree html [--out archivo.html] [--index indice.jsonl]');
+  console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
   process.exit(1);
 }
 
@@ -173,11 +175,51 @@ async function runHtml(args: string[]): Promise<void> {
   console.log(`HTML:   ${htmlPath}`);
 }
 
+async function runAudit(args: string[]): Promise<void> {
+  const metadata = await loadLatestMetadata();
+  if (metadata.entries === 0) {
+    throw new Error('El índice está vacío. Ejecuta un escaneo nativo válido antes de auditar.');
+  }
+
+  const branchArg = readOption(args, '--branches');
+  const branchNames = branchArg
+    ? branchArg.split(',').map(value => value.trim()).filter(Boolean)
+    : undefined;
+  const outputPath = readOption(args, '--out');
+  console.log('\nAnSysWarden · Auditoría Tree (solo lectura)');
+  console.log('────────────────────────────────────────');
+  console.log('Índice: ' + metadata.indexPath);
+  console.log('Fecha índice: ' + metadata.createdAt);
+  console.log('Ramas: ' + (branchNames ?? ['ANDROID_Studio', 'OSS', 'AnSysWarden']).join(', '));
+  console.log('Los recuentos en vivo no son cifras extraídas de TreeSize.');
+
+  const result = await runTreeAudit(metadata, {
+    ...(branchNames ? { branchNames } : {}),
+    ...(outputPath ? { outputPath } : {}),
+  });
+
+  for (const branch of result.report.branches) {
+    const signed = branch.deltaFiles >= 0 ? '+' : '';
+    console.log('\n' + branch.name);
+    console.log('  Índice: ' + branch.indexed.files.toLocaleString('es-ES') + ' archivos');
+    console.log('  Ahora:  ' + branch.live.files.toLocaleString('es-ES') + ' archivos');
+    console.log('  Cambio: ' + signed + branch.deltaFiles.toLocaleString('es-ES') + ' archivos');
+    console.log('  Enlaces detectados: ' + branch.live.symlinks);
+    console.log('  Errores: ' + branch.live.errors);
+    for (const item of branch.topDifferences.slice(0, 5)) {
+      console.log('    ' + (item.deltaFiles >= 0 ? '+' : '') + item.deltaFiles + ' | ' + item.path);
+    }
+  }
+  console.log('\nInforme JSON: ' + result.outputPath);
+  console.log('No se han modificado los archivos inspeccionados.');
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command === 'scan') return runScan(args);
   if (command === 'show') return runShow(args);
   if (command === 'html') return runHtml(args);
+  if (command === 'audit') return runAudit(args);
   usage();
 }
 
