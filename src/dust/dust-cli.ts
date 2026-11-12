@@ -9,11 +9,27 @@ function pick(en: string, es: string): string {
   return getLanguage() === 'es' ? es : en;
 }
 
-function usage(): never {
+function printDustHelp(): void {
+  console.log(pick('AnSysWarden · Dust · Help','AnSysWarden · Dust · Ayuda'));
   console.log(pick('Usage:', 'Uso:'));
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
-  console.log(`  ./ansys dust scan <${pick('path', 'ruta')}> [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]`);
+  console.log('  ./ansys dust scan <ruta> [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]');
+  console.log(pick('Options:', 'Opciones:'));
+  console.log('  --full              ' + pick('Request full listing','Solicitar listado completo'));
+  console.log('  --depth N           ' + pick('Maximum depth','Profundidad máxima'));
+  console.log('  --min-size SIZE     ' + pick('Minimum size','Tamaño mínimo'));
+  console.log('  --ai-depth N        ' + pick('AI depth','Profundidad IA'));
+  console.log('  --ai-max-entries N  ' + pick('AI entry limit','Límite de entradas IA'));
+  console.log('  --html [PATH]       ' + pick('HTML output','Salida HTML'));
+  console.log(pick('Examples:', 'Ejemplos:'));
+  console.log('  ./ansys dust status');
+  console.log('  ./ansys dust scan "C:/Users/nalar/Desktop" --depth 3');
+  console.log(pick('Native inventory: ./ansys tree scan','Inventario nativo: ./ansys tree scan'));
+}
+
+function usage(): never {
+  printDustHelp();
   process.exit(1);
 }
 
@@ -90,6 +106,11 @@ function startScanProgress(): () => void {
 
 async function run(): Promise<void> {
   const [, , command, ...args] = process.argv;
+  if (!command || command === 'help' || command === '--help' || command === '-h' ||
+      args.includes('--help') || args.includes('-h')) {
+    printDustHelp();
+    return;
+  }
   const dust = new DustScanner();
 
   if (command === 'install') {
