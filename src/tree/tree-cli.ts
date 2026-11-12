@@ -7,6 +7,7 @@ import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
 import { measureAllocatedSpace } from './tree-allocation';
 import { analyzeTreeAge } from './tree-age';
+import { analyzeTreeActivity } from './tree-activity';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
@@ -17,6 +18,7 @@ function usage(): never {
   console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
   console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
   console.log('  ./ansys-tree age [--days 180] [--top 25] [--out informe.json]');
+  console.log('  ./ansys-tree activity [--days 180] [--out informe.json]');
   process.exit(1);
 }
 
@@ -269,6 +271,29 @@ async function runAge(args: string[]): Promise<void> {
   console.log('No implica desuso ni autorización para borrar.');
 }
 
+async function runActivity(args: string[]): Promise<void> {
+  const metadata = await loadLatestMetadata();
+  const days = readPositiveInt(args, '--days') ?? 180;
+  const outputPath = readOption(args, '--out');
+  const result = await analyzeTreeActivity(metadata, {
+    days, ...(outputPath ? { outputPath } : {}),
+  });
+  console.log('\nAnSysWarden · Actividad y familias (solo lectura)');
+  console.log('────────────────────────────────────────');
+  console.log('Índice: ' + metadata.id);
+  console.log('Fecha del índice: ' + metadata.createdAt);
+  console.log('Umbral: ' + days + ' días sin cambios');
+  console.log('Carpetas reconocidas: ' + result.report.candidatesFound.toLocaleString('es-ES'));
+  console.log('Para revisar: ' + result.report.candidatesToReview.toLocaleString('es-ES'));
+  for (const candidate of result.report.candidates.slice(0, 20)) {
+    console.log('  [' + candidate.suggestion + '] ' + formatBytes(candidate.logicalBytes) +
+      ' · ' + candidate.family + ' · ' + candidate.path);
+  }
+  console.log('Informe: ' + result.outputPath);
+  console.log('REVISAR no autoriza borrar. No se han modificado archivos inspeccionados.');
+  console.log('HTML: ./ansys-tree html --out escritorio_actividad.html');
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command === 'scan') return runScan(args);
@@ -277,6 +302,7 @@ async function main(): Promise<void> {
   if (command === 'audit') return runAudit(args);
   if (command === 'allocated') return runAllocated(args);
   if (command === 'age') return runAge(args);
+  if (command === 'activity') return runActivity(args);
   usage();
 }
 

@@ -1,11 +1,12 @@
 import { createReadStream, createWriteStream } from 'node:fs';
-import { access, mkdir, rename, rm } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { finished } from 'node:stream/promises';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { dirname, resolve } from 'node:path';
 import type { TreeIndexRecord, TreeScanMetadata } from './native-tree-scanner';
 import { ALLOCATION_SCHEMA, defaultAllocationPath, type AllocatedFileRecord, type AllocationSummary } from './tree-allocation';
+import { defaultActivityPath, TREE_ACTIVITY_SCHEMA, type ActivityReport } from './tree-activity';
 
 interface TreeHtmlOptions {
   indexPath: string;
@@ -49,6 +50,18 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
     if (options.allocationPath || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 
+  let activityReport: ActivityReport | null = null;
+  const activityPath = defaultActivityPath(options.metadata);
+  try {
+    const parsed = JSON.parse(await readFile(activityPath, 'utf8')) as ActivityReport;
+    if (parsed.schema === TREE_ACTIVITY_SCHEMA && parsed.scanId === options.metadata.id &&
+        Array.isArray(parsed.candidates)) {
+      activityReport = parsed;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
   const summaries = new Map<string, number>();
   await readIndex(indexPath, record => {
     if (record.record === 'directory-summary') summaries.set(record.path, record.sizeBytes);
@@ -81,7 +94,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 150px 150px 150px 150px 150px 80px;align-items:center;width:100%;min-width:1370px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
 .toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
-.size{display:block;width:150px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified,.created,.accessed{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
+.size{display:block;width:150px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified,.created,.accessed{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.artifact-label{margin-left:8px;padding:1px 5px;border:1px solid #626b78;border-radius:4px;font-size:11px;white-space:nowrap;color:#d9e1f0}.artifact-label.review{border-color:#ad8b40;color:#f8d18b}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
 .name{overflow:hidden;text-overflow:ellipsis;min-width:0}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{color:var(--muted);font-size:11px;text-align:right;padding-left:10px}
 .error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
@@ -98,6 +111,11 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     <select id="typeFilter">
       <option value="all">Todo</option><option value="directory">Carpetas</option>
       <option value="file">Archivos</option><option value="symlink">Enlaces</option><option value="error">Errores</option>
+    </select>
+    <select id="activityFilter" aria-label="Filtrar familias de artefactos">
+      <option value="all">Actividad: todas</option>
+      <option value="detected">Familias detectadas</option>
+      <option value="review">Familias para revisar</option>
     </select>
     <button id="expand3" type="button">Expandir 3 niveles</button>
     <button id="collapse" type="button">Colapsar todo</button>
@@ -122,6 +140,8 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   <span>Bytes exactos: <strong id="exactTotal"></strong></span>
   <span>Ocupado en archivos medidos: <strong id="allocatedTotal">No disponible (no medido)</strong></span>
   <span>Medición física: <strong id="allocationStatus">No disponible</strong></span>
+  <span>Familias detectadas: <strong id="artifactCount">Sin analizar</strong></span>
+  <span>Para revisar: <strong id="artifactReview">—</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
 <main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Última modificación</span><span>Creación</span><span>Último acceso registrado</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
@@ -167,7 +187,23 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       }
     });
 
+    const activityView = activityReport ? {
+      thresholdDays: activityReport.thresholdDays,
+      candidates: activityReport.candidates
+        .filter(candidate => directoryIds.has(candidate.path))
+        .map(candidate => ({
+          id: directoryIds.get(candidate.path),
+          family: candidate.family,
+          activity: candidate.activity,
+          status: candidate.suggestion,
+          evidence: candidate.evidence,
+          reason: candidate.reason,
+          confidence: candidate.confidence,
+        })),
+    } : null;
     await write(String.raw`]}</script>
+<script id="activityMetadata" type="application/json">` +
+      safeScriptJson(activityView) + String.raw`</script>
 <script id="allocationMetadata" type="application/json">` +
       safeScriptJson(allocationSummary) + String.raw`</script>
 <script>
@@ -178,6 +214,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const more = document.getElementById('more');
   const search = document.getElementById('search');
   const filter = document.getElementById('typeFilter');
+  const activityFilter = document.getElementById('activityFilter');
   const expand3 = document.getElementById('expand3');
   const collapse = document.getElementById('collapse');
   const sizeIndent = document.getElementById('sizeIndent');
@@ -205,6 +242,15 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const metadata = payload.metadata;
   const nodes = payload.nodes;
   const allocation = JSON.parse(document.getElementById('allocationMetadata').textContent);
+  const activityData = JSON.parse(document.getElementById('activityMetadata').textContent);
+  document.getElementById('activityMetadata').remove();
+  const activityById = new Map();
+  if (activityData) {
+    for (const candidate of activityData.candidates) activityById.set(candidate.id, candidate);
+    document.getElementById('artifactCount').textContent = activityData.candidates.length.toLocaleString('es-ES');
+    document.getElementById('artifactReview').textContent =
+      activityData.candidates.filter(c => c.status === 'REVISAR').length.toLocaleString('es-ES');
+  }
   document.getElementById('allocationMetadata').remove();
   document.getElementById('payload').remove();
   // Fecha más reciente conocida del contenido de cada carpeta.
@@ -358,13 +404,18 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   function computeMatches() {
     const query = search.value.trim().toLowerCase();
     const kind = filter.value;
-    filtering = Boolean(query) || kind !== 'all';
+    const activityKind = activityFilter.value;
+    filtering = Boolean(query) || kind !== 'all' || activityKind !== 'all';
     if (!filtering) { mask = null; return; }
 
     mask = new Uint8Array(nodes.length);
     const pathQuery = query.includes('/') || query.includes(String.fromCharCode(92));
     for (let i = 0; i < nodes.length; i++) {
       if (kind !== 'all' && names[nodes[i][1]] !== kind) continue;
+      if (activityKind !== 'all') {
+        const candidate = activityById.get(i);
+        if (!candidate || (activityKind === 'review' && candidate.status !== 'REVISAR')) continue;
+      }
       if (query && !String(nodes[i][2]).toLowerCase().includes(query)
           && (!pathQuery || !pathOf(i).toLowerCase().includes(query))) continue;
 
@@ -498,7 +549,19 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     // La jerarquía y el número de archivos quedan juntos; el tamaño se
     // alinea a la derecha, como en la referencia del usuario.
     treeCell.append(toggle, icon, name);
-    if (type === 0) treeCell.append(fileCount);
+    if (type === 0) {
+      treeCell.append(fileCount);
+      const artifact = activityById.get(id);
+      if (artifact) {
+        const marker = document.createElement('span');
+        marker.className = 'artifact-label' + (artifact.status === 'REVISAR' ? ' review' : '');
+        marker.textContent = artifact.status === 'REVISAR' ? 'REVISAR' : 'OBSERVAR';
+        marker.title = artifact.family + ' · ' + artifact.activity + ' · ' +
+          artifact.evidence + ' · ' + artifact.reason +
+          ' · Confianza en el patrón: ' + artifact.confidence;
+        treeCell.append(marker);
+      }
+    }
     content.append(treeCell, size, allocatedCell, modifiedCell, createdCell, accessedCell, kind);
     row.append(bar, content);
     if (hasChildren) {
@@ -555,6 +618,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   }
   search.addEventListener('input', onFilterChanged);
   filter.addEventListener('change', onFilterChanged);
+  activityFilter.addEventListener('change', onFilterChanged);
 
   more.onclick = () => { limit += PAGE_SIZE; render(); };
   sizeIndent.onclick = () => {
