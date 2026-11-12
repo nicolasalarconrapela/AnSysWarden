@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
+import { measureAllocatedSpace, defaultAllocationPath } from './tree-allocation';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
@@ -13,6 +14,7 @@ function usage(): never {
   console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
   console.log('  ./ansys-tree html [--out archivo.html] [--index indice.jsonl]');
   console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
+  console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
   process.exit(1);
 }
 
@@ -214,12 +216,40 @@ async function runAudit(args: string[]): Promise<void> {
   console.log('No se han modificado los archivos inspeccionados.');
 }
 
+async function runAllocated(args: string[]): Promise<void> {
+  const metadata = await loadLatestMetadata();
+  if (metadata.entries === 0) throw new Error('El índice está vacío; escanea primero una carpeta válida.');
+  const outputPath = readOption(args, '--out');
+  console.log('\nAnSysWarden · Espacio asignado (Windows, solo lectura)');
+  console.log('────────────────────────────────────────');
+  console.log('Escaneo:  ' + metadata.id);
+  console.log('Archivos: ' + metadata.files.toLocaleString('es-ES'));
+  console.log('Tamaño lógico del índice: ' + formatBytes(metadata.sizeBytes));
+  const result = await measureAllocatedSpace(metadata, {
+    ...(outputPath ? { outputPath } : {}),
+    onProgress: (done, total) => {
+      process.stdout.write('\rMedidos: ' + done.toLocaleString('es-ES') +
+        ' / ' + total.toLocaleString('es-ES') + ' archivos   ');
+    },
+  });
+  process.stdout.write('\n');
+  console.log('Medidos correctamente: ' + result.summary.measuredFiles.toLocaleString('es-ES'));
+  console.log('Fallos:               ' + result.summary.failedFiles.toLocaleString('es-ES'));
+  console.log('Bytes asignados en archivos medidos: ' +
+    result.summary.allocatedBytesMeasured.toLocaleString('es-ES'));
+  console.log('Estado: ' + (result.summary.complete ? 'COMPLETO' : 'PARCIAL'));
+  console.log('Resultado: ' + result.outputPath);
+  console.log('No se han modificado los archivos inspeccionados.');
+  console.log('Regenera el HTML con: ./ansys-tree html --out escritorio_espacio.html');
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command === 'scan') return runScan(args);
   if (command === 'show') return runShow(args);
   if (command === 'html') return runHtml(args);
   if (command === 'audit') return runAudit(args);
+  if (command === 'allocated') return runAllocated(args);
   usage();
 }
 
