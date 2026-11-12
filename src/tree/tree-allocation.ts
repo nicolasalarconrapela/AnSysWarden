@@ -40,8 +40,8 @@ export function defaultAllocationPath(metadata: TreeScanMetadata): string {
 // sería demasiado costoso en índices de 100.000 o más ficheros.
 const psScript = String.raw`
 $ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $definition = @'
 using System;
 using System.ComponentModel;
