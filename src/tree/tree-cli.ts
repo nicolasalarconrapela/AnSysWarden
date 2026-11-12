@@ -5,14 +5,14 @@ import { resolve } from 'node:path';
 import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
-import { measureAllocatedSpace, defaultAllocationPath } from './tree-allocation';
+import { measureAllocatedSpace } from './tree-allocation';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
   console.log('Uso:');
   console.log('  ./ansys-tree scan <ruta> [--out indice.jsonl] [--html [archivo.html]]');
   console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
-  console.log('  ./ansys-tree html [--out archivo.html] [--index indice.jsonl]');
+  console.log('  ./ansys-tree html [--out archivo.html] [--allocation medicion.jsonl]');
   console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
   console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
   process.exit(1);
@@ -169,7 +169,10 @@ async function runHtml(args: string[]): Promise<void> {
   }
   const indexPath = resolve(readOption(args, '--index') ?? metadata.indexPath);
   const outputPath = resolve(readOption(args, '--out') ?? `${metadata.id}.html`);
-  const htmlPath = await writeNativeTreeHtml({ metadata, indexPath, outputPath });
+  const allocationPath = readOption(args, '--allocation');
+  const htmlPath = await writeNativeTreeHtml({ metadata, indexPath, outputPath,
+    ...(allocationPath ? { allocationPath } : {}),
+  });
 
   console.log('\nAnSysWarden · Tree HTML');
   console.log('────────────────────────────────────────');
