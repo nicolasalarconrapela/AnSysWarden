@@ -46,7 +46,7 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
       throw new Error('El archivo de mediciones está incompleto.');
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (options.allocationPath || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 
   const summaries = new Map<string, number>();
