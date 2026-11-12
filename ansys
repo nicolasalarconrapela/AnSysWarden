@@ -272,10 +272,12 @@ Uso:
   ./ansys [--lang en|es] worker mobile --backend http://IP_PC:8787 [--once] [--poll-ms N]
   ./ansys [--lang en|es] doctor
   ./ansys [--lang en|es] classify <ruta>
-  ./ansys [--lang en|es] scan <ruta> [--min-mb N]
+  ./ansys [--lang en|es] scan <ruta> [--min-mb N]  # escaneo básico
+  ./ansys tree scan <ruta> --html [archivo.html]  # inventario completo
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <ruta> [--depth N] [--min-size SIZE]
   ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [opciones]
+  ./ansys help scan|tree|classify|inspect|review|ai|test|worker|backend|dust
   ./ansys help tree [comando]
   ./ansys tree <comando> --help
   ./ansys [--lang en|es] inspect <ruta>
@@ -305,10 +307,12 @@ Usage:
   ./ansys [--lang en|es] worker mobile --backend http://PC_IP:8787 [--once] [--poll-ms N]
   ./ansys [--lang en|es] doctor
   ./ansys [--lang en|es] classify <path>
-  ./ansys [--lang en|es] scan <path> [--min-mb N]
+  ./ansys [--lang en|es] scan <path> [--min-mb N]  # basic scan
+  ./ansys tree scan <path> --html [file.html]  # full inventory
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <path> [--depth N] [--min-size SIZE]
   ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [options]
+  ./ansys help scan|tree|classify|inspect|review|ai|test|worker|backend|dust
   ./ansys help tree [command]
   ./ansys tree <command> --help
   ./ansys [--lang en|es] inspect <path>
@@ -541,8 +545,91 @@ show_logs() {
   find "$LOG_DIR" -maxdepth 1 -name '*.jsonl' -type f -printf '  %f\n' 2>/dev/null | sort || true
 }
 
+
+command_help() {
+  local topic="$1"
+  case "$topic" in
+    scan)
+      cat <<'EOF'
+AnSysWarden · Escaneo básico
+Uso:
+  ./ansys scan <ruta> [--min-mb N]
+Opciones:
+  <ruta>        Carpeta obligatoria.
+  --min-mb N    Tamaño mínimo para el escaneo básico, en MiB.
+Ejemplo:
+  ./ansys scan "C:/Users/nalar/Desktop" --min-mb 10
+
+¿Quieres el inventario completo de todos los archivos?
+  ./ansys tree scan "C:/Users/nalar/Desktop" --html escritorio.html
+  ./ansys tree scan --help
+EOF
+      ;;
+    classify)
+      printf '%s\n' 'AnSysWarden · Clasificar' 'Uso: ./ansys classify <ruta>' 'Ejemplo: ./ansys classify "C:/Users/nalar/Desktop/proyecto"'
+      ;;
+    inspect)
+      printf '%s\n' 'AnSysWarden · Inspeccionar' 'Uso: ./ansys inspect <ruta>' 'Ejemplo: ./ansys inspect "C:/Users/nalar/Desktop/proyecto"'
+      ;;
+    review)
+      printf '%s\n' 'AnSysWarden · Revisión' 'Uso: ./ansys review export <ruta>' 'Ejemplo: ./ansys review export "C:/Users/nalar/Desktop/proyecto"'
+      ;;
+    ai)
+      printf '%s\n' 'AnSysWarden · IA' 'Uso: ./ansys ai start|stop|status|test|models' '     ./ansys ai pull <modelo>' '     ./ansys ai pull-mobile-candidate'
+      ;;
+    test)
+      printf '%s\n' 'AnSysWarden · Test' 'Uso: ./ansys test safety|rules|overlap|tree|context|candidates' '     ./ansys test benchmark [--offset N] [--limit N]' '     ./ansys test models [--models a,b] [--timeout-ms N]' '     ./ansys test e2e --backend http://IP_PC:8787'
+      ;;
+    worker)
+      printf '%s\n' 'AnSysWarden · Worker' 'Uso: ./ansys worker mobile --backend http://IP_PC:8787 [--once] [--poll-ms N]'
+      ;;
+    backend)
+      printf '%s\n' 'AnSysWarden · Backend' 'Uso: ./ansys backend token' '     ./ansys backend serve [--host IP] [--port N]'
+      ;;
+    config)
+      printf '%s\n' 'AnSysWarden · Configuración' 'Uso: ./ansys config show|path' '     ./ansys config language en|es'
+      ;;
+    logs)
+      printf '%s\n' 'AnSysWarden · Logs' 'Uso: ./ansys logs [--raw]'
+      ;;
+    doctor)
+      printf '%s\n' 'AnSysWarden · Doctor' 'Uso: ./ansys doctor'
+      ;;
+    tree)
+      shift
+      exec "$ROOT_DIR/ansys-tree" help "$@"
+      ;;
+    dust)
+      run_ts "$ROOT_DIR/src/dust/dust-cli.ts" --help
+      ;;
+    *) usage ;;
+  esac
+}
+
+command_error() {
+  local topic="$1"
+  shift
+  err "$*"
+  printf '\n' >&2
+  command_help "$topic" >&2
+  exit 2
+}
+
+require_path_arg() {
+  local topic="$1"
+  local value="$2"
+  if [[ -z "$value" || "$value" == -* ]]; then
+    command_error "$topic" "Falta la ruta obligatoria. Consulta el ejemplo:"
+  fi
+}
+
 main() {
   local command="${1:-}"
+
+  if [[ "$command" != "help" && ( "${2:-}" == "--help" || "${2:-}" == "-h" || "${2:-}" == "help" ) ]]; then
+    command_help "$command" "${3:-}"
+    return 0
+  fi
 
   case "$command" in
     config)
@@ -558,22 +645,22 @@ main() {
         models) ai_models ;;
         pull) ai_pull "${3:-}" ;;
         pull-mobile-candidate) ai_pull_mobile_candidate ;;
-        *) usage; exit 1 ;;
+        *) command_error ai "Subcomando de IA desconocido." ;;
       esac
       ;;
     worker)
       case "${2:-}" in
         mobile) shift 2; run_ts "$ROOT_DIR/src/worker/mobile-worker.ts" "$@" ;;
-        *) err "$(msg unknown_worker "${2:-}")"; usage; exit 1 ;;
+        *) command_error worker "Subcomando de worker desconocido." ;;
       esac
       ;;
     doctor) run_ts "$ROOT_DIR/src/cli.ts" doctor ;;
     classify)
-      [[ -n "${2:-}" ]] || { err "$(msg path_classify)"; exit 1; }
+      require_path_arg classify "${2:-}"
       run_ts "$ROOT_DIR/src/cli.ts" classify "$2"
       ;;
     scan)
-      [[ -n "${2:-}" ]] || { err "$(msg path_scan)"; exit 1; }
+      require_path_arg scan "${2:-}"
       shift
       run_ts "$ROOT_DIR/src/cli.ts" scan "$@"
       ;;
@@ -589,13 +676,11 @@ main() {
       shift
       case "${1:-}" in
         ''|-h|--help) usage ;;
-        tree) shift; exec "$ROOT_DIR/ansys-tree" help "$@" ;;
-        dust) run_ts "$ROOT_DIR/src/dust/dust-cli.ts" --help ;;
-        *) usage ;;
+        *) command_help "$@" ;;
       esac
       ;;
     inspect)
-      [[ -n "${2:-}" ]] || { err "$(msg path_inspect)"; exit 1; }
+      require_path_arg inspect "${2:-}"
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
       ;;
     backend)
@@ -614,16 +699,16 @@ main() {
         models) shift 2; run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" "$@" ;;
         mobile-models) shift 2; run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@" ;;
         e2e) shift 2; run_ts "$ROOT_DIR/src/tests/backend-gemma-e2e-cli.ts" "$@" ;;
-        *) err "$(msg unknown_test "${2:-}")"; usage; exit 1 ;;
+        *) command_error test "Prueba desconocida." ;;
       esac
       ;;
     review)
       case "${2:-}" in
         export)
-          [[ -n "${3:-}" ]] || { err "$(msg review_path)"; exit 1; }
+          require_path_arg review "${3:-}"
           run_ts "$ROOT_DIR/src/review/export-review.ts" "$3"
           ;;
-        *) err "$(msg unknown_review "${2:-}")"; usage; exit 1 ;;
+        *) command_error review "Subcomando de revisión desconocido." ;;
       esac
       ;;
     logs) show_logs "${2:-}" ;;

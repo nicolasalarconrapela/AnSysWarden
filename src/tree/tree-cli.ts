@@ -234,7 +234,12 @@ async function loadLatestMetadata(): Promise<TreeScanMetadata> {
 
 async function runScan(args: string[]): Promise<void> {
   const inputPath = args[0];
-  if (!inputPath || inputPath.startsWith('--')) usage();
+  if (!inputPath || inputPath.startsWith('--')) {
+    console.error('[ERROR] Falta la carpeta raíz que deseas inventariar.');
+    printHelp('scan');
+    process.exitCode = 2;
+    return;
+  }
 
   const outputPath = readOption(args, '--out');
   const htmlOption = readOptionalPathOption(args, '--html');
