@@ -14,7 +14,7 @@ interface TreeHtmlOptions {
   allocationPath?: string;
 }
 
-// Los nodos se guardan como tuplas compactas [padre, tipo, nombre, bytes, mtime].
+// Tuplas compactas [padre, tipo, nombre, bytes, mtime, ocupado, birthtime, atime].
 // El navegador solo crea elementos DOM para las filas visibles (paginadas).
 // El HTML es autónomo: abre directamente con file:// sin servidor ni CDN.
 export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<string> {
@@ -76,12 +76,12 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
 .toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.unit-label{align-self:center;color:var(--muted)}.toolbar button:hover{border-color:#777}
-.tree{width:100%;overflow:auto}.columns-header{display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 140px 95px;min-width:1120px;padding:6px 12px;color:var(--muted);font-size:12px;background:#202020;gap:0}.columns-header span:not(:first-child){text-align:right;padding-right:12px}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
+.tree{width:100%;overflow:auto}.columns-header{display:grid;grid-template-columns:minmax(0,1fr) 150px 150px 150px 150px 150px 80px;min-width:1370px;padding:6px 12px;color:var(--muted);font-size:12px;background:#202020;gap:0}.columns-header span:not(:first-child){text-align:right;padding-right:12px}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
 .row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
-.content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 140px 95px;align-items:center;width:100%;min-width:1120px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
+.content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 150px 150px 150px 150px 150px 80px;align-items:center;width:100%;min-width:1370px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
 .toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
-.size{display:block;width:174px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
+.size{display:block;width:150px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified,.created,.accessed{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
 .name{overflow:hidden;text-overflow:ellipsis;min-width:0}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{color:var(--muted);font-size:11px;text-align:right;padding-left:10px}
 .error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
@@ -124,7 +124,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   <span>Medición física: <strong id="allocationStatus">No disponible</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
-<main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Último cambio</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
+<main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Última modificación</span><span>Creación</span><span>Último acceso registrado</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
 <div class="foot">
   <span id="status" role="status">Preparando índice…</span>
   <button id="more" type="button" hidden>Mostrar 400 más</button>
@@ -143,7 +143,8 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
         const type = record.type === 'directory' ? 0 : record.type === 'file' ? 1 : record.type === 'symlink' ? 2 : 3;
         const size = type === 0 ? summaries.get(record.path) ?? 0 : record.sizeBytes;
         const row = [parentId, type, record.name, size, record.mtimeMs,
-          type === 1 ? (allocations.get(record.path) ?? null) : null];
+          type === 1 ? (allocations.get(record.path) ?? null) : null,
+          record.birthtimeMs ?? null, record.atimeMs ?? null];
         if (!first) await write(',');
         await write(safeScriptJson(row));
         first = false;
@@ -375,6 +376,15 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     }
   }
 
+  function formatFileDate(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? new Date(value).toLocaleString('es-ES', {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        })
+      : '—';
+  }
+
   function makeRow(id, depth) {
     const node = nodes[id];
     const type = node[1];
@@ -449,14 +459,27 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 
     const modifiedCell = document.createElement('span');
     modifiedCell.className = 'modified';
-    const modifiedAt = type === 5 ? 0 :
+    const modifiedAt = type === 5 ? null :
       type === 0 ? latestChange[id] : node[4];
-    modifiedCell.textContent = Number.isFinite(modifiedAt) && modifiedAt > 0
-      ? new Date(modifiedAt).toLocaleDateString('es-ES') : '—';
+    modifiedCell.textContent = formatFileDate(modifiedAt);
     modifiedCell.title = type === 0
-      ? 'Última modificación conocida en esta carpeta o descendientes. No es último uso.'
+      ? 'Última modificación conocida entre esta carpeta y sus descendientes. No es último uso.'
       : type === 5 ? 'Nodo virtual: sin fecha propia'
-      : 'Fecha de modificación (mtime), no última utilización';
+      : 'Fecha de modificación del archivo (mtime)';
+
+    const createdCell = document.createElement('span');
+    createdCell.className = 'created';
+    createdCell.textContent = type === 5 ? '—' : formatFileDate(node[6]);
+    createdCell.title = type === 5
+      ? 'Nodo virtual sin fechas'
+      : 'Creación de la entrada en el sistema de archivos (birthtime). Puede variar al copiar.';
+
+    const accessedCell = document.createElement('span');
+    accessedCell.className = 'accessed';
+    accessedCell.textContent = type === 5 ? '—' : formatFileDate(node[7]);
+    accessedCell.title = type === 5
+      ? 'Nodo virtual sin fechas'
+      : 'Último acceso registrado (atime), no necesariamente uso humano. Puede no actualizarse.';
 
     const fileCount = document.createElement('span');
     fileCount.className = 'file-count';
@@ -476,7 +499,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     // alinea a la derecha, como en la referencia del usuario.
     treeCell.append(toggle, icon, name);
     if (type === 0) treeCell.append(fileCount);
-    content.append(treeCell, size, allocatedCell, modifiedCell, kind);
+    content.append(treeCell, size, allocatedCell, modifiedCell, createdCell, accessedCell, kind);
     row.append(bar, content);
     if (hasChildren) {
       row.style.cursor = 'pointer';

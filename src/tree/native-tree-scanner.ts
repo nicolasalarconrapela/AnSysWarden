@@ -19,6 +19,7 @@ export interface TreeEntryRecord {
   sizeBytes: number;
   mtimeMs: number;
   atimeMs: number;
+  birthtimeMs?: number;
 }
 
 export interface TreeDirectorySummaryRecord {
@@ -204,6 +205,7 @@ export class NativeTreeScanner {
         sizeBytes: type === 'directory' ? 0 : Math.max(0, stats.size),
         mtimeMs: stats.mtimeMs,
         atimeMs: stats.atimeMs,
+        birthtimeMs: stats.birthtimeMs,
       });
       emitProgress(path);
 
