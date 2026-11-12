@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
@@ -11,7 +11,7 @@ import { analyzeTreeActivity } from './tree-activity';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
-  console.log('Uso:');
+  console.log('Uso (entrada principal: ./ansys tree):');
   console.log('  ./ansys-tree scan <ruta> [--out indice.jsonl] [--html [archivo.html]]');
   console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
   console.log('  ./ansys-tree html [--out archivo.html] [--allocation medicion.jsonl]');
@@ -19,6 +19,7 @@ function usage(): never {
   console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
   console.log('  ./ansys-tree age [--days 180] [--top 25] [--out informe.json]');
   console.log('  ./ansys-tree activity [--days 180] [--out informe.json]');
+  console.log('  ./ansys tree activity --days 180  # delega en ansys-tree');
   process.exit(1);
 }
 
@@ -54,10 +55,91 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(decimals)} ${units[unit]}`;
 }
 
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    throw error;
+  }
+}
+
+/**
+ * latest.json puede guardar rutas absolutas de otro workspace, o apuntar
+ * a un índice eliminado. Nunca reescribir latest.json ni elegir a ciegas.
+ * Únicamente se recuperan índices cuyo metadato corresponde a la MISMA raíz.
+ */
 async function loadLatestMetadata(): Promise<TreeScanMetadata> {
-  const latestPath = resolve('.ansyswarden', 'tree', 'latest.json');
-  const raw = await readFile(latestPath, 'utf8');
-  return JSON.parse(raw) as TreeScanMetadata;
+  const treeDir = resolve('.ansyswarden', 'tree');
+  const latestPath = join(treeDir, 'latest.json');
+  let latest: TreeScanMetadata;
+  try {
+    latest = JSON.parse(await readFile(latestPath, 'utf8')) as TreeScanMetadata;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new Error('No existe ' + latestPath +
+        '. Escanea primero con: ./ansys tree scan "C:/Users/nalar/Desktop" --html escritorio.html');
+    }
+    throw error;
+  }
+  if (!latest.id || !latest.rootPath || !latest.indexPath) {
+    throw new Error('latest.json no contiene un escaneo válido. No se ha alterado ningún archivo.');
+  }
+
+  const scansDir = join(treeDir, 'scans');
+  const direct = resolve(latest.indexPath);
+  if (await isFile(direct)) return latest;
+
+  // Caso 1: se movió el workspace; el índice sigue bajo scans/<id>.jsonl.
+  const relocated = join(scansDir, latest.id + '.jsonl');
+  if (await isFile(relocated)) {
+    console.warn('[AVISO] Ruta del índice desplazada: ' + direct);
+    console.warn('[AVISO] Se usa el mismo escaneo en: ' + relocated);
+    return { ...latest, indexPath: relocated };
+  }
+
+  // Caso 2: latest.json quedó apuntando a un índice eliminado. Recuperar
+  // solamente escaneos de la misma raíz, comprobando metadatos + JSONL.
+  let entries: string[] = [];
+  try {
+    entries = (await readdir(scansDir))
+      .filter(name => name.endsWith('.meta.json'))
+      .sort().reverse();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  for (const name of entries) {
+    let candidate: TreeScanMetadata;
+    try {
+      candidate = JSON.parse(await readFile(join(scansDir, name), 'utf8')) as TreeScanMetadata;
+    } catch {
+      continue; // Solo omitir metadatos secundarios ilegibles.
+    }
+    if (!candidate.id || !candidate.rootPath || candidate.entries <= 0) continue;
+    const sameRoot = process.platform === 'win32'
+      ? candidate.rootPath.toLowerCase() === latest.rootPath.toLowerCase()
+      : candidate.rootPath === latest.rootPath;
+    if (!sameRoot) continue;
+    // Para índices con ruta personalizada, conservar la ruta verificada.
+    const candidates = [resolve(candidate.indexPath), join(scansDir, candidate.id + '.jsonl')];
+    for (const indexPath of candidates) {
+      if (!(await isFile(indexPath))) continue;
+      console.warn('[AVISO] El índice referenciado por latest.json no existe: ' + direct);
+      console.warn('[AVISO] Recuperado escaneo anterior de la misma raíz: ' + candidate.id);
+      console.warn('[AVISO] Fecha del índice recuperado: ' + candidate.createdAt);
+      return { ...candidate, indexPath };
+    }
+  }
+
+  throw new Error(
+    'Índice no encontrado: ' + direct + '\n' +
+    'No hay un índice recuperable para la raíz ' + latest.rootPath + '.\n' +
+    'No se han borrado ni modificado archivos. Para reconstruir el índice, ejecuta:\n' +
+    '  ./ansys tree scan "' + latest.rootPath + '" --html escritorio.html\n' +
+    'Revisa antes si se movió o limpió .ansyswarden/tree/scans/.'
+  );
 }
 
 async function runScan(args: string[]): Promise<void> {

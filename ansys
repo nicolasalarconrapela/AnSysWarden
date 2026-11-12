@@ -275,6 +275,7 @@ Uso:
   ./ansys [--lang en|es] scan <ruta> [--min-mb N]
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <ruta> [--depth N] [--min-size SIZE]
+  ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [opciones]
   ./ansys [--lang en|es] inspect <ruta>
   ./ansys [--lang en|es] backend token
   ./ansys [--lang en|es] backend serve [--host IP] [--port N]
@@ -305,6 +306,7 @@ Usage:
   ./ansys [--lang en|es] scan <path> [--min-mb N]
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <path> [--depth N] [--min-size SIZE]
+  ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [options]
   ./ansys [--lang en|es] inspect <path>
   ./ansys [--lang en|es] backend token
   ./ansys [--lang en|es] backend serve [--host IP] [--port N]
@@ -574,6 +576,10 @@ main() {
     dust)
       shift
       run_ts "$ROOT_DIR/src/dust/dust-cli.ts" "$@"
+      ;;
+    tree)
+      shift
+      exec "$ROOT_DIR/ansys-tree" "$@"
       ;;
     inspect)
       [[ -n "${2:-}" ]] || { err "$(msg path_inspect)"; exit 1; }
