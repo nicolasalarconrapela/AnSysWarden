@@ -11,6 +11,7 @@ interface TreeHtmlOptions {
   indexPath: string;
   outputPath: string;
   metadata: TreeScanMetadata;
+  allocationPath?: string;
 }
 
 // Los nodos se guardan como tuplas compactas [padre, tipo, nombre, bytes, mtime].
@@ -22,7 +23,7 @@ export async function writeNativeTreeHtml(options: TreeHtmlOptions): Promise<str
   await mkdir(dirname(outputPath), { recursive: true });
 
   // Las mediciones se guardan fuera del índice original.
-  const allocationPath = defaultAllocationPath(options.metadata);
+  const allocationPath = resolve(options.allocationPath ?? defaultAllocationPath(options.metadata));
   const allocations = new Map<string, number | null>();
   let allocationSummary: AllocationSummary | null = null;
   try {
@@ -75,7 +76,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
 .toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.unit-label{align-self:center;color:var(--muted)}.toolbar button:hover{border-color:#777}
-.tree{width:100%;overflow:auto}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
+.tree{width:100%;overflow:auto}.columns-header{display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 95px;min-width:980px;padding:6px 12px;color:var(--muted);font-size:12px;background:#202020;gap:0}.columns-header span:not(:first-child){text-align:right;padding-right:12px}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
 .row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
 .content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 95px;align-items:center;width:100%;min-width:980px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
@@ -123,7 +124,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   <span>Medición física: <strong id="allocationStatus">No disponible</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
-<main><div class="tree" id="rows"><div class="empty-state">Preparando árbol…</div></div></main>
+<main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
 <div class="foot">
   <span id="status" role="status">Preparando índice…</span>
   <button id="more" type="button" hidden>Mostrar 400 más</button>
