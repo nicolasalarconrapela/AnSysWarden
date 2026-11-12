@@ -6,6 +6,7 @@ import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type Tre
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
 import { measureAllocatedSpace } from './tree-allocation';
+import { analyzeTreeAge } from './tree-age';
 
 function usage(): never {
   console.log('AnSysWarden Tree');
@@ -15,6 +16,7 @@ function usage(): never {
   console.log('  ./ansys-tree html [--out archivo.html] [--allocation medicion.jsonl]');
   console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
   console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
+  console.log('  ./ansys-tree age [--days 180] [--top 25] [--out informe.json]');
   process.exit(1);
 }
 
@@ -246,6 +248,27 @@ async function runAllocated(args: string[]): Promise<void> {
   console.log('Regenera el HTML con: ./ansys-tree html --out escritorio_espacio.html');
 }
 
+async function runAge(args: string[]): Promise<void> {
+  const metadata = await loadLatestMetadata();
+  if (metadata.entries === 0) throw new Error('El índice está vacío; ejecuta tree scan antes.');
+  const days = readPositiveInt(args, '--days') ?? 180;
+  const top = readPositiveInt(args, '--top') ?? 25;
+  const outputPath = readOption(args, '--out');
+  const result = await analyzeTreeAge(metadata, {
+    days, top, ...(outputPath ? { outputPath } : {}),
+  });
+  console.log('\nAnSysWarden · Antigüedad (solo lectura)');
+  console.log('────────────────────────────────────────');
+  console.log('Escaneo: ' + result.report.createdAt);
+  console.log('Umbral sin modificar: ' + days + ' días');
+  console.log('Archivos sin cambios: ' + result.report.staleFiles.toLocaleString('es-ES'));
+  console.log('Tamaño lógico: ' + result.report.staleLogicalBytes.toLocaleString('es-ES') + ' B');
+  console.log('Fechas desconocidas: ' + result.report.undatedFiles);
+  console.log('Fechas posteriores al escaneo: ' + result.report.futureDatedFiles);
+  console.log('Informe: ' + result.outputPath);
+  console.log('No implica desuso ni autorización para borrar.');
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command === 'scan') return runScan(args);
@@ -253,6 +276,7 @@ async function main(): Promise<void> {
   if (command === 'html') return runHtml(args);
   if (command === 'audit') return runAudit(args);
   if (command === 'allocated') return runAllocated(args);
+  if (command === 'age') return runAge(args);
   usage();
 }
 

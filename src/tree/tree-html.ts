@@ -76,12 +76,12 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .summary{padding:9px 18px;background:#1b1b1b;border-bottom:1px solid var(--line)}.summary strong{color:var(--text)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar input,.toolbar select,.toolbar button{background:#222;color:var(--text);border:1px solid #3b3b3b;border-radius:5px;padding:7px 9px}
 .toolbar input{min-width:280px;flex:1}.toolbar button{cursor:pointer}.unit-label{align-self:center;color:var(--muted)}.toolbar button:hover{border-color:#777}
-.tree{width:100%;overflow:auto}.columns-header{display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 95px;min-width:980px;padding:6px 12px;color:var(--muted);font-size:12px;background:#202020;gap:0}.columns-header span:not(:first-child){text-align:right;padding-right:12px}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
+.tree{width:100%;overflow:auto}.columns-header{display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 140px 95px;min-width:1120px;padding:6px 12px;color:var(--muted);font-size:12px;background:#202020;gap:0}.columns-header span:not(:first-child){text-align:right;padding-right:12px}.row{position:relative;display:flex;align-items:center;min-height:28px;white-space:nowrap;overflow:hidden}
 .row:hover{background:#262626}.bar{position:absolute;top:1px;bottom:1px;background:var(--bar);opacity:.82;pointer-events:none}
-.content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 95px;align-items:center;width:100%;min-width:980px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
+.content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 174px 174px 140px 95px;align-items:center;width:100%;min-width:1120px;padding:3px 12px;gap:0}.treecell{display:flex;align-items:center;min-width:0;overflow:hidden}
 .toggle{width:18px;border:0;background:transparent;color:#ddd;cursor:pointer;padding:0;font-size:15px;line-height:1;flex-shrink:0}
 .toggle.empty{visibility:hidden}.icon{width:22px;text-align:center;margin-right:4px;flex-shrink:0}
-.size{display:block;width:174px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
+.size{display:block;width:174px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
 .name{overflow:hidden;text-overflow:ellipsis;min-width:0}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{color:var(--muted);font-size:11px;text-align:right;padding-left:10px}
 .error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
@@ -124,7 +124,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   <span>Medición física: <strong id="allocationStatus">No disponible</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
 </div>
-<main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
+<main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Último cambio</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
 <div class="foot">
   <span id="status" role="status">Preparando índice…</span>
   <button id="more" type="button" hidden>Mostrar 400 más</button>
@@ -206,6 +206,15 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const allocation = JSON.parse(document.getElementById('allocationMetadata').textContent);
   document.getElementById('allocationMetadata').remove();
   document.getElementById('payload').remove();
+  // Fecha más reciente conocida del contenido de cada carpeta.
+  // No representa necesariamente la fecha de último uso.
+  const latestChange = new Float64Array(nodes.length);
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const modified = nodes[i][4];
+    if (Number.isFinite(modified) && modified > 0) latestChange[i] = modified;
+    const p = nodes[i][0];
+    if (p >= 0 && latestChange[i] > latestChange[p]) latestChange[p] = latestChange[i];
+  }
   const allocatedTotals = new Float64Array(nodes.length);
   const missingAllocated = new Uint32Array(nodes.length);
   for (let i = nodes.length - 1; i >= 0; i--) {
@@ -438,6 +447,17 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       ? formatBytes(allocatedValue, 'bytes') + ' asignados (archivos)'
       : 'No medido o hay archivos sin medición';
 
+    const modifiedCell = document.createElement('span');
+    modifiedCell.className = 'modified';
+    const modifiedAt = type === 5 ? 0 :
+      type === 0 ? latestChange[id] : node[4];
+    modifiedCell.textContent = Number.isFinite(modifiedAt) && modifiedAt > 0
+      ? new Date(modifiedAt).toLocaleDateString('es-ES') : '—';
+    modifiedCell.title = type === 0
+      ? 'Última modificación conocida en esta carpeta o descendientes. No es último uso.'
+      : type === 5 ? 'Nodo virtual: sin fecha propia'
+      : 'Fecha de modificación (mtime), no última utilización';
+
     const fileCount = document.createElement('span');
     fileCount.className = 'file-count';
     if (type === 0) {
@@ -456,7 +476,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     // alinea a la derecha, como en la referencia del usuario.
     treeCell.append(toggle, icon, name);
     if (type === 0) treeCell.append(fileCount);
-    content.append(treeCell, size, allocatedCell, kind);
+    content.append(treeCell, size, allocatedCell, modifiedCell, kind);
     row.append(bar, content);
     if (hasChildren) {
       row.style.cursor = 'pointer';
