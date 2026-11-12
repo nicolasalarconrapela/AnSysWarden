@@ -9,17 +9,107 @@ import { measureAllocatedSpace } from './tree-allocation';
 import { analyzeTreeAge } from './tree-age';
 import { analyzeTreeActivity } from './tree-activity';
 
+const treeHelp: Record<string, { description: string; args: string; options: string[]; example: string; warning: string }> = {
+  "scan": {
+    "description": "Inventario nativo de archivos y carpetas.",
+    "args": "<ruta> [--out indice.jsonl] [--html [archivo.html]]",
+    "options": [
+      "<ruta>          Carpeta raíz (obligatoria)",
+      "--out PATH      Índice JSONL de salida",
+      "--html [PATH]   Crear HTML, ruta opcional"
+    ],
+    "example": "scan \"C:/Users/nalar/Desktop\" --html escritorio.html",
+    "warning": "No sigue enlaces simbólicos ni junctions."
+  },
+  "show": {
+    "description": "Ver árbol del último índice.",
+    "args": "[ruta] [--depth N] [--files] [--index indice.jsonl]",
+    "options": [
+      "[ruta]          Limitar a carpeta específica",
+      "--depth N       Niveles visibles (por defecto 3)",
+      "--files         Incluir archivos",
+      "--index PATH    Índice JSONL"
+    ],
+    "example": "show --depth 5 --files",
+    "warning": "No realiza un nuevo escaneo."
+  },
+  "html": {
+    "description": "Generar HTML autónomo del índice.",
+    "args": "[--out archivo.html] [--index indice.jsonl] [--allocation medicion.jsonl]",
+    "options": [
+      "--out PATH         Archivo HTML de salida",
+      "--index PATH       Índice JSONL",
+      "--allocation PATH  Medición de espacio asignado"
+    ],
+    "example": "html --out escritorio_actividad.html",
+    "warning": "Usa datos existentes; pueden estar desactualizados."
+  },
+  "audit": {
+    "description": "Comparar índice con carpetas actuales.",
+    "args": "[--branches A,B,C] [--out informe.json]",
+    "options": [
+      "--branches A,B,C  Carpetas a auditar",
+      "--out PATH         Informe JSON"
+    ],
+    "example": "audit --branches ANDROID_Studio,OSS,AnSysWarden",
+    "warning": "No consulta TreeSize; el contenido puede haber cambiado."
+  },
+  "allocated": {
+    "description": "Medir espacio asignado en Windows.",
+    "args": "[--out medicion.jsonl]",
+    "options": [
+      "--out PATH  Informe JSONL de mediciones"
+    ],
+    "example": "allocated",
+    "warning": "Windows solamente; los bytes no incluyen todos los metadatos NTFS."
+  },
+  "age": {
+    "description": "Analizar tiempo sin modificar archivos.",
+    "args": "[--days N] [--top N] [--out informe.json]",
+    "options": [
+      "--days N     Días (por defecto 180; 1..36500)",
+      "--top N      Destacados (por defecto 25; 1..200)",
+      "--out PATH   Informe JSON"
+    ],
+    "example": "age --days 180 --top 25",
+    "warning": "Antiguo no equivale a innecesario."
+  },
+  "activity": {
+    "description": "Detectar familias de artefactos y cambios.",
+    "args": "[--days N] [--out informe.json]",
+    "options": [
+      "--days N     Días sin cambios (por defecto 180; 1..36500)",
+      "--out PATH   Informe JSON"
+    ],
+    "example": "activity --days 180",
+    "warning": "REVISAR no autoriza borrados."
+  }
+};
+
+function printHelp(command?: string): void {
+  console.log('\nAnSysWarden · Tree · Ayuda');
+  console.log('────────────────────────────────────────');
+  if (!command) {
+    console.log('Uso: ./ansys tree <comando> [opciones]');
+    console.log('También disponible: ./ansys-tree <comando>');
+    for (const [key, info] of Object.entries(treeHelp))
+      console.log('  ' + key.padEnd(12) + info.description);
+    console.log('\nEjemplo: ./ansys tree activity --help');
+    return;
+  }
+  const info = Object.prototype.hasOwnProperty.call(treeHelp, command) ? treeHelp[command] : undefined;
+  if (!info) throw new Error('Comando desconocido: ' + command + '. Consulta ./ansys tree --help');
+  console.log(info.description);
+  console.log('\nUso:\n  ./ansys tree ' + command + ' ' + info.args);
+  console.log('\nOpciones:');
+  for (const item of info.options) console.log('  ' + item);
+  console.log('\nEjemplo:\n  ./ansys tree ' + info.example);
+  console.log('\nAdvertencia: ' + info.warning);
+  console.log('Más ayuda: ./ansys tree --help');
+}
+
 function usage(): never {
-  console.log('AnSysWarden Tree');
-  console.log('Uso (entrada principal: ./ansys tree):');
-  console.log('  ./ansys-tree scan <ruta> [--out indice.jsonl] [--html [archivo.html]]');
-  console.log('  ./ansys-tree show [ruta] [--depth N] [--files] [--index indice.jsonl]');
-  console.log('  ./ansys-tree html [--out archivo.html] [--allocation medicion.jsonl]');
-  console.log('  ./ansys-tree audit [--branches ANDROID_Studio,OSS,AnSysWarden] [--out informe.json]');
-  console.log('  ./ansys-tree allocated [--out medicion.jsonl]');
-  console.log('  ./ansys-tree age [--days 180] [--top 25] [--out informe.json]');
-  console.log('  ./ansys-tree activity [--days 180] [--out informe.json]');
-  console.log('  ./ansys tree activity --days 180  # delega en ansys-tree');
+  printHelp();
   process.exit(1);
 }
 
@@ -378,6 +468,14 @@ async function runActivity(args: string[]): Promise<void> {
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
+  if (!command || ['--help', '-h', 'help'].includes(command)) {
+    printHelp(command === 'help' && args[0] && !['--help', '-h'].includes(args[0]) ? args[0] : undefined);
+    return;
+  }
+  if (args.includes('--help') || args.includes('-h') || args.includes('help')) {
+    printHelp(command);
+    return;
+  }
   if (command === 'scan') return runScan(args);
   if (command === 'show') return runShow(args);
   if (command === 'html') return runHtml(args);

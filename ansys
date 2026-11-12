@@ -276,6 +276,8 @@ Uso:
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <ruta> [--depth N] [--min-size SIZE]
   ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [opciones]
+  ./ansys help tree [comando]
+  ./ansys tree <comando> --help
   ./ansys [--lang en|es] inspect <ruta>
   ./ansys [--lang en|es] backend token
   ./ansys [--lang en|es] backend serve [--host IP] [--port N]
@@ -307,6 +309,8 @@ Usage:
   ./ansys [--lang en|es] dust status
   ./ansys [--lang en|es] dust scan <path> [--depth N] [--min-size SIZE]
   ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [options]
+  ./ansys help tree [command]
+  ./ansys tree <command> --help
   ./ansys [--lang en|es] inspect <path>
   ./ansys [--lang en|es] backend token
   ./ansys [--lang en|es] backend serve [--host IP] [--port N]
@@ -581,6 +585,15 @@ main() {
       shift
       exec "$ROOT_DIR/ansys-tree" "$@"
       ;;
+    help)
+      shift
+      case "${1:-}" in
+        ''|-h|--help) usage ;;
+        tree) shift; exec "$ROOT_DIR/ansys-tree" help "$@" ;;
+        dust) run_ts "$ROOT_DIR/src/dust/dust-cli.ts" --help ;;
+        *) usage ;;
+      esac
+      ;;
     inspect)
       [[ -n "${2:-}" ]] || { err "$(msg path_inspect)"; exit 1; }
       run_ts "$ROOT_DIR/src/profiler/inspect-cli.ts" "$2"
@@ -614,7 +627,7 @@ main() {
       esac
       ;;
     logs) show_logs "${2:-}" ;;
-    -h|--help|help|'') usage ;;
+    -h|--help|'') usage ;;
     *) err "$(msg unknown_command "$command")"; usage; exit 1 ;;
   esac
 }
