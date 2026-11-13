@@ -8,29 +8,29 @@ export interface RepomixDecision {
   reason: string;
 }
 
-// Subconjunto deliberado de los patrones por defecto de Repomix 1.18.1
-// (MIT, https://github.com/yamadashy/repomix). Solo usamos reglas de
-// visibilidad para IA. NO conceden permiso de borrado. Los manifests y
-// lockfiles se conservan porque son señales útiles para detectar ecosistema.
+// Deliberate subset of Repomix 1.18.1 default patterns
+// (MIT, https://github.com/yamadashy/repomix). These rules are used only for
+// AI visibility. They NEVER grant deletion permission. Manifests and lockfiles
+// remain visible because they are useful ecosystem signals.
 const DIRECTORY_RULES: Array<{ pattern: RegExp; kind: AiTreeKind; reason: string }> = [
-  { pattern: /^(\.git|\.hg|\.svn)$/i, kind: 'VCS_INTERNAL', reason: 'Metadatos de control de versiones omitidos por la política de contexto.' },
-  { pattern: /^(node_modules|bower_components|jspm_packages)$/i, kind: 'NODE_DEPENDENCIES', reason: 'Dependencias instaladas: Repomix las excluye del contexto de código.' },
-  { pattern: /^(vendor|\.bundle)$/i, kind: 'VENDORED', reason: 'Código o dependencias vendorizadas: se omiten del árbol IA.' },
-  { pattern: /^(\.gradle|\.m2|\.npm|\.yarn)$/i, kind: 'TOOL_CACHE', reason: 'Estado/caché local de herramientas excluido del contexto IA.' },
-  { pattern: /^(\.next|\.nuxt|\.serverless)$/i, kind: 'BUILD_OUTPUT', reason: 'Salida generada por framework: no aporta estructura fuente.' },
-  { pattern: /^(dist|build|out|target)$/i, kind: 'BUILD_OUTPUT', reason: 'Salida de compilación/generación omitida del árbol IA.' },
-  { pattern: /^(tmp|temp)$/i, kind: 'TOOL_CACHE', reason: 'Directorio temporal omitido del árbol IA.' },
-  { pattern: /^(\.parcel-cache|\.sass-cache|\.rollup\.cache|\.webpack\.cache)$/i, kind: 'TOOL_CACHE', reason: 'Caché de herramienta de frontend omitida del árbol IA.' },
-  { pattern: /^(__pycache__|\.pytest_cache|\.mypy_cache|\.ipynb_checkpoints)$/i, kind: 'TOOL_CACHE', reason: 'Caché Python omitida del árbol IA.' },
-  { pattern: /^(venv|\.venv)$/i, kind: 'PYTHON_ENV', reason: 'Entorno virtual Python omitido del contexto IA.' },
-  { pattern: /^(coverage|\.nyc_output|htmlcov)$/i, kind: 'TEST_OUTPUT', reason: 'Salida de cobertura/pruebas omitida del contexto IA.' },
-  { pattern: /^(\.idea|\.vscode)$/i, kind: 'IDE_INTERNAL', reason: 'Metadatos del IDE omitidos del contexto IA.' },
+  { pattern: /^(\.git|\.hg|\.svn)$/i, kind: 'VCS_INTERNAL', reason: 'Version-control metadata omitted by the context policy.' },
+  { pattern: /^(node_modules|bower_components|jspm_packages)$/i, kind: 'NODE_DEPENDENCIES', reason: 'Installed dependencies: Repomix excludes them from source-code context.' },
+  { pattern: /^(vendor|\.bundle)$/i, kind: 'VENDORED', reason: 'Vendored code or dependencies: omitted from the AI tree.' },
+  { pattern: /^(\.gradle|\.m2|\.npm|\.yarn)$/i, kind: 'TOOL_CACHE', reason: 'Local tool state/cache excluded from AI context.' },
+  { pattern: /^(\.next|\.nuxt|\.serverless)$/i, kind: 'BUILD_OUTPUT', reason: 'Framework-generated output: it does not add source structure.' },
+  { pattern: /^(dist|build|out|target)$/i, kind: 'BUILD_OUTPUT', reason: 'Build/generated output omitted from the AI tree.' },
+  { pattern: /^(tmp|temp)$/i, kind: 'TOOL_CACHE', reason: 'Temporary directory omitted from the AI tree.' },
+  { pattern: /^(\.parcel-cache|\.sass-cache|\.rollup\.cache|\.webpack\.cache)$/i, kind: 'TOOL_CACHE', reason: 'Frontend tool cache omitted from the AI tree.' },
+  { pattern: /^(__pycache__|\.pytest_cache|\.mypy_cache|\.ipynb_checkpoints)$/i, kind: 'TOOL_CACHE', reason: 'Python cache omitted from the AI tree.' },
+  { pattern: /^(venv|\.venv)$/i, kind: 'PYTHON_ENV', reason: 'Python virtual environment omitted from AI context.' },
+  { pattern: /^(coverage|\.nyc_output|htmlcov)$/i, kind: 'TEST_OUTPUT', reason: 'Coverage/test output omitted from AI context.' },
+  { pattern: /^(\.idea|\.vscode)$/i, kind: 'IDE_INTERNAL', reason: 'IDE metadata omitted from AI context.' },
 ];
 
 const FILE_RULES: Array<{ pattern: RegExp; kind: AiTreeKind; reason: string }> = [
-  { pattern: /\.(?:log|bak|swp|swo|swn)$/i, kind: 'TOOL_CACHE', reason: 'Log/backup temporal omitido del contexto IA.' },
-  { pattern: /^(?:\.DS_Store|Thumbs\.db)$/i, kind: 'SYSTEM_APP_DATA', reason: 'Metadato del sistema operativo omitido del contexto IA.' },
-  { pattern: /\.py[cod]$/i, kind: 'TOOL_CACHE', reason: 'Bytecode Python omitido del contexto IA.' },
+  { pattern: /\.(?:log|bak|swp|swo|swn)$/i, kind: 'TOOL_CACHE', reason: 'Temporary log/backup file omitted from AI context.' },
+  { pattern: /^(?:\.DS_Store|Thumbs\.db)$/i, kind: 'SYSTEM_APP_DATA', reason: 'Operating-system metadata omitted from AI context.' },
+  { pattern: /\.py[cod]$/i, kind: 'TOOL_CACHE', reason: 'Python bytecode omitted from AI context.' },
 ];
 
 export function decideByRepomixPolicy(fullPath: string, isDirectory: boolean): RepomixDecision | null {

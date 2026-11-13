@@ -62,25 +62,25 @@ export function decideByEcosystem(fullPath: string, isDirectory: boolean, ecosys
   const detected = new Set(ecosystems.map((item) => item.ecosystem));
 
   if (detected.has('rust') && name === 'target') {
-    return { kind: 'BUILD_OUTPUT', reason: 'Directorio target reconocido dentro de un proyecto Rust por sus manifests.' };
+    return { kind: 'BUILD_OUTPUT', reason: 'target directory recognized inside a Rust project from its manifests.' };
   }
   if (detected.has('node') && name === 'node_modules') {
-    return { kind: 'NODE_DEPENDENCIES', reason: 'node_modules reconocido dentro de un proyecto Node.js por package.json/lockfiles.' };
+    return { kind: 'NODE_DEPENDENCIES', reason: 'node_modules recognized inside a Node.js project from package.json/lockfiles.' };
   }
   if (detected.has('node') && ['dist', '.next', '.nuxt', 'out'].includes(name)) {
-    return { kind: 'BUILD_OUTPUT', reason: 'Salida generada reconocida dentro de un proyecto Node.js.' };
+    return { kind: 'BUILD_OUTPUT', reason: 'Generated output recognized inside a Node.js project.' };
   }
   if (detected.has('python') && ['.venv', 'venv'].includes(name)) {
-    return { kind: 'PYTHON_ENV', reason: 'Entorno virtual reconocido dentro de un proyecto Python.' };
+    return { kind: 'PYTHON_ENV', reason: 'Virtual environment recognized inside a Python project.' };
   }
   if (detected.has('gradle') && ['.gradle', 'build'].includes(name)) {
-    return { kind: 'BUILD_OUTPUT', reason: 'Salida/estado de build reconocido dentro de un proyecto Gradle.' };
+    return { kind: 'BUILD_OUTPUT', reason: 'Build output/state recognized inside a Gradle project.' };
   }
   if (detected.has('go') && name === 'vendor') {
-    return { kind: 'VENDORED', reason: 'Dependencias vendorizadas reconocidas dentro de un proyecto Go.' };
+    return { kind: 'VENDORED', reason: 'Vendored dependencies recognized inside a Go project.' };
   }
   if (detected.has('php') && name === 'vendor') {
-    return { kind: 'VENDORED', reason: 'Dependencias vendorizadas reconocidas dentro de un proyecto PHP/Composer.' };
+    return { kind: 'VENDORED', reason: 'Vendored dependencies recognized inside a PHP/Composer project.' };
   }
 
   return null;

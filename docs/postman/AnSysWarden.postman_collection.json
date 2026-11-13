@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7c6af84b-bb62-4ad4-949a-ansyswarden-postman",
     "name": "AnSysWarden API",
-    "description": "Colección Postman para el backend PC de AnSysWarden. Variables: baseUrl, token y scanId. Todos los endpoints requieren Authorization: Bearer {{token}}.",
+    "description": "Postman collection for the AnSysWarden PC backend. Variables: baseUrl, token, and scanId. All endpoints require Authorization: Bearer {{token}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -43,15 +43,10 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "health"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
             },
-            "description": "Comprueba que el backend PC está activo."
+            "description": "Checks that the PC backend is running."
           }
         }
       ]
@@ -66,15 +61,10 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scans",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans"]
             },
-            "description": "Lista los scans persistidos en el PC."
+            "description": "Lists scans persisted on the PC."
           }
         },
         {
@@ -84,16 +74,10 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scans/latest",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans",
-                "latest"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans", "latest"]
             },
-            "description": "Devuelve el último scan generado/persistido."
+            "description": "Returns the latest generated/persisted scan."
           }
         },
         {
@@ -103,16 +87,10 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scans/{{scanId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans",
-                "{{scanId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans", "{{scanId}}"]
             },
-            "description": "Devuelve un scan concreto usando {{scanId}}."
+            "description": "Returns a specific scan using {{scanId}}."
           }
         },
         {
@@ -137,15 +115,10 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scans",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans"]
             },
-            "description": "Guarda/importa un documento ansyswarden.scan.v1."
+            "description": "Stores/imports an ansyswarden.scan.v1 document."
           }
         }
       ]
@@ -160,17 +133,10 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scans/{{scanId}}/results",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans",
-                "{{scanId}}",
-                "results"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans", "{{scanId}}", "results"]
             },
-            "description": "Obtiene el resultado almacenado para {{scanId}}."
+            "description": "Gets the stored result for {{scanId}}."
           }
         },
         {
@@ -186,7 +152,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"schema\": \"ansyswarden.result.v1\",\n  \"scanId\": \"{{scanId}}\",\n  \"worker\": \"postman-test\",\n  \"model\": \"gemma3:1b\",\n  \"createdAt\": \"2026-10-25T08:00:00.000Z\",\n  \"results\": [\n    {\n      \"path\": \"C:\\\\Users\\\\nalar\\\\.gradle\\\\caches\",\n      \"classification\": \"REVIEW_REQUIRED\",\n      \"confidence\": 0.95,\n      \"reason\": \"Resultado de prueba enviado desde Postman.\",\n      \"source\": \"ai\"\n    }\n  ]\n}",
+              "raw": "{\n  \"schema\": \"ansyswarden.result.v1\",\n  \"scanId\": \"{{scanId}}\",\n  \"worker\": \"postman-test\",\n  \"model\": \"gemma3:1b\",\n  \"createdAt\": \"2026-10-25T08:00:00.000Z\",\n  \"results\": [\n    {\n      \"path\": \"C:\\\\Users\\\\nalar\\\\.gradle\\\\caches\",\n      \"classification\": \"REVIEW_REQUIRED\",\n      \"confidence\": 0.95,\n      \"reason\": \"Test result sent from Postman.\",\n      \"source\": \"ai\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -195,17 +161,10 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scans/{{scanId}}/results",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scans",
-                "{{scanId}}",
-                "results"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scans", "{{scanId}}", "results"]
             },
-            "description": "Envía un documento ansyswarden.result.v1 para {{scanId}}."
+            "description": "Sends an ansyswarden.result.v1 document for {{scanId}}."
           }
         }
       ]

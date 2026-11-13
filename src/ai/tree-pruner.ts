@@ -68,7 +68,7 @@ export class AiTreePruner {
     const walk = async (directory: string, depth: number, prefix: string): Promise<void> => {
       if (truncated) return;
       if (depth >= maxDepth) {
-        recordOmitted({ path: directory, name: basename(directory), kind: 'DEPTH_LIMIT', reason: `Profundidad máxima del árbol IA alcanzada (${maxDepth}).` });
+        recordOmitted({ path: directory, name: basename(directory), kind: 'DEPTH_LIMIT', reason: `Maximum AI-tree depth reached (${maxDepth}).` });
         return;
       }
 
@@ -94,7 +94,7 @@ export class AiTreePruner {
       for (let index = 0; index < entries.length; index += 1) {
         if (visibleEntries >= maxEntries) {
           truncated = true;
-          lines.push(`${prefix}└── … [árbol truncado: límite ${maxEntries}]`);
+          lines.push(`${prefix}└── … [tree truncated: limit ${maxEntries}]`);
           return;
         }
 
@@ -105,33 +105,33 @@ export class AiTreePruner {
         const childPrefix = `${prefix}${isLast ? '    ' : '│   '}`;
 
         if (entry.isSymbolicLink()) {
-          recordOmitted({ path: fullPath, name: entry.name, kind: 'SYMLINK', reason: 'Enlace simbólico omitido; AnSysWarden no lo sigue.' });
+          recordOmitted({ path: fullPath, name: entry.name, kind: 'SYMLINK', reason: 'Symbolic link omitted; AnSysWarden never follows it.' });
           continue;
         }
 
         const isDirectory = entry.isDirectory();
 
-        // Seguridad explícita y conocimiento local de AnSysWarden tienen la
-        // prioridad más alta. Esto incluye secretos y reglas conservadoras.
+        // Explicit safety and AnSysWarden's local knowledge have the highest
+        // priority. This includes secret files and conservative local rules.
         const localTreeDecision = decideAiTreeEntry(fullPath, isDirectory);
         if (localTreeDecision.policy === 'DROP') {
           omit(fullPath, entry.name, localTreeDecision.kind, localTreeDecision.reason);
           continue;
         }
 
-        // El propio proyecto es la siguiente fuente de verdad: .gitattributes
-        // (Linguist) y .gitignore. Ignorar para IA nunca equivale a borrar.
+        // The project itself is the next source of truth: .gitattributes
+        // (Linguist) and .gitignore. Hiding something from AI never means delete it.
         const projectDecision = await context.decide(fullPath, isDirectory);
         if (projectDecision) {
-          omit(fullPath, entry.name, projectDecision.kind, `${projectDecision.reason} No concede permiso de borrado.`);
+          omit(fullPath, entry.name, projectDecision.kind, `${projectDecision.reason} This never grants deletion permission.`);
           continue;
         }
 
-        // Los manifests del directorio dan contexto: target dentro de Rust,
-        // vendor dentro de Go/PHP, etc. Evita depender solo del nombre.
+        // Directory manifests provide context: target inside Rust,
+        // vendor inside Go/PHP, etc. This avoids relying only on names.
         const ecosystemDecision = decideByEcosystem(fullPath, isDirectory, directoryEcosystems);
         if (ecosystemDecision) {
-          omit(fullPath, entry.name, ecosystemDecision.kind, `${ecosystemDecision.reason} No concede permiso de borrado.`);
+          omit(fullPath, entry.name, ecosystemDecision.kind, `${ecosystemDecision.reason} This never grants deletion permission.`);
           continue;
         }
 
@@ -143,10 +143,9 @@ export class AiTreePruner {
 
     await walk(root, 0, '');
 
-    // Las entradas grandes de Dust pasan por el mismo router antes de poder
-    // convertirse en candidatos para Gemma. Una raíz de proyecto conocida es
-    // estructural y nunca se propone completa; un directorio grande desconocido
-    // sí puede ser candidato aunque esté directamente bajo la raíz del scan.
+    // Large Dust entries go through the same router before they can become
+    // Gemma candidates. A known project root is structural and is never proposed
+    // as a whole; an unknown large directory may still become a candidate.
     for (const entry of scan.entries) {
       if (samePath(entry.path, root)) continue;
 
@@ -165,8 +164,8 @@ export class AiTreePruner {
       const parentEcosystems = await ecosystemsFor(dirname(entry.path));
       if (decideByEcosystem(entry.path, true, parentEcosystems)) continue;
 
-      // Si el propio directorio contiene manifests reconocibles, es una raíz
-      // de proyecto (Node, Rust, Python, etc.), no un candidato de limpieza.
+      // If the directory itself contains recognizable manifests, it is a project
+      // root (Node, Rust, Python, etc.), not a cleanup candidate.
       const ownEcosystems = await ecosystemsFor(entry.path);
       if (ownEcosystems.length > 0) continue;
 
@@ -176,7 +175,7 @@ export class AiTreePruner {
         ...(entry.depth !== undefined ? { depth: entry.depth } : {}),
         path: entry.path,
         sizeBytes: entry.sizeBytes,
-        reason: 'Directorio grande detectado por Dust que ninguna regla local ni contexto de proyecto ha podido explicar.',
+        reason: 'Large directory detected by Dust that no local rule or project context could explain.',
         ecosystems: parentEcosystems.map((item) => item.ecosystem),
       });
     }
@@ -235,7 +234,7 @@ function samePath(a: string, b: string): boolean {
 
 function clampPositive(value: number, min: number, max: number): number {
   if (!Number.isInteger(value) || value < min || value > max) {
-    throw new Error(`Valor fuera de rango: ${value}. Debe estar entre ${min} y ${max}.`);
+    throw new Error(`Value out of range: ${value}. It must be between ${min} and ${max}.`);
   }
   return value;
 }
