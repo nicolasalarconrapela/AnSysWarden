@@ -18,6 +18,22 @@ import { createReadStream } from 'node:fs';
 const base = dirname(fileURLToPath(import.meta.url));
 const root = resolve(base, 'pc-tree-fixture');
 const args = process.argv.slice(2);
+const useColor = Boolean(process.stdout.isTTY && process.env.NO_COLOR === undefined && process.env.TERM !== 'dumb');
+const palette = {
+  green: value => useColor ? '\u001b[32m' + value + '\u001b[0m' : value,
+  red: value => useColor ? '\u001b[31m' + value + '\u001b[0m' : value,
+  yellow: value => useColor ? '\u001b[33m' + value + '\u001b[0m' : value,
+  cyan: value => useColor ? '\u001b[36m' + value + '\u001b[0m' : value,
+};
+const resultLine = (level, message) => {
+  const prefix = level === 'PASS' ? palette.green('✓ [PASS]')
+    : level === 'FAIL' ? palette.red('✗ [FAIL]')
+    : level === 'WARN' ? palette.yellow('! [WARN]')
+    : palette.cyan('ℹ [INFO]');
+  const output = level === 'FAIL' ? console.error : console.log;
+  output(prefix + ' ' + message);
+};
+
 const verifyOnly = args.includes('--verify');
 const indexPosition = args.indexOf('--index');
 const indexFile = indexPosition >= 0 ? args[indexPosition + 1] : undefined;
@@ -119,10 +135,10 @@ async function verifyFixture() {
   if (bytes !== expectedTotal()) diffs.push('Bytes diferentes: ' + bytes);
   const expected = { files: FILES.size, directories: expectedDirs.size, entries: FILES.size + expectedDirs.size, sizeBytes: expectedTotal() };
   if (diffs.length) {
-    diffs.forEach(message => console.error('[FAIL] ' + message));
+    diffs.forEach(message => resultLine('FAIL', message));
     throw new Error('Fixture no coincide con los valores esperados');
   }
-  console.log('[PASS] Fixture: ' + expected.files + ' archivos · ' + expected.directories + ' carpetas · ' + expected.sizeBytes + ' bytes');
+  resultLine('PASS', 'Fixture: ' + expected.files + ' archivos · ' + expected.directories + ' carpetas · ' + expected.sizeBytes + ' bytes');
   return expected;
 }
 
@@ -154,10 +170,10 @@ async function verifyTreeIndex(path, expected) {
   if (missing.length) issues.push('Rutas ausentes: ' + missing.slice(0, 8).join(', '));
   if (!rootSummary || rootSummary.sizeBytes !== expected.sizeBytes) issues.push('Tamaño del resumen raíz incorrecto');
   if (issues.length) {
-    issues.forEach(message => console.error('[FAIL] ' + message));
+    issues.forEach(message => resultLine('FAIL', message));
     throw new Error('El índice Tree no coincide con la fixture');
   }
-  console.log('[PASS] Índice Tree: entradas, rutas, recuentos y bytes correctos');
+  resultLine('PASS', 'Índice Tree: entradas, rutas, recuentos y bytes correctos');
 }
 
 async function generate() {
@@ -186,9 +202,9 @@ async function main() {
   if (!verifyOnly) await generate();
   const expected = await verifyFixture();
   if (indexFile) await verifyTreeIndex(indexFile, expected);
-  console.log('Ruta para Tree: ' + rootPath());
-  console.log('Ejemplo: ./ansys tree scan "data/pc-tree-fixture" --html prueba.html');
-  console.log('Solo datos ficticios; sin eliminación ni acceso a archivos personales.');
+  resultLine('INFO', 'Ruta para Tree: ' + rootPath());
+  resultLine('INFO', 'Ejemplo: ./ansys tree scan "data/pc-tree-fixture" --html prueba.html');
+  resultLine('WARN', 'Solo datos ficticios: no autoriza borrados ni accede a archivos personales.');
 }
 
-main().catch(error => { console.error('[FAIL]', error.message); process.exitCode = 1; });
+main().catch(error => { resultLine('FAIL', error.message); process.exitCode = 1; });
