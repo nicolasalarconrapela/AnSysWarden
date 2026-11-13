@@ -260,12 +260,13 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   const allocation = JSON.parse(document.getElementById('allocationMetadata').textContent);
   const activityData = JSON.parse(document.getElementById('activityMetadata').textContent);
   document.getElementById('activityMetadata').remove();
-  const activityById = new Map();
+  const activityByPath = new Map();
+  const activityKey = value => String(value).replaceAll(String.fromCharCode(92), '/').toLowerCase();
   if (activityData) {
-    for (const candidate of activityData.candidates) activityById.set(candidate.id, candidate);
+    for (const candidate of activityData.candidates) activityByPath.set(activityKey(candidate.path), candidate);
     document.getElementById('artifactCount').textContent = activityData.candidates.length.toLocaleString('es-ES');
     document.getElementById('artifactReview').textContent =
-      activityData.candidates.filter(c => c.status === 'REVISAR').length.toLocaleString('es-ES');
+      activityData.candidates.filter(c => c.suggestion === 'REVISAR').length.toLocaleString('es-ES');
   }
   document.getElementById('allocationMetadata').remove();
   document.getElementById('payload').remove();
@@ -434,8 +435,8 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     for (let i = 0; i < nodes.length; i++) {
       if (kind !== 'all' && names[nodes[i][1]] !== kind) continue;
       if (activityKind !== 'all') {
-        const candidate = activityById.get(i);
-        if (!candidate || (activityKind === 'review' && candidate.status !== 'REVISAR')) continue;
+        const candidate = activityByPath.get(activityKey(pathOf(i)));
+        if (!candidate || (activityKind === 'review' && candidate.suggestion !== 'REVISAR')) continue;
       }
       if (query && !String(nodes[i][2]).toLowerCase().includes(query)
           && (!pathQuery || !pathOf(i).toLowerCase().includes(query))) continue;
@@ -573,11 +574,11 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
     treeCell.append(toggle, icon, name);
     if (type === 0) {
       treeCell.append(fileCount);
-      const artifact = activityById.get(id);
+      const artifact = activityByPath.get(activityKey(pathOf(id)));
       if (artifact) {
         const marker = document.createElement('span');
-        marker.className = 'artifact-label' + (artifact.status === 'REVISAR' ? ' review' : '');
-        marker.textContent = artifact.status === 'REVISAR' ? '! REVISAR' : 'ℹ OBSERVAR';
+        marker.className = 'artifact-label' + (artifact.suggestion === 'REVISAR' ? ' review' : '');
+        marker.textContent = artifact.suggestion === 'REVISAR' ? '! REVISAR' : 'ℹ OBSERVAR';
         marker.title = artifact.family + ' · ' + artifact.activity + ' · ' +
           artifact.evidence + ' · ' + artifact.reason +
           ' · Confianza en el patrón: ' + artifact.confidence;
