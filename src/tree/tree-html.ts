@@ -97,7 +97,15 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 .size{display:block;width:150px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-right:12px}.size.size-indented{text-align:left;padding-left:var(--size-offset,0px);padding-right:0}.allocated{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding-right:12px;font-weight:600;color:#b9d7e6}.allocated.unknown{color:var(--muted)}.modified,.created,.accessed{font-size:12px;color:#b7bcc8;text-align:right;white-space:nowrap;padding-right:12px;font-variant-numeric:tabular-nums}.artifact-label{margin-left:8px;padding:1px 5px;border:1px solid #626b78;border-radius:4px;font-size:11px;white-space:nowrap;color:#d9e1f0}.artifact-label.review{border-color:#ad8b40;color:#f8d18b}.file-count{color:#c9d1da;font-size:12px;white-space:nowrap;margin-left:7px;flex-shrink:0}.file-count.zero{color:var(--muted)}
 .name{overflow:hidden;text-overflow:ellipsis;min-width:0}.name-link{color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .name-link:hover{text-decoration:underline;text-underline-offset:2px}.kind{color:var(--muted);font-size:11px;text-align:right;padding-left:10px}
-.error{color:#ff8585}.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
+.error{color:#ff9898}.row.error{background:rgba(245,109,109,.075)}.row.error:hover{background:rgba(245,109,109,.12)}
+:root{--ok:#9bd7ae;--warn:#f1cc87;--bad:#ff9898;--info:#a9c8e9}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:8px 18px;border-bottom:1px solid var(--line);background:#1b1b1b;color:#bcbcbc;font-size:12px}
+.legend strong{font-weight:600;color:#e5e5e5}.legend .ok{color:var(--ok)}.legend .review{color:var(--warn)}.legend .problem{color:var(--bad)}.legend .neutral{color:var(--info)}
+.state-review{color:var(--warn)!important}.state-problem{color:var(--bad)!important}.state-ok{color:var(--ok)!important}
+.artifact-label{font-weight:650;letter-spacing:.015em}.artifact-label.review{border-color:#ac8c50;color:var(--warn);background:rgba(172,140,80,.095)}
+.artifact-label:not(.review){border-color:#5f7787;color:var(--info);background:rgba(100,140,170,.075)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+.foot{position:sticky;bottom:0;background:#1c1c1c;border-top:1px solid var(--line);padding:7px 18px;display:flex;align-items:center;gap:12px}
 .foot button{background:#303030;color:var(--text);border:1px solid #555;border-radius:4px;padding:5px 12px;cursor:pointer}
 #status{color:var(--muted)}.empty-state{padding:30px;text-align:center;color:var(--muted)}
 </style>
@@ -141,8 +149,16 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   <span>Ocupado en archivos medidos: <strong id="allocatedTotal">No disponible (no medido)</strong></span>
   <span>Medición física: <strong id="allocationStatus">No disponible</strong></span>
   <span>Familias detectadas: <strong id="artifactCount">Sin analizar</strong></span>
-  <span>Para revisar: <strong id="artifactReview">—</strong></span>
+  <span>Para revisar: <strong id="artifactReview" class="state-review">—</strong></span>
   <span>Errores: <strong id="errors"></strong></span>
+</div>
+<div class="legend" role="note" aria-label="Leyenda de estados de análisis">
+  <strong>Leyenda</strong>
+  <span class="ok">✓ Correcto: comprobación completada</span>
+  <span class="review">! Revisar: requiere comprobación humana</span>
+  <span class="problem">✗ Error: índice o medición incompleta</span>
+  <span class="neutral">ℹ Observar: información orientativa</span>
+  <span>Los colores no autorizan eliminaciones.</span>
 </div>
 <main><div class="tree"><div class="columns-header"><span>Nombre (archivos)</span><span>Tamaño lógico</span><span>Ocupado en archivos</span><span>Última modificación</span><span>Creación</span><span>Último acceso registrado</span><span>Tipo</span></div><div id="rows"><div class="empty-state">Preparando árbol…</div></div></div></main>
 <div class="foot">
@@ -335,7 +351,9 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
   document.getElementById('entries').textContent = Number(metadata.entries).toLocaleString('es-ES');
   document.getElementById('files').textContent = Number(metadata.files).toLocaleString('es-ES');
   document.getElementById('directories').textContent = Number(metadata.directories).toLocaleString('es-ES');
-  document.getElementById('errors').textContent = Number(metadata.errors).toLocaleString('es-ES');
+  document.getElementById('errors').textContent =
+    (Number(metadata.errors) > 0 ? '✗ ' : '✓ ') + Number(metadata.errors).toLocaleString('es-ES');
+  document.getElementById('errors').classList.add(Number(metadata.errors) > 0 ? 'state-problem' : 'state-ok');
 
   // Los bytes del índice son tamaño lógico. GB usa 1000; GiB usa 1024.
   // Nunca llamar GB a un valor calculado dividiendo entre 1024.
@@ -371,6 +389,9 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       allocation.measuredFiles.toLocaleString('es-ES') + ' / ' +
       allocation.totalFiles.toLocaleString('es-ES') + ' archivos · ' +
       allocation.failedFiles + ' fallos';
+    document.getElementById('allocationStatus').classList.add(allocation.complete ? 'state-ok' : 'state-review');
+    document.getElementById('allocationStatus').textContent =
+      (allocation.complete ? '✓ ' : '! ') + document.getElementById('allocationStatus').textContent;
   }
 
   const slash = metadata.rootPath.includes(String.fromCharCode(92)) ? String.fromCharCode(92) : '/';
@@ -444,6 +465,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
 
     const row = document.createElement('div');
     row.className = 'row' + (type === 4 ? ' error' : '');
+    if (type === 4) row.setAttribute('aria-label', 'Error de lectura del inventario');
     const allocatedValue = type === 0 ? (missingAllocated[id] ? null : allocatedTotals[id])
       : type === 5 ? node[5]
       : type === 1 ? node[5] : null;
@@ -555,7 +577,7 @@ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px
       if (artifact) {
         const marker = document.createElement('span');
         marker.className = 'artifact-label' + (artifact.status === 'REVISAR' ? ' review' : '');
-        marker.textContent = artifact.status === 'REVISAR' ? 'REVISAR' : 'OBSERVAR';
+        marker.textContent = artifact.status === 'REVISAR' ? '! REVISAR' : 'ℹ OBSERVAR';
         marker.title = artifact.family + ' · ' + artifact.activity + ' · ' +
           artifact.evidence + ' · ' + artifact.reason +
           ' · Confianza en el patrón: ' + artifact.confidence;
