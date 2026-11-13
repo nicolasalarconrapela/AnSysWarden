@@ -76,6 +76,17 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "example": "age --days 180 --top 25",
     "warning": "Antiguo no equivale a innecesario."
   },
+  "view": {
+    "description": "Visualizar el último inventario, uno existente o escanear y mostrar.",
+    "args": "[--index indice.jsonl] [--scan ruta] [--out archivo.html]",
+    "options": [
+      "--index PATH    Abrir índice existente sin acceder al disco original",
+      "--scan PATH     Crear índice nuevo y mostrarlo (solo esta opción escanea)",
+      "--out PATH      Archivo HTML de salida"
+    ],
+    "example": "view --index .ansyswarden/tree/scans/scan.jsonl --out visor.html",
+    "warning": "Los datos del índice pueden estar desactualizados; el visor no autoriza borrados."
+  },
   "activity": {
     "description": "Detectar familias de artefactos y cambios.",
     "args": "[--days N] [--out informe.json]",
@@ -341,8 +352,48 @@ async function runShow(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * Resuelve los metadatos del índice explícitamente seleccionado.
+ * Evita mostrar un índice antiguo con el latest.json de otro escaneo.
+ * No modifica el índice ni el estado latest.
+ */
+async function loadMetadataForIndex(inputIndex: string): Promise<TreeScanMetadata> {
+  const indexPath = resolve(inputIndex);
+  if (!(await isFile(indexPath))) {
+    throw new Error('No existe el índice solicitado: ' + indexPath);
+  }
+
+  const scansDir = resolve('.ansyswarden', 'tree', 'scans');
+  const files = await readdir(scansDir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [] as string[];
+    throw error;
+  });
+  for (const name of files.filter(name => name.endsWith('.meta.json'))) {
+    let metadata: TreeScanMetadata;
+    try {
+      metadata = JSON.parse(await readFile(join(scansDir, name), 'utf8')) as TreeScanMetadata;
+    } catch {
+      continue;
+    }
+    const storedPath = typeof metadata.indexPath === 'string' ? resolve(metadata.indexPath) : '';
+    const canonicalPath = typeof metadata.id === 'string' ? resolve(scansDir, metadata.id + '.jsonl') : '';
+    if (indexPath !== storedPath && indexPath !== canonicalPath) continue;
+    if (metadata.schema !== 'ansyswarden.tree-index.v1'
+      || !metadata.id || !metadata.rootPath || metadata.entries <= 0) {
+      throw new Error('Metadatos incompatibles o incompletos para ' + indexPath);
+    }
+    return { ...metadata, indexPath };
+  }
+
+  throw new Error(
+    'No se encontraron metadatos verificables del índice: ' + indexPath + '\\n' +
+    'Utiliza un índice generado por AnSysWarden y conserva su archivo .meta.json.'
+  );
+}
+
 async function runHtml(args: string[]): Promise<void> {
-  const metadata = await loadLatestMetadata();
+  const requestedIndex = readOption(args, '--index');
+  const metadata = requestedIndex ? await loadMetadataForIndex(requestedIndex) : await loadLatestMetadata();
   if (metadata.entries === 0) {
     throw new Error(
       'El último índice está vacío (0 entradas). No se genera HTML. ' +
@@ -473,6 +524,26 @@ async function runActivity(args: string[]): Promise<void> {
   console.log('HTML: ./ansys-tree html --out escritorio_actividad.html');
 }
 
+async function runView(args: string[]): Promise<void> {
+  const scanPath = readOption(args, '--scan');
+  if (args.includes('--scan')) {
+    if (!scanPath || scanPath.startsWith('--')) throw new Error('--scan necesita una carpeta.');
+    if (args.includes('--index')) throw new Error('Utiliza --scan o --index, pero no ambos.');
+    const metadata = await new CreateTreeInventory(new NativeTreeScannerAdapter()).execute(scanPath);
+    const outputPath = resolve(readOption(args, '--out') ?? metadata.id + '.html');
+    const html = await writeNativeTreeHtml({
+      metadata,
+      indexPath: metadata.indexPath,
+      outputPath,
+    });
+    console.log('✓ [PASS] Inventario nuevo: ' + metadata.indexPath);
+    console.log('Tree HTML: ' + html);
+    console.log('Entradas: ' + metadata.entries + ' · Errores: ' + metadata.errors);
+    return;
+  }
+  return runHtml(args);
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (!command || ['--help', '-h', 'help'].includes(command)) {
@@ -486,6 +557,7 @@ async function main(): Promise<void> {
   if (command === 'scan') return runScan(args);
   if (command === 'show') return runShow(args);
   if (command === 'html') return runHtml(args);
+  if (command === 'view') return runView(args);
   if (command === 'audit') return runAudit(args);
   if (command === 'allocated') return runAllocated(args);
   if (command === 'age') return runAge(args);
