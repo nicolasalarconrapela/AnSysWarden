@@ -2,7 +2,9 @@ import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { basename, dirname, join, resolve } from 'node:path';
-import { NativeTreeScanner, type TreeEntryRecord, type TreeIndexRecord, type TreeScanMetadata } from './native-tree-scanner';
+import type { TreeEntryRecord, TreeIndexRecord, TreeScanMetadata } from '../core/inventory/tree-types';
+import { CreateTreeInventory } from '../application/tree/create-tree-inventory';
+import { NativeTreeScannerAdapter } from '../infrastructure/filesystem/native-tree-scanner-adapter';
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
 import { measureAllocatedSpace } from './tree-allocation';
@@ -243,7 +245,7 @@ async function runScan(args: string[]): Promise<void> {
 
   const outputPath = readOption(args, '--out');
   const htmlOption = readOptionalPathOption(args, '--html');
-  const scanner = new NativeTreeScanner();
+  const inventory = new CreateTreeInventory(new NativeTreeScannerAdapter());
   const startedAt = Date.now();
 
   console.log('\nAnSysWarden · Tree Scan');
@@ -254,7 +256,7 @@ async function runScan(args: string[]): Promise<void> {
   console.log('Escritura:  índice JSONL incremental');
   console.log(`HTML:       ${htmlOption === null ? 'no' : 'sí'}`);
 
-  const result = await scanner.scan(inputPath, {
+  const result = await inventory.execute(inputPath, {
     ...(outputPath ? { outputPath } : {}),
     onProgress: (progress) => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
