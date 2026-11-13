@@ -2,6 +2,8 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { installDust } from './dust-installer';
 import { DustScanner } from './dust-scanner';
+import { CreateInventorySnapshot } from './inventory-snapshot';
+import { writeNativeTreeHtml } from '../tree/tree-html';
 import { getLanguage } from '../i18n';
 import { buildPcTreeHtml } from '../pc/tree-html';
 
@@ -14,8 +16,13 @@ function printDustHelp(): void {
   console.log(pick('Usage:', 'Uso:'));
   console.log('  ./ansys dust install');
   console.log('  ./ansys dust status');
+  console.log('  ./ansys dust inventory <ruta> [--out indice.jsonl] [--html [archivo.html]] [--no-allocated] [--days N]');
   console.log('  ./ansys dust scan <ruta> [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]');
   console.log(pick('Options:', 'Opciones:'));
+  console.log('  --out PATH          ' + pick('JSONL snapshot path (inventory only)', 'Ruta del índice JSONL (solo inventory)'));
+  console.log('  --html [PATH]       ' + pick('Render Tree HTML after inventory (inventory only)', 'Generar HTML Tree tras inventariar (solo inventory)'));
+  console.log('  --no-allocated      ' + pick('Skip Windows allocated-size measurement', 'Omitir medición física en Windows'));
+  console.log('  --days N            ' + pick('Activity/age threshold for inventory', 'Umbral de actividad/antigüedad de inventory'));
   console.log('  --full              ' + pick('Request full listing','Solicitar listado completo'));
   console.log('  --depth N           ' + pick('Maximum depth','Profundidad máxima'));
   console.log('  --min-size SIZE     ' + pick('Minimum size','Tamaño mínimo'));
@@ -142,6 +149,47 @@ async function run(): Promise<void> {
     console.log(`${pick('Binary', 'Binario')}:  ${bin.path}`);
     console.log(`${pick('Source', 'Fuente')}:  ${bin.source}`);
     console.log(`${pick('Mode', 'Modo')}:    ${pick('external read-only engine', 'motor externo de solo lectura')}`);
+    return;
+  }
+
+  if (command === 'inventory') {
+    const inputPath = args[0];
+    if (!inputPath || inputPath.startsWith('--')) usage();
+    const days = readIntegerOption(args, '--days') ?? 180;
+    if (days > 36500) throw new Error('El valor --days no puede superar 36500.');
+    const htmlOption = readOptionalPathOption(args, '--html');
+    const outputPath = readOption(args, '--out');
+    if (outputPath?.startsWith('--')) throw new Error('--out necesita una ruta.');
+    console.log('\nAnSysWarden · Dust / Inventario completo');
+    console.log('────────────────────────────────────────');
+    console.log('Origen: ' + inputPath);
+    console.log('Motor: nativo exhaustivo (no el resumen acotado del ejecutable Dust)');
+    const result = await new CreateInventorySnapshot().execute(inputPath, {
+      ...(outputPath ? { outputPath } : {}),
+      allocated: !hasFlag(args, '--no-allocated'),
+      ageDays: days,
+      activityDays: days,
+    });
+    const { metadata, age, activity, allocation, warnings } = result;
+    console.log('✓ [PASS] Entradas: ' + metadata.entries + ' · Archivos: ' + metadata.files +
+      ' · Carpetas: ' + metadata.directories);
+    console.log('Índice: ' + metadata.indexPath);
+    console.log('Tamaño lógico: ' + metadata.sizeBytes + ' bytes');
+    console.log('Actividad: ' + activity.outputPath);
+    console.log('Antigüedad: ' + age.outputPath);
+    console.log('Asignado: ' + (allocation
+      ? allocation.summary.allocatedBytesMeasured + ' bytes medidos · ' + allocation.outputPath
+      : 'No medido'));
+    if (htmlOption !== null) {
+      const htmlPath = await writeNativeTreeHtml({
+        metadata,
+        indexPath: metadata.indexPath,
+        outputPath: resolve(htmlOption || metadata.id + '.html'),
+      });
+      console.log('Tree HTML: ' + htmlPath);
+    }
+    warnings.forEach(warning => console.warn('! [WARN] ' + warning));
+    console.log('Visualizar: ./ansys tree html --index "' + metadata.indexPath + '" --out inventario.html');
     return;
   }
 
