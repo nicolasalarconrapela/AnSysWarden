@@ -251,7 +251,7 @@ Las operaciones `tree age`, `activity`, `allocated` y `audit` están expuestas p
 | --- | --- | --- |
 | `config show` | Ninguno | Muestra configuración sin revelar el token. |
 | `config path` | Ninguno | Ruta del archivo de configuración. |
-| `config language <en` o `es>` | `en` / `es` | Guarda el idioma persistente. |
+| `config language <idioma>` | `en` / `es` | Guarda el idioma persistente. |
 | `config backend <URL>` | URL del backend | Guarda la URL para clientes compatibles. |
 | `config token <token>` | Token de API | Persiste token en configuración; **evitar poner secretos en historiales de terminal compartidos**. |
 | `doctor` | Ninguno | Diagnóstico del entorno local. |
