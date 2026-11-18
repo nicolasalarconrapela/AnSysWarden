@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { installDust } from './dust-installer';
 import { DustScanner } from './dust-scanner';
 import { CreateInventorySnapshot } from './inventory-snapshot';
+import { parseDustCaptureArguments } from './scan-options';
 import { writeNativeTreeHtml } from '../tree/tree-html';
 import { getLanguage } from '../i18n';
 import { buildPcTreeHtml } from '../pc/tree-html';
@@ -12,27 +13,22 @@ function pick(en: string, es: string): string {
 }
 
 function printDustHelp(): void {
-  console.log(pick('AnSysWarden · Dust · Help','AnSysWarden · Dust · Ayuda'));
+  console.log(pick('AnSysWarden · Dust · Help', 'AnSysWarden · Dust · Ayuda'));
   console.log(pick('Usage:', 'Uso:'));
-  console.log('  ./ansys dust install');
-  console.log('  ./ansys dust status');
-  console.log('  ./ansys dust inventory <ruta> [--out indice.jsonl] [--html [archivo.html]] [--no-allocated] [--days N]');
-  console.log('  ./ansys dust scan <ruta> [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N] [--html [archivo.html]]');
-  console.log(pick('Options:', 'Opciones:'));
-  console.log('  --out PATH          ' + pick('JSONL snapshot path (inventory only)', 'Ruta del índice JSONL (solo inventory)'));
-  console.log('  --html [PATH]       ' + pick('Render Tree HTML after inventory (inventory only)', 'Generar HTML Tree tras inventariar (solo inventory)'));
-  console.log('  --no-allocated      ' + pick('Skip Windows allocated-size measurement', 'Omitir medición física en Windows'));
-  console.log('  --days N            ' + pick('Activity/age threshold for inventory', 'Umbral de actividad/antigüedad de inventory'));
-  console.log('  --full              ' + pick('Request full listing','Solicitar listado completo'));
-  console.log('  --depth N           ' + pick('Maximum depth','Profundidad máxima'));
-  console.log('  --min-size SIZE     ' + pick('Minimum size','Tamaño mínimo'));
-  console.log('  --ai-depth N        ' + pick('AI depth','Profundidad IA'));
-  console.log('  --ai-max-entries N  ' + pick('AI entry limit','Límite de entradas IA'));
-  console.log('  --html [PATH]       ' + pick('HTML output','Salida HTML'));
-  console.log(pick('Examples:', 'Ejemplos:'));
-  console.log('  ./ansys dust status');
-  console.log('  ./ansys dust scan "C:/Users/nalar/Desktop" --depth 3');
-  console.log(pick('Native inventory: ./ansys tree scan','Inventario nativo: ./ansys tree scan'));
+  console.log('  ./ansys dust scan <ruta> [--out indice.jsonl] [--html [archivo.html]] [--no-allocated] [--days N] [--strict]');
+  console.log('  ./ansys dust inventory <ruta> [las mismas opciones]  # alias de scan');
+  console.log('  ./ansys dust scan <ruta> --legacy [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]');
+  console.log('  ./ansys dust install | status');
+  console.log(pick('Capture options:', 'Opciones de captura:'));
+  console.log('  --out / --output PATH  ' + pick('JSONL index destination', 'Destino del índice JSONL'));
+  console.log('  --html [PATH]         ' + pick('Generate autonomous Tree HTML', 'Generar HTML Tree autónomo'));
+  console.log('  --no-allocated        ' + pick('Skip physical allocation measurement', 'Omitir medición de espacio asignado'));
+  console.log('  --days N              ' + pick('Age/activity threshold (1..36500, default 180)', 'Umbral de actividad (1..36500; por defecto 180)'));
+  console.log('  --strict              ' + pick('Fail on partial capture or unavailable requested measurement', 'Fallar ante captura parcial o medición solicitada no disponible'));
+  console.log(pick('Legacy Dust options:', 'Opciones antiguas de Dust:'));
+  console.log('  --legacy --full --depth N --min-size SIZE --ai-depth N --ai-max-entries N');
+  console.log(pick('Legacy-only options automatically select the old mode.', 'Las opciones exclusivas antiguas seleccionan automáticamente el modo anterior.'));
+  console.log('  ./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html');
 }
 
 function usage(): never {
@@ -152,58 +148,56 @@ async function run(): Promise<void> {
     return;
   }
 
-  if (command === 'inventory') {
-    const inputPath = args[0];
-    if (!inputPath || inputPath.startsWith('--')) usage();
-    const days = readIntegerOption(args, '--days') ?? 180;
-    if (days > 36500) throw new Error('El valor --days no puede superar 36500.');
-    const htmlOption = readOptionalPathOption(args, '--html');
-    const outputPath = readOption(args, '--out');
-    if (outputPath?.startsWith('--')) throw new Error('--out necesita una ruta.');
-    console.log('\nAnSysWarden · Dust / Inventario completo');
-    console.log('────────────────────────────────────────');
-    console.log('Origen: ' + inputPath);
-    console.log('Motor: nativo exhaustivo (no el resumen acotado del ejecutable Dust)');
-    const result = await new CreateInventorySnapshot().execute(inputPath, {
-      ...(outputPath ? { outputPath } : {}),
-      allocated: !hasFlag(args, '--no-allocated'),
-      ageDays: days,
-      activityDays: days,
-    });
-    const { metadata, age, activity, allocation, warnings } = result;
-    console.log('✓ [PASS] Entradas: ' + metadata.entries + ' · Archivos: ' + metadata.files +
-      ' · Carpetas: ' + metadata.directories);
-    console.log('Índice: ' + metadata.indexPath);
-    console.log('Tamaño lógico: ' + metadata.sizeBytes + ' bytes');
-    console.log('Actividad: ' + activity.outputPath);
-    console.log('Antigüedad: ' + age.outputPath);
-    console.log('Asignado: ' + (allocation
-      ? allocation.summary.allocatedBytesMeasured + ' bytes medidos · ' + allocation.outputPath
-      : 'No medido'));
-    if (htmlOption !== null) {
-      const htmlPath = await writeNativeTreeHtml({
-        metadata,
-        indexPath: metadata.indexPath,
-        outputPath: resolve(htmlOption || metadata.id + '.html'),
+  if (command === 'inventory' || command === 'scan') {
+    const capture = parseDustCaptureArguments(command, args);
+    if (capture.mode === 'inventory') {
+      console.log('\nAnSysWarden · Dust / Inventario completo');
+      console.log('────────────────────────────────────────');
+      console.log('Origen: ' + capture.rootPath);
+      console.log('Modo: inventario nativo completo; sin limitar profundidad ni tamaño');
+      const snapshot = await new CreateInventorySnapshot().execute(capture.rootPath, {
+        ...(capture.outputPath === undefined ? {} : { outputPath: capture.outputPath }),
+        allocated: capture.allocated,
+        ageDays: capture.days,
+        activityDays: capture.days,
       });
-      console.log('Tree HTML: ' + htmlPath);
+      const { metadata, age, activity, allocation, manifest, manifestPath, warnings } = snapshot;
+      const statusSymbol = manifest.status === 'COMPLETE' ? '✓ [PASS]' : '! [WARN]';
+      console.log(statusSymbol + ' Captura: ' + manifest.status);
+      console.log('Scan ID: ' + metadata.id);
+      console.log('Entradas: ' + metadata.entries + ' · Archivos: ' + metadata.files +
+        ' · Carpetas: ' + metadata.directories + ' · Errores: ' + metadata.errors);
+      console.log('Tamaño lógico: ' + metadata.sizeBytes + ' bytes');
+      console.log('Espacio asignado: ' + manifest.space.allocated +
+        (allocation ? ' · ' + allocation.summary.allocatedBytesMeasured + ' bytes medidos' : ''));
+      console.log('Índice JSONL: ' + metadata.indexPath);
+      console.log('Manifiesto v1: ' + manifestPath);
+      console.log('Actividad: ' + activity.outputPath);
+      console.log('Antigüedad: ' + age.outputPath);
+      if (capture.htmlPath !== null) {
+        const htmlPath = await writeNativeTreeHtml({
+          metadata,
+          indexPath: metadata.indexPath,
+          outputPath: resolve(capture.htmlPath || metadata.id + '.html'),
+        });
+        console.log('Tree HTML: ' + htmlPath);
+      }
+      warnings.forEach(warning => console.warn('! [WARN] ' + warning));
+      console.log('Visualizar: ./ansys tree view --scan-id "' + metadata.id + '"');
+      if (capture.strict && (manifest.status !== 'COMPLETE' ||
+        manifest.space.allocated === 'PARTIAL' ||
+        (capture.allocated && manifest.space.allocated === 'UNAVAILABLE'))) {
+        console.error('✗ [FAIL] --strict: captura parcial o medición solicitada no disponible.');
+        process.exitCode = 2;
+      }
+      return;
     }
-    warnings.forEach(warning => console.warn('! [WARN] ' + warning));
-    console.log('Visualizar: ./ansys tree html --index "' + metadata.indexPath + '" --out inventario.html');
-    return;
-  }
 
-  if (command === 'scan') {
-    const inputPath = args[0];
-    if (!inputPath || inputPath.startsWith('--')) usage();
-
-    const full = hasFlag(args, '--full');
-    const depth = readIntegerOption(args, '--depth');
-    const aiTreeDepth = readIntegerOption(args, '--ai-depth');
-    const aiTreeMaxEntries = readIntegerOption(args, '--ai-max-entries');
-    const minSize = readOption(args, '--min-size');
-    const htmlOption = readOptionalPathOption(args, '--html');
-
+    // Compatibilidad: no cambiamos el contrato histórico Dust + AI Input.
+    console.warn('! [WARN] Modo Dust antiguo: salida resumida y ai-input; usa scan sin --legacy para inventario completo.');
+    const inputPath = capture.rootPath;
+    const { full, depth, minSize, aiTreeDepth, aiTreeMaxEntries } = capture.legacy;
+    const htmlOption = capture.htmlPath;
     console.log(`\nAnSysWarden · ${pick('Dust Scan', 'Escaneo Dust')}`);
     console.log('────────────────────────────────────────');
     console.log(`${pick('Source', 'Fuente')}:      ${inputPath}`);

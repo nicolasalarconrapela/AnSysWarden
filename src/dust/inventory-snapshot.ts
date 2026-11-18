@@ -1,10 +1,13 @@
 import { platform } from 'node:os';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { CreateTreeInventory } from '../application/tree/create-tree-inventory';
 import { NativeTreeScannerAdapter } from '../infrastructure/filesystem/native-tree-scanner-adapter';
 import type { TreeScanMetadata, TreeScanOptions } from '../core/inventory/tree-types';
-import { analyzeTreeActivity, type ActivityReport } from '../tree/tree-activity';
-import { analyzeTreeAge, type AgeReport } from '../tree/tree-age';
-import { measureAllocatedSpace, type AllocationSummary } from '../tree/tree-allocation';
+import { analyzeTreeActivity, type ActivityReport } from './analysis/activity';
+import { analyzeTreeAge, type AgeReport } from './analysis/age';
+import { measureAllocatedSpace, type AllocationSummary } from './analysis/allocation';
+import { buildInventoryManifest, saveInventoryManifest, type InventoryManifest } from './inventory-manifest';
 
 /**
  * Inventario del PC bajo el subsistema Dust/Inventory.
@@ -28,6 +31,8 @@ export interface InventorySnapshot {
   activity: { report: ActivityReport; outputPath: string };
   allocation: { summary: AllocationSummary; outputPath: string } | null;
   warnings: string[];
+  manifest: InventoryManifest;
+  manifestPath: string;
 }
 
 export class CreateInventorySnapshot {
@@ -36,6 +41,16 @@ export class CreateInventorySnapshot {
   ) {}
 
   async execute(rootPath: string, options: InventorySnapshotOptions = {}): Promise<InventorySnapshot> {
+    // Un índice seleccionado mediante --out nunca debe sobrescribir una captura previa.
+    if (options.outputPath) {
+      const destination = resolve(options.outputPath);
+      try {
+        await access(destination);
+        throw new Error('El índice ya existe; no se sobrescribe: ' + destination);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
     const metadata = await this.scanner.execute(rootPath, {
       ...(options.outputPath === undefined ? {} : { outputPath: options.outputPath }),
       ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
@@ -69,6 +84,15 @@ export class CreateInventorySnapshot {
       warnings.push('Inventario incompleto: ' + metadata.errors + ' errores de lectura.');
     }
 
-    return { metadata, age, activity, allocation, warnings };
+    const manifest = buildInventoryManifest({
+      metadata,
+      agePath: age.outputPath,
+      activityPath: activity.outputPath,
+      allocation,
+      allocatedRequested: options.allocated !== false,
+      warnings,
+    });
+    const manifestPath = await saveInventoryManifest(manifest);
+    return { metadata, age, activity, allocation, warnings, manifest, manifestPath };
   }
 }

@@ -273,10 +273,10 @@ Uso:
   ./ansys [--lang en|es] doctor
   ./ansys [--lang en|es] classify <ruta>
   ./ansys [--lang en|es] scan <ruta> [--min-mb N]  # escaneo básico
-  ./ansys tree scan <ruta> --html [archivo.html]  # inventario completo
+  ./ansys dust scan <ruta> --html [archivo.html]  # inventario completo
   ./ansys [--lang en|es] dust status
-  ./ansys [--lang en|es] dust scan <ruta> [--depth N] [--min-size SIZE]
-  ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [opciones]
+  ./ansys [--lang en|es] dust scan <ruta> [--out PATH] [--html [PATH]] [--no-allocated] [--days N] [--strict]\n  ./ansys dust scan <ruta> --legacy [--depth N] [--min-size SIZE]
+  ./ansys [--lang en|es] tree view|export|show|html|scan|audit|allocated|age|activity [opciones]
   ./ansys help scan|tree|classify|inspect|review|ai|test|worker|backend|dust
   ./ansys help tree [comando]
   ./ansys tree <comando> --help
@@ -308,10 +308,10 @@ Usage:
   ./ansys [--lang en|es] doctor
   ./ansys [--lang en|es] classify <path>
   ./ansys [--lang en|es] scan <path> [--min-mb N]  # basic scan
-  ./ansys tree scan <path> --html [file.html]  # full inventory
+  ./ansys dust scan <path> --html [file.html]  # full inventory
   ./ansys [--lang en|es] dust status
-  ./ansys [--lang en|es] dust scan <path> [--depth N] [--min-size SIZE]
-  ./ansys [--lang en|es] tree scan|show|html|audit|allocated|age|activity [options]
+  ./ansys [--lang en|es] dust scan <path> [--out PATH] [--html [PATH]] [--no-allocated] [--days N] [--strict]\n  ./ansys dust scan <path> --legacy [--depth N] [--min-size SIZE]
+  ./ansys [--lang en|es] tree view|export|show|html|scan|audit|allocated|age|activity [options]
   ./ansys help scan|tree|classify|inspect|review|ai|test|worker|backend|dust
   ./ansys help tree [command]
   ./ansys tree <command> --help
@@ -561,7 +561,7 @@ Ejemplo:
   ./ansys scan "C:/Users/nalar/Desktop" --min-mb 10
 
 ¿Quieres el inventario completo de todos los archivos?
-  ./ansys tree scan "C:/Users/nalar/Desktop" --html escritorio.html
+  ./ansys dust scan "C:/Users/nalar/Desktop" --html escritorio.html
   ./ansys tree scan --help
 EOF
       ;;

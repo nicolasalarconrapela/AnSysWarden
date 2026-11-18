@@ -3,8 +3,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { TreeEntryRecord, TreeIndexRecord, TreeScanMetadata } from '../core/inventory/tree-types';
-import { CreateTreeInventory } from '../application/tree/create-tree-inventory';
-import { NativeTreeScannerAdapter } from '../infrastructure/filesystem/native-tree-scanner-adapter';
+import { CreateInventorySnapshot } from '../dust/inventory-snapshot';
 import { writeNativeTreeHtml } from './tree-html';
 import { runTreeAudit } from './tree-audit';
 import { measureAllocatedSpace } from './tree-allocation';
@@ -13,7 +12,7 @@ import { analyzeTreeActivity } from './tree-activity';
 
 const treeHelp: Record<string, { description: string; args: string; options: string[]; example: string; warning: string }> = {
   "scan": {
-    "description": "Inventario nativo de archivos y carpetas.",
+    "description": "Compatibilidad: captura desde el motor Dust del PC.",
     "args": "<ruta> [--out indice.jsonl] [--html [archivo.html]]",
     "options": [
       "<ruta>          Carpeta raíz (obligatoria)",
@@ -21,7 +20,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
       "--html [PATH]   Crear HTML, ruta opcional"
     ],
     "example": "scan \"C:/Users/nalar/Desktop\" --html escritorio.html",
-    "warning": "No sigue enlaces simbólicos ni junctions."
+    "warning": "Alias de compatibilidad: para nuevos escaneos utiliza ./ansys dust scan."
   },
   "show": {
     "description": "Ver árbol del último índice.",
@@ -78,16 +77,16 @@ const treeHelp: Record<string, { description: string; args: string; options: str
   },
   "view": {
     "description": "Visualizar el último inventario, uno existente o escanear y mostrar.",
-    "args": "[--index indice.jsonl] [--scan ruta] [--out archivo.html]",
+    "args": "[--latest | --scan-id ID | --index indice.jsonl | --scan ruta] [--out archivo.html]",
     "options": [
-      "--index PATH    Abrir índice existente sin acceder al disco original",
-      "--scan PATH     Crear índice nuevo y mostrarlo (solo esta opción escanea)",
+      "--latest        Abrir el escaneo más reciente",\n      "--scan-id ID    Abrir una captura guardada por su identificador",\n      "--index PATH    Abrir índice existente sin acceder al disco original",
+      "--scan PATH     Solicitar nueva captura al motor Dust y visualizarla",\n      "--no-allocated  Omitir medición física en --scan",
       "--out PATH      Archivo HTML de salida"
     ],
     "example": "view --index .ansyswarden/tree/scans/scan.jsonl --out visor.html",
     "warning": "Los datos del índice pueden estar desactualizados; el visor no autoriza borrados."
   },
-  "activity": {
+  "export": {\n    "description": "Exportar un inventario guardado a HTML autónomo.",\n    "args": "[--scan-id ID | --index PATH | --latest] --format html [--out PATH]",\n    "options": [\n      "--scan-id ID    Identificador de captura",\n      "--index PATH    Índice existente",\n      "--latest        Última captura",\n      "--format html   Formato HTML (único disponible)",\n      "--out PATH      Archivo de salida"\n    ],\n    "example": "export --latest --format html --out visor.html",\n    "warning": "Leer una captura histórica no comprueba el estado actual del disco."\n  },\n  "activity": {
     "description": "Detectar familias de artefactos y cambios.",
     "args": "[--days N] [--out informe.json]",
     "options": [
@@ -256,7 +255,7 @@ async function runScan(args: string[]): Promise<void> {
 
   const outputPath = readOption(args, '--out');
   const htmlOption = readOptionalPathOption(args, '--html');
-  const inventory = new CreateTreeInventory(new NativeTreeScannerAdapter());
+  console.warn('! [WARN] tree scan es un alias antiguo; usa dust scan para nuevas capturas.');
   const startedAt = Date.now();
 
   console.log('\nAnSysWarden · Tree Scan');
@@ -267,7 +266,8 @@ async function runScan(args: string[]): Promise<void> {
   console.log('Escritura:  índice JSONL incremental');
   console.log(`HTML:       ${htmlOption === null ? 'no' : 'sí'}`);
 
-  const result = await inventory.execute(inputPath, {
+  const snapshot = await new CreateInventorySnapshot().execute(inputPath, {
+    allocated: false, // Mantener coste y semántica histórica del comando tree scan.
     ...(outputPath ? { outputPath } : {}),
     onProgress: (progress) => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
@@ -276,6 +276,9 @@ async function runScan(args: string[]): Promise<void> {
   });
 
   process.stdout.write('\n');
+  const result = snapshot.metadata;
+  snapshot.warnings.filter(warning => !warning.startsWith('Espacio asignado omitido'))
+    .forEach(warning => console.warn('! [WARN] ' + warning));
 
   let htmlPath: string | undefined;
   if (htmlOption !== null) {
@@ -393,7 +396,21 @@ async function loadMetadataForIndex(inputIndex: string): Promise<TreeScanMetadat
 
 async function runHtml(args: string[]): Promise<void> {
   const requestedIndex = readOption(args, '--index');
-  const metadata = requestedIndex ? await loadMetadataForIndex(requestedIndex) : await loadLatestMetadata();
+  const scanId = readOption(args, '--scan-id');
+  const latest = args.includes('--latest');
+  if (Number(Boolean(requestedIndex)) + Number(Boolean(scanId)) + Number(latest) > 1) {
+    throw new Error('Utiliza solamente --index, --scan-id o --latest.');
+  }
+  if (args.includes('--scan-id') && (!scanId || scanId.startsWith('--'))) {
+    throw new Error('--scan-id necesita un identificador.');
+  }
+  if (scanId && !/^tree-[0-9]{14}-[0-9a-f]{8}$/i.test(scanId)) {
+    throw new Error('Identificador de inventario inválido: ' + scanId);
+  }
+  const idIndex = scanId ? join(resolve('.ansyswarden', 'tree', 'scans'), scanId + '.jsonl') : undefined;
+  const metadata = requestedIndex ? await loadMetadataForIndex(requestedIndex)
+    : idIndex ? await loadMetadataForIndex(idIndex)
+    : await loadLatestMetadata();
   if (metadata.entries === 0) {
     throw new Error(
       'El último índice está vacío (0 entradas). No se genera HTML. ' +
@@ -528,18 +545,29 @@ async function runView(args: string[]): Promise<void> {
   const scanPath = readOption(args, '--scan');
   if (args.includes('--scan')) {
     if (!scanPath || scanPath.startsWith('--')) throw new Error('--scan necesita una carpeta.');
-    if (args.includes('--index')) throw new Error('Utiliza --scan o --index, pero no ambos.');
-    const metadata = await new CreateTreeInventory(new NativeTreeScannerAdapter()).execute(scanPath);
+    if (args.includes('--index') || args.includes('--scan-id') || args.includes('--latest')) {
+      throw new Error('Utiliza --scan, --index, --scan-id o --latest, nunca varios juntos.');
+    }
+    const snapshot = await new CreateInventorySnapshot().execute(scanPath, {
+      allocated: !args.includes('--no-allocated'),
+    });
+    const { metadata, manifest, manifestPath } = snapshot;
     const outputPath = resolve(readOption(args, '--out') ?? metadata.id + '.html');
     const html = await writeNativeTreeHtml({
       metadata,
       indexPath: metadata.indexPath,
       outputPath,
     });
-    console.log('✓ [PASS] Inventario nuevo: ' + metadata.indexPath);
+    console.log((manifest.status === 'COMPLETE' ? '✓ [PASS]' : '! [WARN]') +
+      ' Inventario nuevo: ' + metadata.indexPath);
+    console.log('Manifiesto: ' + manifestPath);
     console.log('Tree HTML: ' + html);
     console.log('Entradas: ' + metadata.entries + ' · Errores: ' + metadata.errors);
+    snapshot.warnings.forEach(warning => console.warn('! [WARN] ' + warning));
     return;
+  }
+  if (args.includes('--no-allocated')) {
+    throw new Error('--no-allocated solo puede utilizarse con --scan.');
   }
   return runHtml(args);
 }
@@ -558,6 +586,11 @@ async function main(): Promise<void> {
   if (command === 'show') return runShow(args);
   if (command === 'html') return runHtml(args);
   if (command === 'view') return runView(args);
+  if (command === 'export') {
+    const format = readOption(args, '--format') ?? 'html';
+    if (format !== 'html') throw new Error('Tree export solo admite --format html.');
+    return runHtml(args);
+  }
   if (command === 'audit') return runAudit(args);
   if (command === 'allocated') return runAllocated(args);
   if (command === 'age') return runAge(args);
