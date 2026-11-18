@@ -133,7 +133,6 @@ Output from an external tool must be transformed into the AnSysWarden contract; 
 ./ansys tree --help                  # Todos los comandos Tree
 ./ansys tree view --help             # Ayuda específica Tree
 ./ansys-tree view --help             # Alias del lanzador Tree
-./ansys --lang es doctor             # Idioma temporal
 ./ansys config language es           # Idioma persistente
 
 # Recorrido completo (sin segunda pasada de espacio físico)
@@ -152,11 +151,12 @@ Output from an external tool must be transformed into the AnSysWarden contract; 
 | `tree html` / `tree view` / `tree export --format html` | Rutas relacionadas para generar HTML; **no son alias idénticos**: `view --scan` sí captura y `export` valida el formato. |
 | `./ansys help <grupo>` | Muestra ayuda del grupo; también existen `help`, `--help` y `-h` en los despachadores indicados. |
 
-### Opciones globales
+### Ayuda global
+
+El idioma se elige una vez con `./ansys config language es` o `./ansys config language en`.
 
 | Opción | Valores | Descripción |
 | --- | --- | --- |
-| `--lang es` / `--lang en` | `es`, `en` | Idioma temporal. El lanzador elimina esta opción global antes de enviar los argumentos al subcomando. |
 | `--help` / `-h` | Sin valor | Ayuda del lanzador o del grupo; para opciones detalladas de Tree: `./ansys tree <subcomando> --help`. |
 | `help <grupo>` | `dust`, `tree`, `scan`, `ai`, `backend`, `test`, `config`, etc. | Ayuda por grupo; la cobertura varía según la implementación de cada grupo. |
 

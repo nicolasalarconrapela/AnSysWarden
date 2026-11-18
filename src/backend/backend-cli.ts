@@ -5,7 +5,7 @@ import { startBackendServer } from './server';
 function usage(): never {
   console.log(t('common.usage'));
   console.log('  ./ansys backend token');
-  console.log('  ./ansys backend serve [--host IP] [--port N] [--lang en|es]');
+  console.log('  ./ansys backend serve [--host IP] [--port N]');
   process.exit(1);
 }
 
