@@ -120,39 +120,204 @@ Example:
 
 Output from an external tool must be transformed into the AnSysWarden contract; the backend does not depend on a specific scanner.
 
-## Main interface
+## Referencia completa de comandos (CLI / Command reference)
 
-The daily interface is the `./ansys` command.
+> Documentación contrastada con el despachador `ansys` y los analizadores de argumentos de esta rama. Esta sección describe lo **implementado**, no comandos futuros. `<ruta>` indica un argumento obligatorio, `[opción]` uno opcional. Las opciones no listadas no deben darse por soportadas. Los comandos de captura generan **archivos locales de índice e informes** pero no eliminan archivos inspeccionados.
 
-Main commands:
+### Inicio rápido y alias
 
 ```bash
-./ansys ai start
-./ansys ai status
-./ansys ai test
-./ansys ai models
-./ansys ai pull-mobile-candidate
-./ansys doctor
-./ansys classify ~/.gradle/caches
-./ansys inspect ~/.gradle/caches
-./ansys scan ~ --min-mb 50
-./ansys dust status
-./ansys dust scan ~ --depth 5 --min-size 50M
-./ansys backend serve
-./ansys worker mobile --backend http://PC_IP:8787
-./ansys test rules
-./ansys test overlap
-./ansys test safety
-./ansys test tree
-./ansys test context
-./ansys test candidates
-./ansys test models
-./ansys test mobile-models
-./ansys test e2e --backend http://127.0.0.1:8787
-./ansys logs
-./ansys logs --raw
-./ansys ai stop
+./ansys --help                       # Ayuda general
+./ansys help dust                    # Ayuda de Dust
+./ansys dust --help                  # Opciones Dust
+./ansys tree --help                  # Todos los comandos Tree
+./ansys tree view --help             # Ayuda específica Tree
+./ansys-tree view --help             # Alias del lanzador Tree
+./ansys --lang es doctor             # Idioma temporal
+./ansys config language es           # Idioma persistente
+
+# Recorrido completo (sin segunda pasada de espacio físico)
+./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys tree view --latest --out visor.html
 ```
+
+| Entrada / alias | Significado real |
+| --- | --- |
+| `./ansys` | Lanzador principal; requiere Git Bash o Bash compatible y dependencias de Node/tsx. |
+| `./ansys-tree <comando>` | Lanzador equivalente a `./ansys tree <comando>`. |
+| `dust inventory <ruta>` | Alias de `dust scan <ruta>` en **modo inventario completo**; rechaza opciones del modo heredado. |
+| `dust scan <ruta> --legacy` | **Modo Dust antiguo:** resumen limitado del ejecutable externo + JSON del backend y entrada IA. |
+| `dust scan <ruta> --depth N` (también `--full`, `--min-size`, `--ai-depth` o `--ai-max-entries`) | Selecciona automáticamente el modo heredado, aunque no se escriba `--legacy`. |
+| `tree scan <ruta>` | Entrada de compatibilidad para escanear desde Tree; genera inventario vía caso de uso Dust, sin medición física adicional por defecto. |
+| `tree html` / `tree view` / `tree export --format html` | Rutas relacionadas para generar HTML; **no son alias idénticos**: `view --scan` sí captura y `export` valida el formato. |
+| `./ansys help <grupo>` | Muestra ayuda del grupo; también existen `help`, `--help` y `-h` en los despachadores indicados. |
+
+### Opciones globales
+
+| Opción | Valores | Descripción |
+| --- | --- | --- |
+| `--lang es` / `--lang en` | `es`, `en` | Idioma temporal. El lanzador elimina esta opción global antes de enviar los argumentos al subcomando. |
+| `--help` / `-h` | Sin valor | Ayuda del lanzador o del grupo; para opciones detalladas de Tree: `./ansys tree <subcomando> --help`. |
+| `help <grupo>` | `dust`, `tree`, `scan`, `ai`, `backend`, `test`, `config`, etc. | Ayuda por grupo; la cobertura varía según la implementación de cada grupo. |
+
+### Dust: captura, inventario, modo heredado
+
+| Subcomando | Argumentos y opciones aceptados | Acción |
+| --- | --- | --- |
+| `dust install` | Sin argumentos | Instala el binario Dust externo gestionado; implica descarga/verificación SHA-256. |
+| `dust status` | Sin argumentos | Muestra versión y ubicación del ejecutable Dust externo. |
+| `dust scan <ruta>` | `--out PATH` o `--output PATH`; `--html [PATH]`; `--no-allocated`; `--days N`; `--strict` | **Por defecto:** inventario nativo exhaustivo en JSONL y análisis de antigüedad/actividad; espacio físico si la plataforma lo permite. |
+| `dust inventory <ruta>` | Las mismas opciones que `dust scan` en modo inventario | Alias explícito del inventario completo; no admite opciones heredadas. |
+| `dust scan <ruta> --legacy` | `--full`; `--depth N`; `--min-size SIZE`; `--ai-depth N`; `--ai-max-entries N`; `--html [PATH]` | Antiguo resumen Dust + `ansyswarden.scan.v1` + `ai-input` del backend. |
+
+**Opciones de inventario (solo modo nuevo):**
+
+| Opción | Predeterminado / límites | Efecto |
+| --- | --- | --- |
+| `<ruta>` | Exactamente una carpeta raíz, obligatoria | Ruta para recorrer; comillas si contiene espacios. |
+| `--out PATH`, `--output PATH` | Índice con identificador de captura dentro de `.ansyswarden/tree/scans/` | Indica archivo JSONL de salida. El caso de uso comprueba que no exista previamente para evitar sobreescritura. |
+| `--html [PATH]` | No genera HTML si se omite; sin valor: `<scan-id>.html` | Genera visor HTML autónomo después de capturar. |
+| `--no-allocated` | Desactivado (se intenta medir espacio asignado) | Omite la segunda pasada de medición física; el estado es `SKIPPED`, no 0 bytes. |
+| `--days N` | `180`; entero entre `1` y `36500` | Umbral temporal para los informes de edad y actividad. |
+| `--strict` | Desactivado | Marca error de ejecución cuando la captura queda parcial o una medición solicitada es parcial/no disponible. No elimina la captura. |
+
+**Opciones del modo heredado** (todas permiten `--html [PATH]`, pero **no** deben mezclarse con `--out`, `--output`, `--days`, `--no-allocated` o `--strict`):
+
+| Opción | Predeterminado / límites | Efecto |
+| --- | --- | --- |
+| `--legacy` | No seleccionado salvo que se solicite | Fuerza el modo antiguo sin modificar el formato del backend. |
+| `--full` | Desactivado | Amplía el resumen antiguo (hasta 32 niveles, 100 000 entradas y límite de salida de 256 MiB). **No garantiza inventario exhaustivo**. |
+| `--depth N` | Normal: `5`; con `--full`: `32`; rango `1..32` | Profundidad máxima del resumen externo. |
+| `--min-size SIZE` | Normal: `50M`; con `--full`: `0B` | Umbral de tamaño de Dust. Admite sufijos como `B`, `K`, `KB`, `KiB`, `M`, `MB`, `MiB`, `G`, `GB`, `GiB`, `T`, `TB`, `TiB`. |
+| `--ai-depth N` | Definido por el perfil de árbol IA; entero positivo | Profundidad máxima del árbol enviado para análisis. |
+| `--ai-max-entries N` | Definido por el perfil IA; entero positivo | Número máximo de entradas representadas en el árbol IA. |
+| `--html [PATH]` | No genera HTML si se omite | HTML del documento **antiguo**, distinto del visor Tree del índice JSONL. |
+
+```bash
+# Inventario completo y manifiesto (Windows: intenta medir espacio asignado)
+./ansys dust scan "C:/MisDatos" --days 180 --html misdatos.html
+
+# Inventario completo sin medición física adicional
+./ansys dust inventory "C:/MisDatos" --no-allocated --out misdatos.jsonl
+
+# Exigir cobertura completa y medición solicitada disponible
+./ansys dust scan "C:/MisDatos" --strict
+
+# Compatibilidad backend/IA: resumen externo de hasta 5 niveles
+./ansys dust scan "C:/MisDatos" --legacy --depth 5 --min-size 50M
+
+# Las opciones antiguas activan automáticamente el mismo modo
+./ansys dust scan "C:/MisDatos" --depth 5
+```
+
+Los escaneos completos producen un índice `ansyswarden.tree-index.v1`, metadatos, informes derivados y manifiesto `ansyswarden.inventory-manifest.v1`. El manifiesto separa `COMPLETE`/`PARTIAL` (cobertura del recorrido) de `COMPLETE`/`PARTIAL`/`SKIPPED`/`UNAVAILABLE` (medición física). La creación (`birthtime`) y el último acceso (`atime`) dependen del sistema de archivos; `atime` no demuestra uso humano. El espacio asignado no es necesariamente recuperable.
+
+### Tree: navegación, HTML, auditoría y análisis heredados
+
+`./ansys tree ...` y `./ansys-tree ...` usan el mismo ejecutor Tree.
+
+| Subcomando | Argumentos y opciones disponibles | Comportamiento |
+| --- | --- | --- |
+| `tree view` | `--latest` **o** `--scan-id ID` **o** `--index PATH` **o** `--scan PATH`; `--out PATH`; `--no-allocated` solo con `--scan` | Abre snapshot histórico o solicita uno nuevo y genera HTML. Sin selector abre el último. |
+| `tree export` | `--latest` / `--scan-id ID` / `--index PATH`; `--format html`; `--out PATH`; también acepta `--allocation PATH` al usar el renderizador | Exporta una captura a HTML autónomo. **Único formato implementado:** `html`. |
+| `tree html` | `--out PATH`; `--index PATH`; `--scan-id ID`; `--latest`; `--allocation PATH` | Renderizador HTML heredado de capturas; sin selector usa el último índice. |
+| `tree show [ruta]` | `--depth N`; `--files`; `--index PATH` | Árbol textual del índice; profundidad visible por defecto `3`, archivos ocultos salvo `--files`. |
+| `tree scan <ruta>` | `--out PATH`; `--html [PATH]` | Captura desde entrada Tree (compatibilidad); usa el inventario nativo de Dust. |
+| `tree audit` | `--branches A,B,C`; `--out PATH` | Compara datos del último índice con carpetas actuales; omitir `--branches` usa las carpetas predefinidas del auditor. |
+| `tree allocated` | `--out PATH` | Mide tamaño asignado de archivos del último índice; implementación actual **solo Windows**. |
+| `tree age` | `--days N`; `--top N`; `--out PATH` | Analiza antigüedad: `--days` por defecto `180` (`1..36500`); `--top` por defecto `25` (`1..200`). |
+| `tree activity` | `--days N`; `--out PATH` | Detecta familias y actividad del índice; `--days` por defecto `180` (`1..36500`). |
+
+**Selección de captura:** `--latest` usa el último índice; `--scan-id ID` requiere un identificador creado por Tree (`tree-YYYYMMDDHHMMSS-xxxxxxxx`); `--index PATH` requiere su metadata asociada en `.ansyswarden/tree/scans/`. No mezclar selectores. En `tree view --scan` se crea una captura nueva; en `--latest`, `--scan-id` o `--index` no se recorre el disco de origen.
+
+```bash
+./ansys tree view --latest --out ultimo.html
+./ansys tree view --scan-id "tree-YYYYMMDDHHMMSS-xxxxxxxx" --out historico.html
+./ansys tree view --index "RUTA_DEL_INDICE.jsonl" --out antiguo.html
+./ansys tree view --scan "data/pc-tree-fixture" --no-allocated --out nuevo.html
+./ansys tree export --latest --format html --out exportado.html
+./ansys-tree show --depth 4 --files
+./ansys tree age --days 180 --top 25
+./ansys tree activity --days 180
+./ansys tree allocated
+./ansys tree audit --branches ANDROID_Studio,OSS,AnSysWarden
+```
+
+Las operaciones `tree age`, `activity`, `allocated` y `audit` están expuestas por compatibilidad; su lógica de antigüedad, actividad y medición pertenece al subsistema Dust. Ninguna autoriza borrados.
+
+### Configuración, diagnóstico, clasificación y revisión
+
+| Comando | Argumentos/opciones | Efecto |
+| --- | --- | --- |
+| `config show` | Ninguno | Muestra configuración sin revelar el token. |
+| `config path` | Ninguno | Ruta del archivo de configuración. |
+| `config language <en` o `es>` | `en` / `es` | Guarda el idioma persistente. |
+| `config backend <URL>` | URL del backend | Guarda la URL para clientes compatibles. |
+| `config token <token>` | Token de API | Persiste token en configuración; **evitar poner secretos en historiales de terminal compartidos**. |
+| `doctor` | Ninguno | Diagnóstico del entorno local. |
+| `classify <ruta>` | Ruta obligatoria | Clasifica una ruta sin borrar archivos. |
+| `inspect <ruta>` | Ruta obligatoria | Inspección de metadatos de artefacto. |
+| `scan <ruta>` | `--min-mb N` | Escáner básico de candidatos (por defecto `50 MiB`; `N > 0`); **no equivale** a `dust scan` completo. |
+| `review export <ruta>` | Ruta obligatoria | Exporta un documento de revisión. |
+| `logs` | Sin argumentos o `--raw` | Visualización de registros; `--raw` muestra el contenido JSONL. |
+
+### IA local, modelo y dispositivos
+
+| Comando | Argumentos/opciones | Efecto |
+| --- | --- | --- |
+| `ai start` | Ninguno | Arranca servidor Ollama local si no hay uno operativo. |
+| `ai stop` | Ninguno | Detiene solo la instancia gestionada por AnSysWarden. |
+| `ai status` | Ninguno | Estado de Ollama y modelo configurado. |
+| `ai test` | Ninguno | Prueba de inferencia local del modelo seleccionado. |
+| `ai models` | Ninguno | Lista de modelos recomendados y estado de referencia. |
+| `ai pull <modelo>` | Nombre de modelo, p. ej. `gemma2:2b` | Descarga el modelo a través de Ollama; requiere red. |
+| `ai pull-mobile-candidate` | Ninguno | Equivale a descargar el candidato predefinido `gemma4:e2b`. |
+| `worker mobile` | `--backend URL`; `--once`; `--poll-ms N` | Worker móvil conectado al PC. Por defecto backend `http://127.0.0.1:8787`, intervalo `2000 ms`; `N` entre `500` y `60000`. `--once` procesa como máximo un trabajo y sale. |
+| `backend token` | Ninguno | **Genera y muestra** un token aleatorio; no lo instala automáticamente. |
+| `backend serve` | `--host IP`; `--port N` | Levanta API del PC, por defecto `0.0.0.0:8787`; puerto `1..65535`. Requiere `ANSYSWARDEN_API_TOKEN` de al menos 24 caracteres. |
+
+```bash
+./ansys ai models
+./ansys ai pull gemma2:2b
+./ansys ai start
+./ansys ai test
+./ansys worker mobile --backend http://IP_PC:8787 --once --poll-ms 2000
+./ansys backend token
+./ansys backend serve --host 127.0.0.1 --port 8787
+```
+
+**Seguridad:** el backend exige token; el worker no puede autorizar `SAFE_CACHE` y la IA solo aporta evidencia. No se envían archivos reales al móvil, sino perfiles compactos preparados en el PC.
+
+### Pruebas disponibles
+
+| Comando | Opciones reconocidas | Qué valida |
+| --- | --- | --- |
+| `test safety` | Ninguna | Barreras de seguridad locales. |
+| `test rules` | Ninguna | Reglas deterministas. |
+| `test overlap` | Ninguna | Solapamiento de reglas/escáner. |
+| `test tree` | Ninguna | Política de árbol. |
+| `test context` | Ninguna | Contexto de proyectos. |
+| `test candidates` | Ninguna | Candidatos de IA. |
+| `test benchmark` | `--offset N`, `--limit N`, `--timeout-ms N`, `--cooldown-ms N`, `--recovery-timeout-ms N`, `--recycle-after-timeouts N` | Benchmark de 100 casos: valores predeterminados `0`, `10`, `10000`, `1500`, `30000` y `2` respectivamente (tiempos en ms). |
+| `test models` | `--models m1,m2`, `--timeout-ms N`, `--warmup-timeout-ms N`, `--max-timeouts N` | Comparación de modelos: tiempos predeterminados `15000`/`120000 ms` y máximo de timeouts `3`; sin `--models` usa modelos instalados. |
+| `test mobile-models` | Opciones de `test models` | Mismo ejecutor, selecciona inicialmente `gemma4:e2b,gemma2:2b`. |
+| `test e2e` | `--backend URL`, `--timeout-ms N`, `--poll-ms N` | Seguridad y transporte PC → móvil → PC. Defaults `http://127.0.0.1:8787`, `180000 ms`, `1500 ms`; timeout `5000..600000` y polling `250..30000 ms`. |
+
+**Pruebas de integración disponibles como scripts directos** (no son subcomandos de `./ansys test`):
+
+```bash
+npm run typecheck
+./node_modules/.bin/tsx src/tests/pc-dust-scan-contract-cli.ts
+./node_modules/.bin/tsx src/tests/pc-inventory-boundary-cli.ts
+node data/generate-pc-fixtures.mjs
+node data/generate-pc-fixtures.mjs --verify
+./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys tree view --latest --out visor.html
+```
+
+El fixture esperado contiene **19 archivos, 22 carpetas y 41 entradas**. El contrato Dust y `npm run typecheck` pasaron en la validación manual reportada en esta rama; los escaneos, el HTML y las demás pruebas requieren validación independiente. Para más detalles de la arquitectura: [PC Dust → Tree](docs/architecture/pc-dust-tree-consolidation.md).
+
+---
 
 ## End-to-end PC → Gemma → PC test
 
@@ -250,10 +415,13 @@ Stop:
 ## Scanning
 
 ```bash
+./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys tree view --latest --out visor.html
+# Legacy threshold-based candidate scan (different command):
 ./ansys scan ~ --min-mb 50
 ```
 
-Scanning identifies large candidates for review; it does not delete anything.
+`dust scan` captures the full inventory by default. `ansys scan` (without `dust`) is the older threshold-based candidate scan; both are read-only regarding scanned files. See the [complete CLI reference](#referencia-completa-de-comandos-cli--command-reference) for modes, options, aliases and compatibility.
 
 Optional environment variables:
 
@@ -282,6 +450,8 @@ Before considering the integration validated:
 ```bash
 npm install
 npm run typecheck
+./node_modules/.bin/tsx src/tests/pc-dust-scan-contract-cli.ts
+./node_modules/.bin/tsx src/tests/pc-inventory-boundary-cli.ts
 ./ansys test rules
 ./ansys test overlap
 ./ansys test tree
