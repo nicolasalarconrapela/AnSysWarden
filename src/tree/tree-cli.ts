@@ -79,14 +79,30 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "description": "Visualizar el último inventario, uno existente o escanear y mostrar.",
     "args": "[--latest | --scan-id ID | --index indice.jsonl | --scan ruta] [--out archivo.html]",
     "options": [
-      "--latest        Abrir el escaneo más reciente",\n      "--scan-id ID    Abrir una captura guardada por su identificador",\n      "--index PATH    Abrir índice existente sin acceder al disco original",
-      "--scan PATH     Solicitar nueva captura al motor Dust y visualizarla",\n      "--no-allocated  Omitir medición física en --scan",
+      "--latest        Abrir el escaneo más reciente",
+      "--scan-id ID    Abrir una captura guardada por su identificador",
+      "--index PATH    Abrir índice existente sin acceder al disco original",
+      "--scan PATH     Solicitar nueva captura al motor Dust y visualizarla",
+      "--no-allocated  Omitir medición física en --scan",
       "--out PATH      Archivo HTML de salida"
     ],
     "example": "view --index .ansyswarden/tree/scans/scan.jsonl --out visor.html",
     "warning": "Los datos del índice pueden estar desactualizados; el visor no autoriza borrados."
   },
-  "export": {\n    "description": "Exportar un inventario guardado a HTML autónomo.",\n    "args": "[--scan-id ID | --index PATH | --latest] --format html [--out PATH]",\n    "options": [\n      "--scan-id ID    Identificador de captura",\n      "--index PATH    Índice existente",\n      "--latest        Última captura",\n      "--format html   Formato HTML (único disponible)",\n      "--out PATH      Archivo de salida"\n    ],\n    "example": "export --latest --format html --out visor.html",\n    "warning": "Leer una captura histórica no comprueba el estado actual del disco."\n  },\n  "activity": {
+  "export": {
+    "description": "Exportar un inventario guardado a HTML autónomo.",
+    "args": "[--scan-id ID | --index PATH | --latest] --format html [--out PATH]",
+    "options": [
+      "--scan-id ID    Identificador de captura",
+      "--index PATH    Índice existente",
+      "--latest        Última captura",
+      "--format html   Formato HTML (único disponible)",
+      "--out PATH      Archivo de salida"
+    ],
+    "example": "export --latest --format html --out visor.html",
+    "warning": "Leer una captura histórica no comprueba el estado actual del disco."
+  },
+  "activity": {
     "description": "Detectar familias de artefactos y cambios.",
     "args": "[--days N] [--out informe.json]",
     "options": [
