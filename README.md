@@ -1,6 +1,86 @@
-# AnSysWarden
+<div align="center">
 
-AnSysWarden is a local, conservative classifier for identifying potentially reclaimable development caches and artifacts without allowing AI to delete files.
+<h1>🛡️ AnSysWarden</h1>
+
+<p><strong>Conoce qué ocupa tu PC. Revisa antes de decidir.</strong></p>
+
+<p>Inventario local de archivos y carpetas, análisis conservador de artefactos y visualización HTML sin delegar decisiones de borrado a la IA.</p>
+
+<p>
+  <img alt="Local first" src="https://img.shields.io/badge/LOCAL--FIRST-ON-246c84?style=for-the-badge" />
+  <img alt="Read only" src="https://img.shields.io/badge/READ--ONLY-SAFETY-27804e?style=for-the-badge" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-CLI-2769ac?style=for-the-badge" />
+  <img alt="PC Mobile" src="https://img.shields.io/badge/PC_%E2%86%94_MOBILE-GEMMA-5a5a70?style=for-the-badge" />
+</p>
+
+<p>
+  <a href="#inicio">Empezar</a> ·
+  <a href="#arquitectura-visual">Arquitectura</a> ·
+  <a href="#referencia-completa-de-comandos-cli--command-reference">Todos los comandos</a> ·
+  <a href="#validation">Validación</a>
+</p>
+
+</div>
+
+---
+
+<a id="inicio"></a>
+## ⚡ Empieza aquí
+
+**Un flujo sencillo: capturar → guardar → explorar.** Para probarlo, utiliza el directorio ficticio del proyecto; no hace falta comenzar por tu disco real.
+
+```bash
+# 1 · Instala dependencias y elige idioma (una sola vez)
+npm install
+./ansys config language es
+
+# 2 · Prepara los archivos ficticios
+node data/generate-pc-fixtures.mjs
+
+# 3 · Inventaría con Dust y abre el resultado con Tree
+./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys tree view --latest --out visor.html
+```
+
+| Quiero hacer… | Comando |
+| --- | --- |
+| **Ver qué hay y cuánto ocupa** | `./ansys dust scan "<ruta>"` |
+| **Abrir un inventario guardado** | `./ansys tree view --latest` |
+| **Explorar una captura concreta** | `./ansys tree view --scan-id <ID>` |
+| **Exportar un HTML autónomo** | `./ansys tree export --latest --format html` |
+| **Comprobar el entorno** | `./ansys doctor` |
+| **Ver todas las opciones** | [Referencia CLI completa](#referencia-completa-de-comandos-cli--command-reference) |
+
+> [!IMPORTANT]
+> **Sin borrado automático.** Dust inventaría, Tree representa y Gemma aporta evidencia cuando hay ambigüedad. Ningún resultado visual ni una clasificación de IA autoriza eliminar archivos. Un escaneo parcial o una medición ausente no significan que una carpeta esté vacía.
+
+<a id="arquitectura-visual"></a>
+## 🧭 Arquitectura de un vistazo
+
+```mermaid
+flowchart LR
+    subgraph PC["Equipo · datos locales"]
+        FS["📂 Archivos y carpetas"]
+        D["DUST · escaneo"]
+        SNAP[("JSONL + manifiesto")]
+        T["TREE · exploración"]
+        HTML["HTML autónomo"]
+        FS --> D --> SNAP --> T --> HTML
+    end
+    subgraph AI["Clasificación conservadora · flujo independiente"]
+        P["Perfiles compactos"]
+        R["Reglas locales"]
+        G["Gemma / Ollama"]
+        V["Revisión humana"]
+        P --> R
+        R -->|Ambiguo| G
+        G -->|Solo evidencia| V
+    end
+```
+
+**Dust** conserva el inventario del PC y sus mediciones. **Tree** puede abrir una captura previa sin recorrer de nuevo el sistema de archivos. La IA no recibe archivos reales ni decide borrados.
+
+---
 
 ## Safety principle
 
