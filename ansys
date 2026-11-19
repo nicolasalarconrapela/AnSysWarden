@@ -278,7 +278,11 @@ usage() {
 
   01  DUST  /  ESCANEO DEL PC
       ./ansys dust scan <ruta>
-          --out PATH  --html [PATH]  --no-allocated  --days N  --strict
+          --out PATH            Guardar índice JSONL en esta ruta
+          --html [PATH]         Crear visor HTML (ruta opcional)
+          --no-allocated        Omitir medición de espacio asignado
+          --days N              Umbral de antigüedad y actividad
+          --strict              Fallar ante captura o medición incompleta
       ./ansys dust inventory <ruta>             (alias del inventario)
       ./ansys dust scan <ruta> --legacy          (salida anterior)
       ./ansys dust install | status
@@ -334,7 +338,11 @@ EOF
 
   01  DUST  /  PC INVENTORY
       ./ansys dust scan <path>
-          --out PATH  --html [PATH]  --no-allocated  --days N  --strict
+          --out PATH            Save the JSONL index to this path
+          --html [PATH]         Create HTML viewer (optional path)
+          --no-allocated        Skip allocated-space measurement
+          --days N              Age and activity threshold
+          --strict              Fail on incomplete scan or measurement
       ./ansys dust inventory <path>             (inventory alias)
       ./ansys dust scan <path> --legacy          (previous format)
       ./ansys dust install | status
