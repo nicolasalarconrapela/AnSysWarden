@@ -19,7 +19,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
       "--out PATH      Índice JSONL de salida",
       "--html [PATH]   Crear HTML, ruta opcional"
     ],
-    "example": "scan \"C:/Users/nalar/Desktop\" --html escritorio.html",
+    "example": "scan \"data/pc-tree-fixture\" --html inventario.html",
     "warning": "Alias de compatibilidad: para nuevos escaneos utiliza ./ansys dust scan."
   },
   "show": {
@@ -36,13 +36,15 @@ const treeHelp: Record<string, { description: string; args: string; options: str
   },
   "html": {
     "description": "Generar HTML autónomo del índice.",
-    "args": "[--out archivo.html] [--index indice.jsonl] [--allocation medicion.jsonl]",
+    "args": "[--latest | --scan-id ID | --index indice.jsonl] [--out archivo.html] [--allocation medicion.jsonl]",
     "options": [
       "--out PATH         Archivo HTML de salida",
       "--index PATH       Índice JSONL",
+      "--scan-id ID       Identificador de captura",
+      "--latest           Última captura disponible",
       "--allocation PATH  Medición de espacio asignado"
     ],
-    "example": "html --out escritorio_actividad.html",
+    "example": "html --latest --out visor.html",
     "warning": "Usa datos existentes; pueden estar desactualizados."
   },
   "audit": {
@@ -86,17 +88,18 @@ const treeHelp: Record<string, { description: string; args: string; options: str
       "--no-allocated  Omitir medición física en --scan",
       "--out PATH      Archivo HTML de salida"
     ],
-    "example": "view --index .ansyswarden/tree/scans/scan.jsonl --out visor.html",
+    "example": "view --latest --out visor.html",
     "warning": "Los datos del índice pueden estar desactualizados; el visor no autoriza borrados."
   },
   "export": {
     "description": "Exportar un inventario guardado a HTML autónomo.",
-    "args": "[--scan-id ID | --index PATH | --latest] --format html [--out PATH]",
+    "args": "[--scan-id ID | --index PATH | --latest] [--format html] [--out PATH]",
     "options": [
       "--scan-id ID    Identificador de captura",
       "--index PATH    Índice existente",
       "--latest        Última captura",
       "--format html   Formato HTML (único disponible)",
+      "--allocation PATH  Medición JSONL opcional",
       "--out PATH      Archivo de salida"
     ],
     "example": "export --latest --format html --out visor.html",
@@ -114,26 +117,44 @@ const treeHelp: Record<string, { description: string; args: string; options: str
   }
 };
 
+const treeCommandOrder = [
+  'scan', 'view', 'show', 'export', 'html',
+  'audit', 'allocated', 'age', 'activity',
+] as const;
+
 function printHelp(command?: string): void {
-  console.log('\nAnSysWarden · Tree · Ayuda');
-  console.log('────────────────────────────────────────');
+  console.log('\n  ◆ AnSysWarden · Tree');
+  console.log('  ════════════════════════════════════════════════════════════');
+
   if (!command) {
-    console.log('Uso: ./ansys tree <comando> [opciones]');
-    console.log('También disponible: ./ansys-tree <comando>');
-    for (const [key, info] of Object.entries(treeHelp))
-      console.log('  ' + key.padEnd(12) + info.description);
-    console.log('\nEjemplo: ./ansys tree activity --help');
+    console.log('\n  EXPLORACIÓN / SUBCOMANDOS');
+    console.log('  ./ansys tree\n');
+    for (const key of treeCommandOrder) {
+      console.log('      ' + key.padEnd(18) + treeHelp[key].description);
+    }
+    console.log('\n  ────────────────────────────────────────────────────────────');
+    console.log('  Ejemplo:  ./ansys tree view --latest --out visor.html');
+    console.log('  Opciones: ./ansys tree <comando> --help');
+    console.log('  Alias:    ./ansys-tree <comando>');
+    console.log('  Seguridad: visualizar un inventario no autoriza borrados.\n');
     return;
   }
+
   const info = Object.prototype.hasOwnProperty.call(treeHelp, command) ? treeHelp[command] : undefined;
   if (!info) throw new Error('Comando desconocido: ' + command + '. Consulta ./ansys tree --help');
-  console.log(info.description);
-  console.log('\nUso:\n  ./ansys tree ' + command + ' ' + info.args);
-  console.log('\nOpciones:');
-  for (const item of info.options) console.log('  ' + item);
-  console.log('\nEjemplo:\n  ./ansys tree ' + info.example);
-  console.log('\nAdvertencia: ' + info.warning);
-  console.log('Más ayuda: ./ansys tree --help');
+
+  console.log('\n  COMANDO');
+  console.log('      ./ansys tree ' + command);
+  console.log('\n  ' + info.description);
+  console.log('\n  USO');
+  console.log('      ./ansys tree ' + command + ' ' + info.args);
+  console.log('\n  OPCIONES');
+  for (const item of info.options) console.log('      ' + item);
+  console.log('\n  EJEMPLO');
+  console.log('      ./ansys tree ' + info.example);
+  console.log('\n  ADVERTENCIA');
+  console.log('      ' + info.warning);
+  console.log('\n  Más comandos: ./ansys tree --help\n');
 }
 
 function usage(): never {

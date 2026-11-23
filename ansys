@@ -288,13 +288,20 @@ usage() {
       ./ansys dust install | status
 
   02  TREE  /  EXPLORACIÓN
-      ./ansys tree view --latest [--out PATH]
-      ./ansys tree view --scan-id ID [--out PATH]
-      ./ansys tree view --index PATH [--out PATH]
-      ./ansys tree view --scan <ruta> [--no-allocated]
-      ./ansys tree export --latest --format html
-      ./ansys tree show | html | audit | allocated | age | activity
-      ./ansys-tree <comando>                    (alias de Tree)
+      ./ansys tree
+          scan <ruta>        Capturar inventario (alias de Dust)
+          view               Abrir visor HTML de una captura
+          show               Mostrar árbol en terminal
+          export             Exportar captura a HTML
+          html               Generar HTML desde un índice
+          audit              Comparar índice con archivos actuales
+          allocated          Medir espacio asignado (Windows)
+          age                Analizar antigüedad de archivos
+          activity           Detectar familias de actividad
+
+      Ejemplo: ./ansys tree view --latest --out visor.html
+      Opciones: ./ansys tree <comando> --help
+      Alias: ./ansys-tree <comando>
 
   03  SISTEMA  /  CONFIGURACIÓN Y REVISIÓN
       ./ansys config show | path
@@ -354,13 +361,20 @@ EOF
       ./ansys dust install | status
 
   02  TREE  /  EXPLORATION
-      ./ansys tree view --latest [--out PATH]
-      ./ansys tree view --scan-id ID [--out PATH]
-      ./ansys tree view --index PATH [--out PATH]
-      ./ansys tree view --scan <path> [--no-allocated]
-      ./ansys tree export --latest --format html
-      ./ansys tree show | html | audit | allocated | age | activity
-      ./ansys-tree <command>                    (Tree launcher alias)
+      ./ansys tree
+          scan <path>        Capture inventory (Dust alias)
+          view               Open an inventory HTML viewer
+          show               Show tree in the terminal
+          export             Export a snapshot as HTML
+          html               Generate HTML from an index
+          audit              Compare index with current files
+          allocated          Measure allocated space (Windows)
+          age                Analyze file age
+          activity           Detect activity families
+
+      Example: ./ansys tree view --latest --out viewer.html
+      Options: ./ansys tree <command> --help
+      Alias: ./ansys-tree <command>
 
   03  SYSTEM  /  CONFIGURATION AND REVIEW
       ./ansys config show | path
