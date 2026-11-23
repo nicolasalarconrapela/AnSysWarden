@@ -308,8 +308,14 @@ usage() {
       ./ansys logs [--raw]
 
   04  IA  /  PC ↔ MÓVIL
-      ./ansys ai start | stop | status | test | models
-      ./ansys ai pull <modelo> | pull-mobile-candidate
+      ./ansys ai
+          start                  Iniciar Ollama local
+          stop                   Detener Ollama gestionado
+          status                 Consultar estado y modelo activo
+          test                   Probar inferencia local
+          models                 Consultar modelos recomendados
+          pull <modelo>          Descargar un modelo con Ollama
+          pull-mobile-candidate  Descargar el candidato móvil
       ./ansys backend token | serve [--host IP] [--port N]
       ./ansys worker mobile --backend URL [--once] [--poll-ms N]
 
@@ -368,8 +374,14 @@ EOF
       ./ansys logs [--raw]
 
   04  AI  /  PC ↔ MOBILE
-      ./ansys ai start | stop | status | test | models
-      ./ansys ai pull <model> | pull-mobile-candidate
+      ./ansys ai
+          start                  Start local Ollama
+          stop                   Stop managed Ollama
+          status                 Check status and selected model
+          test                   Test local inference
+          models                 Show recommended models
+          pull <model>           Download a model with Ollama
+          pull-mobile-candidate  Download the mobile candidate
       ./ansys backend token | serve [--host IP] [--port N]
       ./ansys worker mobile --backend URL [--once] [--poll-ms N]
 
@@ -636,7 +648,33 @@ EOF
       printf '%s\n' 'AnSysWarden · Revisión' 'Uso: ./ansys review export <ruta>' 'Ejemplo: ./ansys review export "C:/Users/nalar/Desktop/proyecto"'
       ;;
     ai)
-      printf '%s\n' 'AnSysWarden · IA' 'Uso: ./ansys ai start|stop|status|test|models' '     ./ansys ai pull <modelo>' '     ./ansys ai pull-mobile-candidate'
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · IA
+
+  ./ansys ai
+      start                  Iniciar Ollama local
+      stop                   Detener Ollama gestionado
+      status                 Consultar estado y modelo activo
+      test                   Probar inferencia local
+      models                 Consultar modelos recomendados
+      pull <modelo>          Descargar un modelo con Ollama
+      pull-mobile-candidate  Descargar el candidato móvil
+EOF
+      else
+        cat <<'EOF'
+AnSysWarden · AI
+
+  ./ansys ai
+      start                  Start local Ollama
+      stop                   Stop managed Ollama
+      status                 Check status and selected model
+      test                   Test local inference
+      models                 Show recommended models
+      pull <model>           Download a model with Ollama
+      pull-mobile-candidate  Download the mobile candidate
+EOF
+      fi
       ;;
     test)
       printf '%s\n' 'AnSysWarden · Test' 'Uso: ./ansys test safety|rules|overlap|tree|context|candidates' '     ./ansys test benchmark [--offset N] [--limit N]' '     ./ansys test models [--models a,b] [--timeout-ms N]' '     ./ansys test e2e --backend http://IP_PC:8787'
