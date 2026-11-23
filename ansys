@@ -273,147 +273,189 @@ usage() {
   if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
     cat <<'EOF'
 
-  Inventario local · Visor HTML · Revisión conservadora
-  ────────────────────────────────────────────────────────────
+  ¿QUÉ QUIERES HACER?  ·  No necesitas memorizar los nombres
+  Si tienes prisa, elige solo 1, 2 o 3. El resto es referencia.
+  ───────────────────────────────────────────────────────────────
 
-  01  DUST  /  ESCANEO DEL PC
-      ./ansys dust scan <ruta>
-          --out PATH            Guardar índice JSONL en esta ruta
-          --html [PATH]         Crear visor HTML (ruta opcional)
-          --no-allocated        Omitir medición de espacio asignado
-          --days N              Umbral de antigüedad y actividad
-          --strict              Fallar ante captura o medición incompleta
-      ./ansys dust inventory <ruta>             (alias del inventario)
-      ./ansys dust scan <ruta> --legacy          (salida anterior)
-      ./ansys dust install | status
+  1. Saber QUÉ archivos tengo y cuánto ocupan
+     ./ansys dust scan "<ruta>" --no-allocated
+     Recorre carpetas y guarda una captura (inventario) en el PC.
 
-  02  TREE  /  EXPLORACIÓN
-      ./ansys tree
-          scan <ruta>        Capturar inventario (alias de Dust)
-          view               Abrir visor HTML de una captura
-          show               Mostrar árbol en terminal
-          export             Exportar captura a HTML
-          html               Generar HTML desde un índice
-          audit              Comparar índice con archivos actuales
-          allocated          Medir espacio asignado (Windows)
-          age                Analizar antigüedad de archivos
-          activity           Detectar familias de actividad
+  2. VOLVER A VER una captura, sin escanear otra vez
+     ./ansys tree view --latest --out visor.html
+     Crea una página HTML a partir de la captura guardada.
 
-      Ejemplo: ./ansys tree view --latest --out visor.html
-      Opciones: ./ansys tree <comando> --help
-      Alias: ./ansys-tree <comando>
+  3. Buscar solamente posibles carpetas GRANDES
+     ./ansys scan "data/pc-tree-fixture" --min-mb 50
+     Es una búsqueda básica de candidatos, NO un inventario completo.
 
-  03  SISTEMA  /  CONFIGURACIÓN Y REVISIÓN
-      ./ansys config show | path
-      ./ansys config language es | en
-      ./ansys config backend <URL>
-      ./ansys config token <token>
-      ./ansys doctor
-      ./ansys inspect <ruta> | classify <ruta>
-      ./ansys scan <ruta> [--min-mb N]          (escaneo básico)
-      ./ansys review export <ruta>
-      ./ansys logs [--raw]
+  ANTES DE EMPEZAR
+     ./ansys config language es
+     Si una ruta tiene espacios, escríbela entre comillas.
+     <ruta> significa «pon aquí la carpeta que quieres examinar».
 
-  04  IA  /  PC ↔ MÓVIL
-      ./ansys ai
-          start                  Iniciar Ollama local
-          stop                   Detener Ollama gestionado
-          status                 Consultar estado y modelo activo
-          test                   Probar inferencia local
-          models                 Consultar modelos recomendados
-          pull <modelo>          Descargar un modelo con Ollama
-          pull-mobile-candidate  Descargar el candidato móvil
-      ./ansys backend token | serve [--host IP] [--port N]
-      ./ansys worker mobile --backend URL [--once] [--poll-ms N]
+  ───────────────────────────────────────────────────────────────
+  MAPA DE COMANDOS  ·  Elige por lo que necesitas, no por siglas
 
-  05  PRUEBAS
-      ./ansys test safety | rules | overlap | tree | context | candidates
-      ./ansys test benchmark [--offset N] [--limit N]
-      ./ansys test models [--models m1,m2] [--timeout-ms N]
-      ./ansys test mobile-models [--timeout-ms N]
-      ./ansys test e2e --backend URL [--timeout-ms N] [--poll-ms N]
+  DUST  ·  GUARDAR QUÉ EXISTE EN EL DISCO
+     ./ansys dust scan <ruta>    Nuevo inventario de archivos y carpetas.
+     ./ansys dust inventory <ruta>
+                                Otro nombre para el mismo inventario.
+     ./ansys dust status        Ver si está disponible el Dust externo.
+     ./ansys dust install       Instalar el Dust externo (requiere red).
+     ./ansys dust scan <ruta> --legacy
+                                Resumen ANTIGUO para backend/IA, no inventario.
+     Opciones completas: ./ansys help dust
 
-  ────────────────────────────────────────────────────────────
-  ¿Por dónde empiezo?
-      ./ansys config language es
-      ./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
-      ./ansys tree view --latest --out visor.html
+  TREE  ·  CONSULTAR LO QUE YA SE HA GUARDADO
+     ./ansys tree
+         view                   Crear visor HTML (recomendado).
+         show                   Ver nombres y tamaños en la terminal.
+         export                 Guardar una copia HTML para consultar.
+         html                   Forma antigua de crear el mismo HTML.
+         scan <ruta>            Forma antigua de iniciar un inventario.
+         audit                  Comparar captura con carpetas actuales.
+         allocated              Medir espacio ocupado (solo Windows).
+         age                    Ver tiempo sin modificar archivos.
+         activity               Detectar conjuntos para revisar.
+     ¿Cuál elegir?: ./ansys tree --help
+     Opciones de uno: ./ansys tree view --help
 
-  Más opciones: ./ansys dust --help | ./ansys tree <comando> --help
-  Seguridad: solo lectura de archivos inspeccionados; sin borrados automáticos.
+  SISTEMA  ·  PREPARAR, COMPROBAR Y REVISAR
+     ./ansys config show        Ver configuración (sin revelar token).
+     ./ansys config path        Saber dónde se guarda la configuración.
+     ./ansys config language es Configurar idioma una vez (o «en»).
+     ./ansys config backend URL Guardar dirección del PC servidor.
+     ./ansys config token TOKEN Guardar credencial (dato sensible).
+     ./ansys doctor             Comprobar si el entorno funciona.
+     ./ansys inspect <ruta>     Obtener datos de una carpeta.
+     ./ansys classify <ruta>    Clasificarla sin borrarla.
+     ./ansys review export <ruta>
+                                Exportar información para revisar.
+     ./ansys logs               Ver los registros de actividad.
+
+  IA Y CONEXIÓN  ·  LA IA SOLO APORTA EVIDENCIA
+     ./ansys ai status          Consultar si Ollama funciona.
+     ./ansys ai start           Arrancar Ollama local.
+     ./ansys ai test            Probar que el modelo responde.
+     ./ansys ai models          Ver modelos recomendados.
+     ./ansys ai pull <modelo>   Descargar un modelo.
+     ./ansys ai stop            Parar Ollama gestionado.
+     ./ansys help ai            Ver todas las opciones de IA.
+     ./ansys backend serve      Levantar servidor del PC.
+     ./ansys worker mobile --backend URL
+                                Conectar trabajador móvil al PC.
+
+  PRUEBAS  ·  COMPROBAR EL PROYECTO, NO EXPLORAR ARCHIVOS
+     ./ansys test rules         Comprobar reglas de clasificación.
+     ./ansys test safety        Verificar las barreras de seguridad.
+     ./ansys test tree          Comprobar las reglas de Tree.
+     ./ansys test models        Comparar modelos de IA.
+     ./ansys test e2e --backend URL
+                                Probar PC → móvil → PC (requiere servicios).
+     ./ansys help test          Ver el resto de pruebas y sus opciones.
+
+  ───────────────────────────────────────────────────────────────
+  RECUERDA
+     DUST SCAN = guarda una captura nueva.
+     TREE VIEW = crea un visor de una captura guardada.
+     SCAN (sin Dust) = busca candidatos grandes; no es lo mismo.
+     Ninguno de estos comandos autoriza borrar archivos.
+     Ayuda: ./ansys help dust · ./ansys tree --help
 
 EOF
   else
     cat <<'EOF'
 
-  Local inventory · HTML viewer · Conservative review
-  ────────────────────────────────────────────────────────────
+  WHAT DO YOU WANT TO DO?  ·  No need to memorize command names
+  In a hurry? Pick just 1, 2 or 3. The rest is reference.
+  ───────────────────────────────────────────────────────────────
 
-  01  DUST  /  PC INVENTORY
-      ./ansys dust scan <path>
-          --out PATH            Save the JSONL index to this path
-          --html [PATH]         Create HTML viewer (optional path)
-          --no-allocated        Skip allocated-space measurement
-          --days N              Age and activity threshold
-          --strict              Fail on incomplete scan or measurement
-      ./ansys dust inventory <path>             (inventory alias)
-      ./ansys dust scan <path> --legacy          (previous format)
-      ./ansys dust install | status
+  1. Find WHAT is on disk and how much space it uses
+     ./ansys dust scan "<ruta>" --no-allocated
+     Walks folders and saves a snapshot (inventory) on your PC.
 
-  02  TREE  /  EXPLORATION
-      ./ansys tree
-          scan <path>        Capture inventory (Dust alias)
-          view               Open an inventory HTML viewer
-          show               Show tree in the terminal
-          export             Export a snapshot as HTML
-          html               Generate HTML from an index
-          audit              Compare index with current files
-          allocated          Measure allocated space (Windows)
-          age                Analyze file age
-          activity           Detect activity families
+  2. VIEW an existing snapshot WITHOUT scanning again
+     ./ansys tree view --latest --out viewer.html
+     Creates an HTML page from the saved inventory.
 
-      Example: ./ansys tree view --latest --out viewer.html
-      Options: ./ansys tree <command> --help
-      Alias: ./ansys-tree <command>
+  3. Find potentially LARGE cache candidates only
+     ./ansys scan "data/pc-tree-fixture" --min-mb 50
+     Basic candidate search, NOT a complete file inventory.
 
-  03  SYSTEM  /  CONFIGURATION AND REVIEW
-      ./ansys config show | path
-      ./ansys config language es | en
-      ./ansys config backend <URL>
-      ./ansys config token <token>
-      ./ansys doctor
-      ./ansys inspect <path> | classify <path>
-      ./ansys scan <path> [--min-mb N]          (basic scan)
-      ./ansys review export <path>
-      ./ansys logs [--raw]
+  GET STARTED
+     ./ansys config language en
+     Quote paths that contain spaces.
+     <path> means "replace this with the folder to inspect".
 
-  04  AI  /  PC ↔ MOBILE
-      ./ansys ai
-          start                  Start local Ollama
-          stop                   Stop managed Ollama
-          status                 Check status and selected model
-          test                   Test local inference
-          models                 Show recommended models
-          pull <model>           Download a model with Ollama
-          pull-mobile-candidate  Download the mobile candidate
-      ./ansys backend token | serve [--host IP] [--port N]
-      ./ansys worker mobile --backend URL [--once] [--poll-ms N]
+  ───────────────────────────────────────────────────────────────
+  COMMAND MAP  ·  Choose what you need
 
-  05  TESTS
-      ./ansys test safety | rules | overlap | tree | context | candidates
-      ./ansys test benchmark [--offset N] [--limit N]
-      ./ansys test models [--models m1,m2] [--timeout-ms N]
-      ./ansys test mobile-models [--timeout-ms N]
-      ./ansys test e2e --backend URL [--timeout-ms N] [--poll-ms N]
+  DUST  ·  SAVE WHAT IS ON YOUR DISK
+     ./ansys dust scan <path>    New inventory of files and folders.
+     ./ansys dust inventory <path>
+                                Another name for the same inventory.
+     ./ansys dust status        Check external Dust availability.
+     ./ansys dust install       Install external Dust (requires network).
+     ./ansys dust scan <path> --legacy
+                                OLD backend/AI summary; not a full inventory.
+     All options: ./ansys help dust
 
-  ────────────────────────────────────────────────────────────
-  Start here:
-      ./ansys config language en
-      ./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventory.html
-      ./ansys tree view --latest --out viewer.html
+  TREE  ·  EXPLORE A SAVED INVENTORY
+     ./ansys tree
+         view                   Generate HTML viewer (recommended).
+         show                   Print names and sizes in the terminal.
+         export                 Save an HTML copy of a snapshot.
+         html                   Older command for the same HTML output.
+         scan <path>            Older way to start an inventory.
+         audit                  Compare snapshot with current folders.
+         allocated              Measure allocated space (Windows only).
+         age                    Find files unchanged for a long time.
+         activity               Find activity groups for review.
+     How to choose: ./ansys tree --help
+     Specific help: ./ansys tree view --help
 
-  More options: ./ansys dust --help | ./ansys tree <command> --help
-  Safety: scanned files are read only; no automatic deletion.
+  SYSTEM  ·  SET UP, CHECK, REVIEW
+     ./ansys config show        View settings without exposing the token.
+     ./ansys config path        Locate the settings file.
+     ./ansys config language en Set language once (or «es»).
+     ./ansys config backend URL Save PC server address.
+     ./ansys config token TOKEN Save credential (sensitive).
+     ./ansys doctor             Check your environment.
+     ./ansys inspect <path>     Inspect folder details.
+     ./ansys classify <path>    Classify without deleting.
+     ./ansys review export <path>
+                                Export details for human review.
+     ./ansys logs               Read activity logs.
+
+  AI AND CONNECTION  ·  AI PROVIDES EVIDENCE ONLY
+     ./ansys ai status          Check if Ollama is running.
+     ./ansys ai start           Start local Ollama.
+     ./ansys ai test            Test model inference.
+     ./ansys ai models          View recommended models.
+     ./ansys ai pull <model>    Download a model.
+     ./ansys ai stop            Stop managed Ollama.
+     ./ansys help ai            Show all AI options.
+     ./ansys backend serve      Run PC backend server.
+     ./ansys worker mobile --backend URL
+                                Connect mobile worker to the PC.
+
+  TESTS  ·  TEST THE PROJECT, NOT YOUR DISK
+     ./ansys test rules         Check classification rules.
+     ./ansys test safety        Verify safety barriers.
+     ./ansys test tree          Check Tree policies.
+     ./ansys test models        Compare AI models.
+     ./ansys test e2e --backend URL
+                                Test PC → mobile → PC (services required).
+     ./ansys help test          See remaining tests and their options.
+
+  ───────────────────────────────────────────────────────────────
+  REMEMBER
+     DUST SCAN = save a new inventory.
+     TREE VIEW = make a viewer from a saved inventory.
+     SCAN (without Dust) = find big candidates; not the same.
+     None of these commands authorizes deleting files.
+     Help: ./ansys help dust · ./ansys tree --help
 
 EOF
   fi
@@ -637,76 +679,247 @@ command_help() {
   local topic="$1"
   case "$topic" in
     scan)
-      cat <<'EOF'
-AnSysWarden · Escaneo básico
-Uso:
-  ./ansys scan <ruta> [--min-mb N]
-Opciones:
-  <ruta>        Carpeta obligatoria.
-  --min-mb N    Tamaño mínimo para el escaneo básico, en MiB.
-Ejemplo:
-  ./ansys scan "C:/Users/nalar/Desktop" --min-mb 10
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · BUSCAR CARPETAS GRANDES
 
-¿Quieres el inventario completo de todos los archivos?
-  ./ansys dust scan "C:/Users/nalar/Desktop" --html escritorio.html
-  ./ansys tree scan --help
+  ¿Cuándo? Quiero localizar candidatos grandes, NO hacer inventario completo.
+  Comando: ./ansys scan "<ruta>" --min-mb 50
+
+  --min-mb N    Mostrar candidatos a partir de N MiB (por defecto 50).
+  <ruta>        Sustituye por una carpeta que exista.
+
+  ¿Qué obtengo? Una búsqueda básica de posibles candidatos para revisar.
+  ¿Qué NO hace? No crea el índice completo que usa el visor Tree.
+  ¿Para ver todos los archivos? ./ansys dust scan "<ruta>" --no-allocated
+  ¿Para abrir una captura anterior? ./ansys tree view --latest
+  No borra archivos.
 EOF
+      else
+        cat <<'EOF'
+AnSysWarden · FIND LARGE CANDIDATES
+
+  When? Find large candidates, NOT a complete file inventory.
+  Command: ./ansys scan "<path>" --min-mb 50
+
+  --min-mb N    Minimum candidate size in MiB (default 50).
+  <path>        Replace with an existing directory.
+
+  Result: A basic scan of candidates for review.
+  Does NOT: Create a complete Tree inventory.
+  For every file: ./ansys dust scan "<path>" --no-allocated
+  For a saved inventory: ./ansys tree view --latest
+  Does not delete files.
+EOF
+      fi
       ;;
     classify)
-      printf '%s\n' 'AnSysWarden · Clasificar' 'Uso: ./ansys classify <ruta>' 'Ejemplo: ./ansys classify "C:/Users/nalar/Desktop/proyecto"'
+      printf '%s\n' 'AnSysWarden · Clasificar una ruta' '  ./ansys classify "<ruta>"' '  Aplica reglas de clasificación sin borrar contenido.' '  Para ver nombres y tamaños, usa «dust scan» o «tree view».'
       ;;
     inspect)
-      printf '%s\n' 'AnSysWarden · Inspeccionar' 'Uso: ./ansys inspect <ruta>' 'Ejemplo: ./ansys inspect "C:/Users/nalar/Desktop/proyecto"'
+      printf '%s\n' 'AnSysWarden · Inspeccionar una ruta' '  ./ansys inspect "<ruta>"' '  Obtiene detalles de una carpeta; no crea un índice Tree.'
       ;;
     review)
-      printf '%s\n' 'AnSysWarden · Revisión' 'Uso: ./ansys review export <ruta>' 'Ejemplo: ./ansys review export "C:/Users/nalar/Desktop/proyecto"'
+      printf '%s\n' 'AnSysWarden · Exportar revisión' '  ./ansys review export "<ruta>"' '  Prepara datos para revisión; no elimina la carpeta.'
       ;;
     ai)
       if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
         cat <<'EOF'
-AnSysWarden · IA
+AnSysWarden · IA LOCAL (Ollama)
 
-  ./ansys ai
-      start                  Iniciar Ollama local
-      stop                   Detener Ollama gestionado
-      status                 Consultar estado y modelo activo
-      test                   Probar inferencia local
-      models                 Consultar modelos recomendados
-      pull <modelo>          Descargar un modelo con Ollama
-      pull-mobile-candidate  Descargar el candidato móvil
+  ¿Qué quiero hacer?                    Comando
+  Ver si la IA está funcionando         ./ansys ai status
+  Iniciar la IA en este equipo          ./ansys ai start
+  Probar que la IA responde             ./ansys ai test
+  Ver modelos recomendados              ./ansys ai models
+  Descargar un modelo                   ./ansys ai pull <modelo>
+  Descargar el candidato para móvil     ./ansys ai pull-mobile-candidate
+  Detener solo la IA gestionada         ./ansys ai stop
+
+  IMPORTANTE: La IA aporta evidencia. No autoriza borrar archivos.
+  Si no sabes si Ollama está activo, empieza por «./ansys ai status».
 EOF
       else
         cat <<'EOF'
-AnSysWarden · AI
+AnSysWarden · LOCAL AI (Ollama)
 
-  ./ansys ai
-      start                  Start local Ollama
-      stop                   Stop managed Ollama
-      status                 Check status and selected model
-      test                   Test local inference
-      models                 Show recommended models
-      pull <model>           Download a model with Ollama
-      pull-mobile-candidate  Download the mobile candidate
+  Your goal                             Command
+  Check whether AI is running           ./ansys ai status
+  Start AI on this computer             ./ansys ai start
+  Test model inference                  ./ansys ai test
+  See recommended models                ./ansys ai models
+  Download a model                      ./ansys ai pull <model>
+  Download the mobile candidate         ./ansys ai pull-mobile-candidate
+  Stop only managed AI                   ./ansys ai stop
+
+  IMPORTANT: AI provides evidence. It cannot authorize file deletion.
+  Not sure if Ollama is running? Start with «./ansys ai status».
 EOF
       fi
       ;;
     test)
-      printf '%s\n' 'AnSysWarden · Test' 'Uso: ./ansys test safety|rules|overlap|tree|context|candidates' '     ./ansys test benchmark [--offset N] [--limit N]' '     ./ansys test models [--models a,b] [--timeout-ms N]' '     ./ansys test e2e --backend http://IP_PC:8787'
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · PRUEBAS DEL PROYECTO
+
+  ¿Qué necesito verificar?
+    rules          Reglas de clasificación.
+    safety         Límites que impiden decisiones peligrosas.
+    overlap        Solapamientos entre reglas o escáneres.
+    tree           Reglas de Tree.
+    context        Detección del contexto de los proyectos.
+    candidates     Selección de candidatos para IA.
+    benchmark      Rendimiento en un conjunto de casos.
+    models         Comparación de modelos instalados en Ollama.
+    mobile-models  Comparación de modelos preseleccionados para móvil.
+    e2e            Recorrido PC → trabajador móvil → PC.
+
+  Cómo ejecutarlas:
+    ./ansys test rules
+    ./ansys test safety
+    ./ansys test tree
+    ./ansys test benchmark [--offset N] [--limit N]
+    ./ansys test models [--models modelo1,modelo2] [--timeout-ms N]
+    ./ansys test mobile-models [--timeout-ms N]
+    ./ansys test e2e --backend http://IP_PC:8787
+
+  ATENCIÓN: e2e requiere backend PC y trabajador móvil en funcionamiento.
+  Las pruebas no son una orden de borrar archivos.
+  Opciones avanzadas: consultar README (referencia completa de comandos).
+EOF
+      else
+        cat <<'EOF'
+AnSysWarden · PROJECT TESTS
+
+  What do you need to verify?
+    rules          Classification rules.
+    safety         Safety barriers.
+    overlap        Overlapping scanners/rules.
+    tree           Tree policies.
+    context        Project context detection.
+    candidates     AI candidate selection.
+    benchmark      Benchmark on a set of cases.
+    models         Compare installed Ollama models.
+    mobile-models  Compare preset mobile candidates.
+    e2e            PC → mobile worker → PC transport.
+
+  How to run:
+    ./ansys test rules
+    ./ansys test safety
+    ./ansys test tree
+    ./ansys test benchmark [--offset N] [--limit N]
+    ./ansys test models [--models model1,model2] [--timeout-ms N]
+    ./ansys test mobile-models [--timeout-ms N]
+    ./ansys test e2e --backend http://PC_IP:8787
+
+  NOTE: e2e requires a running PC backend and mobile worker.
+  Tests are not permission to delete files.
+  Advanced options: see the README command reference.
+EOF
+      fi
       ;;
     worker)
-      printf '%s\n' 'AnSysWarden · Worker' 'Uso: ./ansys worker mobile --backend http://IP_PC:8787 [--once] [--poll-ms N]'
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · TRABAJADOR MÓVIL
+
+  ¿Cuándo? El PC ya tiene backend y quiero procesar trabajos desde el móvil.
+    ./ansys worker mobile --backend http://IP_PC:8787
+
+  --backend URL   Dirección del backend del PC.
+  --once          Atender como máximo un trabajo y salir.
+  --poll-ms N     Cada cuánto consultar trabajos (500..60000 ms).
+
+  Requiere token de API y acceso al backend desde el dispositivo.
+  El móvil devuelve evidencia de IA; no decide SAFE_CACHE ni borra archivos.
+EOF
+      else
+        cat <<'EOF'
+AnSysWarden · MOBILE WORKER
+
+  When? The PC backend is ready and a mobile worker should process jobs.
+    ./ansys worker mobile --backend http://PC_IP:8787
+
+  --backend URL   Address of the PC backend.
+  --once          Process at most one job, then exit.
+  --poll-ms N     Poll interval (500..60000 ms).
+
+  Requires API token and network access to the PC backend.
+  Mobile AI returns evidence; it cannot authorize SAFE_CACHE or delete files.
+EOF
+      fi
       ;;
     backend)
-      printf '%s\n' 'AnSysWarden · Backend' 'Uso: ./ansys backend token' '     ./ansys backend serve [--host IP] [--port N]'
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · SERVIDOR DEL PC
+
+  Generar un token nuevo (se muestra en pantalla; NO se guarda):
+    ./ansys backend token
+
+  Iniciar API del PC para trabajos de IA:
+    ./ansys backend serve --host 127.0.0.1 --port 8787
+
+  --host IP   Dirección de escucha (por defecto 0.0.0.0).
+  --port N    Puerto (1..65535; por defecto 8787).
+
+  Antes de iniciar, define ANSYSWARDEN_API_TOKEN con al menos 24 caracteres.
+  Si el móvil necesita conectarse, no uses 127.0.0.1 como dirección remota.
+EOF
+      else
+        cat <<'EOF'
+AnSysWarden · PC BACKEND
+
+  Generate a new token (printed; NOT saved):
+    ./ansys backend token
+
+  Start PC API for AI jobs:
+    ./ansys backend serve --host 127.0.0.1 --port 8787
+
+  --host IP   Listen address (default 0.0.0.0).
+  --port N    Port (1..65535; default 8787).
+
+  Set ANSYSWARDEN_API_TOKEN to at least 24 characters before starting.
+  Remote mobile devices cannot connect to the PC's 127.0.0.1.
+EOF
+      fi
       ;;
     config)
-      printf '%s\n' 'AnSysWarden · Configuración' 'Uso: ./ansys config show|path' '     ./ansys config language en|es'
+      if [[ "${ANSYSWARDEN_LANG:-en}" == 'es' ]]; then
+        cat <<'EOF'
+AnSysWarden · CONFIGURACIÓN
+
+  Quiero…                                    Comando
+  Ver valores sin mostrar el token          ./ansys config show
+  Saber dónde se guardan                    ./ansys config path
+  Poner español una sola vez                ./ansys config language es
+  Poner inglés una sola vez                 ./ansys config language en
+  Guardar la dirección del backend          ./ansys config backend <URL>
+  Guardar un token                          ./ansys config token <token>
+
+  CUIDADO: no pegues tokens privados en capturas o historiales compartidos.
+EOF
+      else
+        cat <<'EOF'
+AnSysWarden · CONFIGURATION
+
+  I want to…                                Command
+  See values without exposing token        ./ansys config show
+  Find the settings file                   ./ansys config path
+  Save Spanish as the language             ./ansys config language es
+  Save English as the language             ./ansys config language en
+  Save backend address                     ./ansys config backend <URL>
+  Save token                               ./ansys config token <token>
+
+  CAUTION: Do not share secrets in screenshots or terminal history.
+EOF
+      fi
       ;;
     logs)
-      printf '%s\n' 'AnSysWarden · Logs' 'Uso: ./ansys logs [--raw]'
+      printf '%s\n' 'AnSysWarden · Registros' '  ./ansys logs          Leer últimas trazas.' '  ./ansys logs --raw    Ver JSONL original.' '  Solo muestra registros: no escanea ni borra archivos.'
       ;;
     doctor)
-      printf '%s\n' 'AnSysWarden · Doctor' 'Uso: ./ansys doctor'
+      printf '%s\n' 'AnSysWarden · Diagnóstico' '  ./ansys doctor' '  Comprueba el entorno y dependencias; no inventaría el disco.'
       ;;
     tree)
       shift

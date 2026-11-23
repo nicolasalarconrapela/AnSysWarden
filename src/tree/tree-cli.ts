@@ -12,7 +12,7 @@ import { analyzeTreeActivity } from './tree-activity';
 
 const treeHelp: Record<string, { description: string; args: string; options: string[]; example: string; warning: string }> = {
   "scan": {
-    "description": "Compatibilidad: captura desde el motor Dust del PC.",
+    "description": "Crear una captura nueva (ruta antigua; se recomienda dust scan).",
     "args": "<ruta> [--out indice.jsonl] [--html [archivo.html]]",
     "options": [
       "<ruta>          Carpeta raíz (obligatoria)",
@@ -23,7 +23,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Alias de compatibilidad: para nuevos escaneos utiliza ./ansys dust scan."
   },
   "show": {
-    "description": "Ver árbol del último índice.",
+    "description": "Leer nombres y tamaños en la terminal, sin abrir HTML.",
     "args": "[ruta] [--depth N] [--files] [--index indice.jsonl]",
     "options": [
       "[ruta]          Limitar a carpeta específica",
@@ -35,7 +35,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "No realiza un nuevo escaneo."
   },
   "html": {
-    "description": "Generar HTML autónomo del índice.",
+    "description": "Forma antigua de generar un visor HTML desde datos guardados.",
     "args": "[--latest | --scan-id ID | --index indice.jsonl] [--out archivo.html] [--allocation medicion.jsonl]",
     "options": [
       "--out PATH         Archivo HTML de salida",
@@ -48,7 +48,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Usa datos existentes; pueden estar desactualizados."
   },
   "audit": {
-    "description": "Comparar índice con carpetas actuales.",
+    "description": "Comprobar qué cambió desde la captura guardada.",
     "args": "[--branches A,B,C] [--out informe.json]",
     "options": [
       "--branches A,B,C  Carpetas a auditar",
@@ -58,7 +58,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "No consulta TreeSize; el contenido puede haber cambiado."
   },
   "allocated": {
-    "description": "Medir espacio asignado en Windows.",
+    "description": "Medir cuánto espacio ocupan los archivos en Windows.",
     "args": "[--out medicion.jsonl]",
     "options": [
       "--out PATH  Informe JSONL de mediciones"
@@ -67,7 +67,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Windows solamente; los bytes no incluyen todos los metadatos NTFS."
   },
   "age": {
-    "description": "Analizar tiempo sin modificar archivos.",
+    "description": "Buscar archivos que llevan tiempo sin modificarse.",
     "args": "[--days N] [--top N] [--out informe.json]",
     "options": [
       "--days N     Días (por defecto 180; 1..36500)",
@@ -78,7 +78,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Antiguo no equivale a innecesario."
   },
   "view": {
-    "description": "Visualizar el último inventario, uno existente o escanear y mostrar.",
+    "description": "Crear un visor HTML de la captura guardada (recomendado).",
     "args": "[--latest | --scan-id ID | --index indice.jsonl | --scan ruta] [--out archivo.html]",
     "options": [
       "--latest        Abrir el escaneo más reciente",
@@ -92,7 +92,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Los datos del índice pueden estar desactualizados; el visor no autoriza borrados."
   },
   "export": {
-    "description": "Exportar un inventario guardado a HTML autónomo.",
+    "description": "Guardar una copia HTML de una captura existente.",
     "args": "[--scan-id ID | --index PATH | --latest] [--format html] [--out PATH]",
     "options": [
       "--scan-id ID    Identificador de captura",
@@ -106,7 +106,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "warning": "Leer una captura histórica no comprueba el estado actual del disco."
   },
   "activity": {
-    "description": "Detectar familias de artefactos y cambios.",
+    "description": "Reconocer grupos de archivos que conviene revisar.",
     "args": "[--days N] [--out informe.json]",
     "options": [
       "--days N     Días sin cambios (por defecto 180; 1..36500)",
@@ -122,39 +122,142 @@ const treeCommandOrder = [
   'audit', 'allocated', 'age', 'activity',
 ] as const;
 
+// La explicación debe distinguir COMPORTAMIENTO, no solo nombres parecidos.
+// Este texto no participa en el escaneo ni cambia sus opciones.
+const treeGuidance: Record<string, { when: string; does: string; doesNot: string; next: string }> = {
+  scan: {
+    when: 'No tienes inventario y quieres crear uno NUEVO desde una carpeta.',
+    does: 'Recorre esa carpeta, guarda un índice y opcionalmente un HTML. Es el acceso antiguo a la captura Dust, sin medición física adicional.',
+    doesNot: 'No recupera un inventario anterior ni borra los archivos. Para escaneos nuevos se recomienda «dust scan».',
+    next: './ansys tree view --latest --out visor.html',
+  },
+  view: {
+    when: 'Ya guardaste un inventario y quieres ENTENDERLO visualmente.',
+    does: 'Genera un archivo HTML que puedes abrir en el navegador. Sin selector usa la captura más reciente; --scan-id elige otra.',
+    doesNot: 'No vuelve a recorrer la carpeta si usas --latest, --scan-id o --index. OJO: --scan <ruta> SÍ hace una captura nueva.',
+    next: 'Abre el archivo visor.html en el navegador; para texto usa «tree show».',
+  },
+  show: {
+    when: 'Quieres ver los nombres y tamaños directamente EN LA TERMINAL.',
+    does: 'Lee un índice guardado e imprime un árbol de carpetas. --files muestra también los archivos.',
+    doesNot: 'No genera HTML, no crea inventarios nuevos ni elimina archivos.',
+    next: './ansys tree view --latest --out visor.html',
+  },
+  export: {
+    when: 'Quieres GUARDAR una página HTML de un inventario, por ejemplo para consultarla sin conexión.',
+    does: 'Convierte datos guardados en un archivo HTML autónomo; el único formato de exportación disponible es HTML.',
+    doesNot: 'No exporta carpetas ni archivos originales, y no hace una captura nueva. «view» también genera HTML.',
+    next: 'Abre el HTML guardado; si solo quieres consultar la última captura, usa «tree view --latest».',
+  },
+  html: {
+    when: 'Tienes un flujo ANTIGUO que usa el comando html.',
+    does: 'Genera el mismo tipo de visor HTML que view/export a partir de un índice guardado.',
+    doesNot: 'No añade información al índice y no hace un escaneo nuevo. Si estás empezando, elige «tree view».',
+    next: './ansys tree view --latest --out visor.html',
+  },
+  audit: {
+    when: 'Quieres comprobar si una carpeta CAMBIÓ desde el inventario guardado.',
+    does: 'Compara la captura con los archivos actuales de las ramas que se auditan; guarda un informe.',
+    doesNot: 'No es una lista de archivos para borrar; lee el disco actual y no actualiza automáticamente la captura.',
+    next: 'Revisa el informe antes de tomar decisiones; para actualizar el inventario, usa «dust scan».',
+  },
+  allocated: {
+    when: 'Necesitas conocer ESPACIO ASIGNADO, distinto del tamaño lógico del archivo.',
+    does: 'En Windows intenta medir cuánto espacio está asignado a archivos del último índice; guarda los resultados.',
+    doesNot: 'No indica cuántos bytes se pueden liberar, no mide todo el sistema de archivos ni está disponible en otros sistemas.',
+    next: './ansys tree view --latest --out visor_espacio.html',
+  },
+  age: {
+    when: 'Quieres saber cuáles llevan mucho tiempo SIN MODIFICARSE.',
+    does: 'Analiza fechas de modificación guardadas en el índice y genera un informe con un umbral en días.',
+    doesNot: 'No demuestra que nadie los use. Un archivo antiguo NO es necesariamente prescindible.',
+    next: 'Revisa el informe de antigüedad; puedes usar «tree view --latest» para explorar su carpeta.',
+  },
+  activity: {
+    when: 'Quieres detectar GRUPOS de archivos relacionados o que requieren revisión.',
+    does: 'Analiza patrones en la captura y propone grupos para observar o revisar.',
+    doesNot: 'No sabe con certeza qué archivos sobran y nunca autoriza borrarlos.',
+    next: './ansys tree view --latest --out visor_actividad.html',
+  },
+};
+
+function printHelpParagraph(value: string): void {
+  const indent = '    ';
+  const limit = Math.max(54, Math.min(process.stdout.columns || 84, 96));
+  let line = indent;
+  for (const word of value.split(/\s+/).filter(Boolean)) {
+    const candidate = line === indent ? indent + word : line + ' ' + word;
+    if (candidate.length > limit && line !== indent) {
+      console.log(line);
+      line = indent + word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line !== indent) console.log(line);
+}
+
 function printHelp(command?: string): void {
-  console.log('\n  ◆ AnSysWarden · Tree');
-  console.log('  ════════════════════════════════════════════════════════════');
+  console.log('\nAnSysWarden · TREE · Guía de exploración');
+  console.log('════════════════════════════════════════════════════════════');
 
   if (!command) {
-    console.log('\n  EXPLORACIÓN / SUBCOMANDOS');
-    console.log('  ./ansys tree\n');
+    console.log('\n  ¿QUÉ NECESITAS HACER?');
+    console.log('    Ver una captura con carpetas y tamaños:');
+    console.log('      ./ansys tree view --latest --out visor.html');
+    console.log('    Ver esa captura como texto en esta terminal:');
+    console.log('      ./ansys tree show --files');
+    console.log('    Ver qué ha cambiado respecto a la captura:');
+    console.log('      ./ansys tree audit');
+    console.log('    ¿Todavía no tienes una captura? Créala primero:');
+    console.log('      ./ansys dust scan "<ruta>" --no-allocated');
+
+    console.log('\n  COMANDOS DE TREE · Explicados por su resultado');
     for (const key of treeCommandOrder) {
-      console.log('      ' + key.padEnd(18) + treeHelp[key].description);
+      console.log('    ' + key.padEnd(13) + treeHelp[key].description);
     }
-    console.log('\n  ────────────────────────────────────────────────────────────');
-    console.log('  Ejemplo:  ./ansys tree view --latest --out visor.html');
-    console.log('  Opciones: ./ansys tree <comando> --help');
-    console.log('  Alias:    ./ansys-tree <comando>');
-    console.log('  Seguridad: visualizar un inventario no autoriza borrados.\n');
+
+    console.log('\n  DIFERENCIAS QUE CONVIENE RECORDAR');
+    console.log('    dust scan    = recorre archivos y guarda datos NUEVOS.');
+    console.log('    tree view    = crea un HTML a partir de datos GUARDADOS.');
+    console.log('    tree show    = los enseña en la TERMINAL, sin HTML.');
+    console.log('    tree export  = guarda una copia HTML; view también crea HTML.');
+    console.log('    tree html    = nombre antiguo de la misma función de HTML.');
+    console.log('    tree scan    = acceso antiguo para crear una captura.');
+    console.log('    IMPORTANTE: tree view --scan <ruta> SÍ vuelve a escanear.');
+
+    console.log('\n  Si olvidas una opción:');
+    console.log('    ./ansys tree view --help');
+    console.log('  Alias de Tree: ./ansys-tree <comando>');
+    console.log('  <ruta> significa «carpeta que quieres examinar».');
+    console.log('  Ningún resultado de Tree autoriza eliminar archivos.\n');
     return;
   }
 
   const info = Object.prototype.hasOwnProperty.call(treeHelp, command) ? treeHelp[command] : undefined;
   if (!info) throw new Error('Comando desconocido: ' + command + '. Consulta ./ansys tree --help');
+  const guide = treeGuidance[command];
+  if (!guide) throw new Error('No existe una guía para el comando: ' + command);
 
   console.log('\n  COMANDO');
-  console.log('      ./ansys tree ' + command);
-  console.log('\n  ' + info.description);
-  console.log('\n  USO');
-  console.log('      ./ansys tree ' + command + ' ' + info.args);
-  console.log('\n  OPCIONES');
-  for (const item of info.options) console.log('      ' + item);
-  console.log('\n  EJEMPLO');
-  console.log('      ./ansys tree ' + info.example);
-  console.log('\n  ADVERTENCIA');
-  console.log('      ' + info.warning);
-  console.log('\n  Más comandos: ./ansys tree --help\n');
+  console.log('    ./ansys tree ' + command);
+  console.log('\n  ¿CUÁNDO ME CONVIENE?');
+  printHelpParagraph(guide.when);
+  console.log('\n  ¿QUÉ HACE?');
+  printHelpParagraph(guide.does);
+  console.log('\n  ¿QUÉ NO HACE?');
+  printHelpParagraph(guide.doesNot);
+  console.log('\n  CÓMO SE ESCRIBE');
+  console.log('    ./ansys tree ' + command + ' ' + info.args);
+  console.log('\n  OPCIONES · Una por línea');
+  for (const item of info.options) console.log('    ' + item);
+  console.log('\n  EJEMPLO QUE PUEDES ADAPTAR');
+  console.log('    ./ansys tree ' + info.example);
+  console.log('\n  ¿Y DESPUÉS?');
+  printHelpParagraph(guide.next);
+  console.log('\n  PRECAUCIÓN');
+  printHelpParagraph(info.warning);
+  console.log('\n  Si te pierdes: ./ansys tree --help\n');
 }
 
 function usage(): never {

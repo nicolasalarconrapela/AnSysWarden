@@ -15,6 +15,7 @@
 
 <p>
   <a href="#inicio">Empezar</a> ·
+  <a href="#si-no-recuerdas-que-comando-usar">Elegir comando</a> ·
   <a href="#arquitectura-visual">Arquitectura</a> ·
   <a href="#referencia-completa-de-comandos-cli--command-reference">Todos los comandos</a> ·
   <a href="#validation">Validación</a>
@@ -37,19 +38,66 @@ npm install
 # 2 · Prepara los archivos ficticios
 node data/generate-pc-fixtures.mjs
 
-# 3 · Inventaría con Dust y abre el resultado con Tree
-./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+# 3 · Guarda una captura nueva y después crea un visor con ella
+./ansys dust scan "data/pc-tree-fixture" --no-allocated
 ./ansys tree view --latest --out visor.html
 ```
 
-| Quiero hacer… | Comando |
+<a id="si-no-recuerdas-que-comando-usar"></a>
+## Si no recuerdas qué comando usar
+
+No tienes que memorizar los nombres. **Piensa en el resultado que necesitas.** Los comandos de esta tabla leen archivos o capturas y generan informes: no eliminan los archivos de origen.
+
+| Lo que te pasa | Utiliza | Qué obtienes | Qué NO hace |
+| --- | --- | --- | --- |
+| «Quiero saber todos los archivos que hay» | `./ansys dust scan "<ruta>" --no-allocated` | **Una captura nueva**: listado de archivos, carpetas, tamaños y fechas | No borra archivos |
+| «Ya hice un inventario, quiero volver a verlo» | `./ansys tree view --latest --out visor.html` | **Una página HTML** creada a partir de la captura más reciente | No escanea otra vez |
+| «Prefiero ver los nombres aquí en la terminal» | `./ansys tree show --files` | **Un árbol de texto** de la captura guardada | No crea HTML ni otra captura |
+| «Solo busco carpetas grandes para revisarlas» | `./ansys scan "<ruta>" --min-mb 50` | **Una búsqueda básica de candidatos grandes** | No crea el inventario completo de Tree |
+| «Quiero ver qué cambió desde aquella captura» | `./ansys tree audit` | **Un informe de diferencias** con archivos actuales | No actualiza la captura automáticamente |
+| «Quiero guardar una página HTML de una captura» | `./ansys tree export --latest --format html --out copia.html` | **Un archivo HTML** autónomo | No copia los archivos originales |
+| «No sé si el programa está bien configurado» | `./ansys doctor` | **Un diagnóstico** de dependencias y entorno | No escanea tus carpetas |
+
+### Tres palabras que te ayudan a recordar
+
+- **CAPTURAR = Dust:** lee el directorio elegido y guarda una fotografía de su contenido en ese momento.
+- **CONSULTAR = Tree:** muestra esa fotografía en una página HTML o como texto.
+- **FILTRAR = Scan básico:** busca candidatos grandes; no sustituye a la captura completa.
+
+**Si ya escaneaste, no vuelvas a escanear por costumbre.** Los comandos que crean HTML pueden reemplazar el archivo de salida si vuelves a utilizar el mismo nombre; usa otro nombre cuando quieras conservar versiones anteriores. Empieza por `./ansys tree view --latest --out visor.html`. Si necesitas datos actuales, entonces haz una nueva captura con `dust scan`. Tree también ofrece `view --scan`, pero **esa opción sí crea una captura nueva**.
+
+### Cuando encuentres una palabra desconocida
+
+| Palabra | Qué significa aquí |
 | --- | --- |
-| **Ver qué hay y cuánto ocupa** | `./ansys dust scan "<ruta>"` |
-| **Abrir un inventario guardado** | `./ansys tree view --latest` |
-| **Explorar una captura concreta** | `./ansys tree view --scan-id <ID>` |
-| **Exportar un HTML autónomo** | `./ansys tree export --latest --format html` |
-| **Comprobar el entorno** | `./ansys doctor` |
-| **Ver todas las opciones** | [Referencia CLI completa](#referencia-completa-de-comandos-cli--command-reference) |
+| **Ruta** | La carpeta que quieres examinar; ejemplo: `"C:/Users/tu_usuario/Desktop"`. Sustituye `tu_usuario` por el real. |
+| **Captura / inventario** | Un registro guardado de qué archivos había cuando se hizo el recorrido; puede quedar desactualizado después. |
+| **Índice / JSONL** | El archivo de datos de la captura que usa Tree. Normalmente no tienes que abrirlo tú. |
+| **HTML / visor** | Una página local que puedes abrir con el navegador, incluso sin servidor. |
+| **Tamaño lógico** | El tamaño que figura en los archivos; no es necesariamente el espacio físico ocupado. |
+| **Espacio asignado** | Lo que el sistema de archivos reserva para esos archivos; su medición puede ser parcial o no disponible. |
+| **Antigüedad** | Tiempo desde la última modificación conocida, no una prueba de que ya no uses el archivo. |
+| **Legacy** | Forma antigua de resumir carpetas para backend/IA; no equivale al inventario completo. |
+| **REVISAR** | Significa «compruébalo tú», nunca «puedes borrarlo». |
+
+**Recorrido para volver después de varios días:**
+
+```bash
+# Ya tengo una captura y quiero verla otra vez (sin leer la carpeta de origen):
+./ansys tree view --latest --out visor.html
+
+# Necesito datos actuales, así que creo una NUEVA captura:
+./ansys dust scan "<ruta>" --no-allocated
+
+# No recuerdo una opción concreta:
+./ansys tree view --help
+./ansys help dust
+```
+
+> **Regla de seguridad:** una captura incompleta no significa que no existan más archivos. Ninguna clasificación de IA ni recomendación visual autoriza borrar contenido.
+
+[Consultar todas las opciones, límites y comandos avanzados](#referencia-completa-de-comandos-cli--command-reference)
+
 
 > [!IMPORTANT]
 > **Sin borrado automático.** Dust inventaría, Tree representa y Gemma aporta evidencia cuando hay ambigüedad. Ningún resultado visual ni una clasificación de IA autoriza eliminar archivos. Un escaneo parcial o una medición ausente no significan que una carpeta esté vacía.

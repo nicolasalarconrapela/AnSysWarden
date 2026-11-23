@@ -13,22 +13,114 @@ function pick(en: string, es: string): string {
 }
 
 function printDustHelp(): void {
-  console.log(pick('AnSysWarden · Dust · Help', 'AnSysWarden · Dust · Ayuda'));
-  console.log(pick('Usage:', 'Uso:'));
-  console.log('  ./ansys dust scan <ruta> [--out indice.jsonl] [--html [archivo.html]] [--no-allocated] [--days N] [--strict]');
-  console.log('  ./ansys dust inventory <ruta> [las mismas opciones]  # alias de scan');
-  console.log('  ./ansys dust scan <ruta> --legacy [--full] [--depth N] [--min-size SIZE] [--ai-depth N] [--ai-max-entries N]');
-  console.log('  ./ansys dust install | status');
-  console.log(pick('Capture options:', 'Opciones de captura:'));
-  console.log('  --out / --output PATH  ' + pick('JSONL index destination', 'Destino del índice JSONL'));
-  console.log('  --html [PATH]         ' + pick('Generate autonomous Tree HTML', 'Generar HTML Tree autónomo'));
-  console.log('  --no-allocated        ' + pick('Skip physical allocation measurement', 'Omitir medición de espacio asignado'));
-  console.log('  --days N              ' + pick('Age/activity threshold (1..36500, default 180)', 'Umbral de actividad (1..36500; por defecto 180)'));
-  console.log('  --strict              ' + pick('Fail on partial capture or unavailable requested measurement', 'Fallar ante captura parcial o medición solicitada no disponible'));
-  console.log(pick('Legacy Dust options:', 'Opciones antiguas de Dust:'));
-  console.log('  --legacy --full --depth N --min-size SIZE --ai-depth N --ai-max-entries N');
-  console.log(pick('Legacy-only options automatically select the old mode.', 'Las opciones exclusivas antiguas seleccionan automáticamente el modo anterior.'));
-  console.log('  ./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html');
+  const lines = getLanguage() === 'es' ? [
+    '',
+    'AnSysWarden · DUST · Guía para capturar el disco',
+    '════════════════════════════════════════════════════════════',
+    '',
+    '  ¿QUÉ NECESITAS?',
+    '  Guardar TODO el contenido de una carpeta:',
+    '    ./ansys dust scan "<ruta>" --no-allocated',
+    '  Crear también una página para explorarlo:',
+    '    ./ansys dust scan "<ruta>" --no-allocated --html visor.html',
+    '  Volver a ver una captura guardada SIN repetir el escaneo:',
+    '    ./ansys tree view --latest --out visor.html',
+    '',
+    '  QUÉ SIGNIFICA CADA PALABRA',
+    '    scan       Recorre archivos y guarda un inventario NUEVO.',
+    '    inventory  Es otro nombre para el mismo inventario.',
+    '    legacy     Usa el resumen ANTIGUO para backend/IA.',
+    '    install    Instala el ejecutable Dust externo (red necesaria).',
+    '    status     Comprueba el ejecutable Dust externo.',
+    '',
+    '  OPCIONES DEL INVENTARIO NUEVO (scan / inventory)',
+    '    <ruta>             Carpeta raíz; entre comillas si tiene espacios.',
+    '    --out PATH         Archivo de datos JSONL de salida.',
+    '    --output PATH      Otro nombre de --out.',
+    '    --html [PATH]      Crear visor HTML; el nombre es opcional.',
+    '    --no-allocated     Omitir medición física de espacio.',
+    '    --days N           Umbral de antigüedad (1..36500; 180 por defecto).',
+    '    --strict           Marcar error si faltan datos o mediciones pedidas.',
+    '',
+    '  OPCIONES DEL MODO ANTIGUO (SOLO legacy)',
+    '    --legacy           Usar el resumen antiguo, NO inventario completo.',
+    '    --full             Más detalle (no garantiza que estén todos).',
+    '    --depth N          Máximo de niveles (1..32).',
+    '    --min-size SIZE    Umbral de tamaño; ejemplo: 50M.',
+    '    --ai-depth N       Profundidad del resumen para IA.',
+    '    --ai-max-entries N Número de entradas en el resumen para IA.',
+    '    --html [PATH]      Crear HTML del resumen antiguo.',
+    '',
+    '  NO CONFUNDAS',
+    '    ./ansys scan <ruta>       Busca candidatos grandes (básico).',
+    '    ./ansys dust scan <ruta>  Guarda un inventario completo.',
+    '    ./ansys tree view         Enseña un inventario guardado en HTML.',
+    '',
+    '  PRECAUCIONES',
+    '    Las opciones antiguas --depth, --min-size, --full y --ai-*',
+    '    activan automáticamente legacy. No las mezcles con --days,',
+    '    --out, --no-allocated o --strict.',
+    '    El inventario lee las carpetas; guarda informes locales.',
+    '    No elimina archivos y una captura parcial no equivale a disco vacío.',
+    '    La medición física puede no estar disponible en tu sistema.',
+    '',
+    '  Si te pierdes: ./ansys --help',
+    '',
+  ] : [
+    '',
+    'AnSysWarden · DUST · Disk inventory guide',
+    '════════════════════════════════════════════════════════════',
+    '',
+    '  WHAT DO YOU NEED?',
+    '  Save EVERYTHING under a folder:',
+    '    ./ansys dust scan "<path>" --no-allocated',
+    '  Also produce a page you can browse:',
+    '    ./ansys dust scan "<path>" --no-allocated --html viewer.html',
+    '  Revisit a previous snapshot WITHOUT scanning again:',
+    '    ./ansys tree view --latest --out viewer.html',
+    '',
+    '  WHAT EACH COMMAND MEANS',
+    '    scan       Walks files and saves a NEW inventory.',
+    '    inventory  Another name for the same inventory.',
+    '    legacy     Uses the OLD backend/AI summary.',
+    '    install    Install external Dust (requires network).',
+    '    status     Check the external Dust executable.',
+    '',
+    '  NEW INVENTORY OPTIONS (scan / inventory)',
+    '    <path>             Root folder; quote paths with spaces.',
+    '    --out PATH         Destination JSONL data file.',
+    '    --output PATH      Another name for --out.',
+    '    --html [PATH]      Create HTML viewer; file name optional.',
+    '    --no-allocated     Skip allocated-space measurement.',
+    '    --days N           Age threshold (1..36500; default 180).',
+    '    --strict           Error status for incomplete requested data.',
+    '',
+    '  OLD MODE OPTIONS (legacy only)',
+    '    --legacy           Old summary, NOT a complete inventory.',
+    '    --full             More detail (still not exhaustive).',
+    '    --depth N          Maximum depth (1..32).',
+    '    --min-size SIZE    Minimum size; example: 50M.',
+    '    --ai-depth N       AI summary depth.',
+    '    --ai-max-entries N Maximum number of entries in AI summary.',
+    '    --html [PATH]      Create HTML of the old summary.',
+    '',
+    '  DO NOT CONFUSE',
+    '    ./ansys scan <path>       Finds large candidates (basic).',
+    '    ./ansys dust scan <path>  Saves a full inventory.',
+    '    ./ansys tree view         Shows saved inventory as HTML.',
+    '',
+    '  SAFETY',
+    '    Old --depth, --min-size, --full and --ai-* options',
+    '    automatically select legacy mode. Do not mix them with --days,',
+    '    --out, --no-allocated or --strict.',
+    '    Scanning reads source files and saves local reports.',
+    '    No files are deleted, and partial does not mean empty.',
+    '    Allocated-space measurement may be unsupported.',
+    '',
+    '  Lost? Run ./ansys --help',
+    '',
+  ];
+  for (const line of lines) console.log(line);
 }
 
 function usage(): never {
