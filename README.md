@@ -18,6 +18,7 @@
   <a href="#si-no-recuerdas-que-comando-usar">Elegir comando</a> ·
   <a href="#arquitectura-visual">Arquitectura</a> ·
   <a href="#referencia-completa-de-comandos-cli--command-reference">Todos los comandos</a> ·
+  <a href="tests/README.md">Pruebas por categorías</a> ·
   <a href="#validation">Validación</a>
 </p>
 
@@ -28,6 +29,8 @@
 <a id="inicio"></a>
 ## ⚡ Empieza aquí
 
+**¿Quieres encontrar una prueba?** Consulta la [guía de pruebas organizada por objetivos](tests/README.md). Cada grupo tiene su carpeta y sus resultados se guardan aparte cuando se solicitan.
+
 **Un flujo sencillo: capturar → guardar → explorar.** Para probarlo, utiliza el directorio ficticio del proyecto; no hace falta comenzar por tu disco real.
 
 ```bash
@@ -36,10 +39,10 @@ npm install
 ./ansys config language es
 
 # 2 · Prepara los archivos ficticios
-node data/generate-pc-fixtures.mjs
+node tests/fixtures/inventario/generate-pc-fixtures.mjs
 
 # 3 · Guarda una captura nueva y después crea un visor con ella
-./ansys dust scan "data/pc-tree-fixture" --no-allocated
+./ansys dust scan "tests/fixtures/inventario/pc-tree-fixture" --no-allocated
 ./ansys tree view --latest --out visor.html
 ```
 
@@ -264,7 +267,7 @@ Output from an external tool must be transformed into the AnSysWarden contract; 
 ./ansys config language es           # Idioma persistente
 
 # Recorrido completo (sin segunda pasada de espacio físico)
-./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys dust scan "tests/fixtures/inventario/pc-tree-fixture" --no-allocated --html inventario.html
 ./ansys tree view --latest --out visor.html
 ```
 
@@ -362,7 +365,7 @@ Los escaneos completos producen un índice `ansyswarden.tree-index.v1`, metadato
 ./ansys tree view --latest --out ultimo.html
 ./ansys tree view --scan-id "tree-YYYYMMDDHHMMSS-xxxxxxxx" --out historico.html
 ./ansys tree view --index "RUTA_DEL_INDICE.jsonl" --out antiguo.html
-./ansys tree view --scan "data/pc-tree-fixture" --no-allocated --out nuevo.html
+./ansys tree view --scan "tests/fixtures/inventario/pc-tree-fixture" --no-allocated --out nuevo.html
 ./ansys tree export --latest --format html --out exportado.html
 ./ansys-tree show --depth 4 --files
 ./ansys tree age --days 180 --top 25
@@ -435,11 +438,11 @@ Las operaciones `tree age`, `activity`, `allocated` y `audit` están expuestas p
 
 ```bash
 npm run typecheck
-./node_modules/.bin/tsx src/tests/pc-dust-scan-contract-cli.ts
-./node_modules/.bin/tsx src/tests/pc-inventory-boundary-cli.ts
-node data/generate-pc-fixtures.mjs
-node data/generate-pc-fixtures.mjs --verify
-./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./node_modules/.bin/tsx tests/01-contratos/pc-dust-scan-contract-cli.ts
+./node_modules/.bin/tsx tests/01-contratos/pc-inventory-boundary-cli.ts
+node tests/fixtures/inventario/generate-pc-fixtures.mjs
+node tests/fixtures/inventario/generate-pc-fixtures.mjs --verify
+./ansys dust scan "tests/fixtures/inventario/pc-tree-fixture" --no-allocated --html inventario.html
 ./ansys tree view --latest --out visor.html
 ```
 
@@ -543,7 +546,7 @@ Stop:
 ## Scanning
 
 ```bash
-./ansys dust scan "data/pc-tree-fixture" --no-allocated --html inventario.html
+./ansys dust scan "tests/fixtures/inventario/pc-tree-fixture" --no-allocated --html inventario.html
 ./ansys tree view --latest --out visor.html
 # Legacy threshold-based candidate scan (different command):
 ./ansys scan ~ --min-mb 50
@@ -578,8 +581,8 @@ Before considering the integration validated:
 ```bash
 npm install
 npm run typecheck
-./node_modules/.bin/tsx src/tests/pc-dust-scan-contract-cli.ts
-./node_modules/.bin/tsx src/tests/pc-inventory-boundary-cli.ts
+./node_modules/.bin/tsx tests/01-contratos/pc-dust-scan-contract-cli.ts
+./node_modules/.bin/tsx tests/01-contratos/pc-inventory-boundary-cli.ts
 ./ansys test rules
 ./ansys test overlap
 ./ansys test tree

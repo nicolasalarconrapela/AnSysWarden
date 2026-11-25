@@ -199,3 +199,12 @@ $RECYCLE.BIN/
 /docs/postman/postman/**
 /docs/postman/.postman/**
 .ansyswarden/**
+# Datos ficticios generados; no versionar contenido
+/data/pc-tree-fixture/
+/tests/fixtures/inventario/pc-tree-fixture/
+
+# Resultados locales de pruebas; conservar directorios e instrucciones
+/tests/resultados/**/*
+!/tests/resultados/**/
+!/tests/resultados/**/.gitkeep
+!/tests/resultados/README.md

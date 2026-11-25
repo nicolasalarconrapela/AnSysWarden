@@ -785,6 +785,7 @@ AnSysWarden · PRUEBAS DEL PROYECTO
 
   ATENCIÓN: e2e requiere backend PC y trabajador móvil en funcionamiento.
   Las pruebas no son una orden de borrar archivos.
+  Pruebas organizadas: tests/README.md
   Opciones avanzadas: consultar README (referencia completa de comandos).
 EOF
       else
@@ -814,6 +815,7 @@ AnSysWarden · PROJECT TESTS
 
   NOTE: e2e requires a running PC backend and mobile worker.
   Tests are not permission to delete files.
+  Tests by category: tests/README.md
   Advanced options: see the README command reference.
 EOF
       fi
@@ -1016,15 +1018,15 @@ main() {
     test)
       case "${2:-}" in
         safety) run_ts "$ROOT_DIR/src/cli.ts" test safety ;;
-        rules) run_ts "$ROOT_DIR/src/tests/rules-safety-cli.ts" ;;
-        overlap) run_ts "$ROOT_DIR/src/tests/scanner-overlap-cli.ts" ;;
-        tree) run_ts "$ROOT_DIR/src/tests/tree-policy-cli.ts" ;;
-        context) run_ts "$ROOT_DIR/src/tests/project-context-cli.ts" ;;
-        candidates) run_ts "$ROOT_DIR/src/tests/ai-candidate-cli.ts" ;;
-        benchmark) shift 2; run_ts "$ROOT_DIR/src/tests/cache-benchmark-runner.ts" "$@" ;;
-        models) shift 2; run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" "$@" ;;
-        mobile-models) shift 2; run_ts "$ROOT_DIR/src/tests/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@" ;;
-        e2e) shift 2; run_ts "$ROOT_DIR/src/tests/backend-gemma-e2e-cli.ts" "$@" ;;
+        rules) run_ts "$ROOT_DIR/tests/04-seguridad/rules-safety-cli.ts" ;;
+        overlap) run_ts "$ROOT_DIR/tests/02-inventario/scanner-overlap-cli.ts" ;;
+        tree) run_ts "$ROOT_DIR/tests/03-visor-html/tree-policy-cli.ts" ;;
+        context) run_ts "$ROOT_DIR/tests/05-ia/project-context-cli.ts" ;;
+        candidates) run_ts "$ROOT_DIR/tests/05-ia/ai-candidate-cli.ts" ;;
+        benchmark) shift 2; run_ts "$ROOT_DIR/tests/05-ia/cache-benchmark-runner.ts" "$@" ;;
+        models) shift 2; run_ts "$ROOT_DIR/tests/05-ia/model-comparison-runner.ts" "$@" ;;
+        mobile-models) shift 2; run_ts "$ROOT_DIR/tests/05-ia/model-comparison-runner.ts" --models gemma4:e2b,gemma2:2b "$@" ;;
+        e2e) shift 2; run_ts "$ROOT_DIR/tests/06-e2e/backend-gemma-e2e-cli.ts" "$@" ;;
         *) command_error test "Prueba desconocida." ;;
       esac
       ;;

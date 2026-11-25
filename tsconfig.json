@@ -9,5 +9,13 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "tests/fixtures/**",
+    "tests/resultados/**",
+    "node_modules/**"
+  ]
 }
