@@ -334,6 +334,10 @@ usage() {
                                 Exportar información para revisar.
      ./ansys logs               Ver los registros de actividad.
 
+  REVISIÓN HUMANA ANTES DE IA
+     ./ansys tree ai-preview --latest --out revision_ia.html
+                                Revisar fichas sin enviarlas a Gemma.
+
   IA Y CONEXIÓN  ·  LA IA SOLO APORTA EVIDENCIA
      ./ansys ai status          Consultar si Ollama funciona.
      ./ansys ai start           Arrancar Ollama local.
@@ -427,6 +431,10 @@ EOF
      ./ansys review export <path>
                                 Export details for human review.
      ./ansys logs               Read activity logs.
+
+  HUMAN REVIEW BEFORE AI
+     ./ansys tree ai-preview --latest --out ai_review.html
+                                Review profiles without sending them to Gemma.
 
   AI AND CONNECTION  ·  AI PROVIDES EVIDENCE ONLY
      ./ansys ai status          Check if Ollama is running.

@@ -73,3 +73,21 @@ que no se dupliquen los recuentos.
 Estos comandos generan índices e informes locales; deben ejecutarse
 únicamente en un entorno de prueba. No se ejecutaron desde la integración
 GitHub del cambio.
+
+## FASE 04.A · Revisión humana de Tree antes del envío a IA
+
+`./ansys tree ai-preview --latest --out revision_ia.html` lee el índice
+JSONL y construye una selección limitada de resúmenes de carpetas sin un
+segundo escaneo. Un HTML local muestra las rutas reales para que una persona
+compruebe las propuestas; **no debe publicarse ni enviarse a terceros**.
+
+La exportación del navegador solo incluye IDs aleatorios y estadísticas
+sin nombres ni rutas. El PC conserva un mapa privado por vista previa en
+`.ansyswarden/tree/ai-review/`; no se modifica el JSONL, el manifiesto ni
+el puntero `latest`. Se bloquean errores, enlaces simbólicos, marcadores
+`KEEP` y ubicaciones personales conocidas.
+
+**Límites:** las fichas de esta fase son preparatorias y no siguen todavía
+el contrato `ansyswarden.ai-job.v1` del móvil. El transporte real, su
+validación criptográfica/autorización y los resultados IA se incorporarán
+en una fase posterior. Aprobar una ficha **no autoriza envío ni borrado**.

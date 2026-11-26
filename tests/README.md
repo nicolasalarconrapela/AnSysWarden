@@ -31,6 +31,17 @@ No sustituyen a los tests funcionales.
 la parte de reglas deterministas se ejecuta sin modelo con `./ansys test rules`.
 Para obtener la lista completa: `./ansys help test`.
 
+## Revisión humana de Tree antes de IA
+
+```bash
+./node_modules/.bin/tsx tests/03-visor-html/tree-ai-review-cli.ts
+./ansys tree ai-preview --latest --out revision_ia.html
+```
+
+El primer comando usa únicamente registros ficticios. El segundo crea una
+página local para **revisar fichas anonimizadas**; no envía datos a IA.
+Lee [las instrucciones del visor](03-visor-html/README.md).
+
 ## Recorrido recomendado sin archivos personales
 
 1. Crear datos ficticios: `node tests/fixtures/inventario/generate-pc-fixtures.mjs`.

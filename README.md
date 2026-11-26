@@ -47,6 +47,33 @@ node tests/fixtures/inventario/generate-pc-fixtures.mjs
 ```
 
 <a id="si-no-recuerdas-que-comando-usar"></a>
+## Antes de enviar Tree a Gemma: revisión humana (FASE 04.A)
+
+El inventario completo se conserva en el PC. **No se transmite el JSONL completo**:
+primero se preparan fichas resumidas por carpeta y se revisan en una página HTML local.
+
+```bash
+./ansys tree ai-preview --latest --out revision_ia.html
+```
+
+Abre `revision_ia.html` y comprueba cada carpeta. Todo empieza **desmarcado**.
+Puedes seleccionar fichas no protegidas, ver exactamente el JSON que se exportaría
+y descargar una **propuesta local**. Ni la selección ni la exportación envían datos
+a Ollama, al backend ni al móvil. El envío real exigirá otra confirmación y
+todavía **no está implementado** para estas fichas.
+
+**Privacidad:** el HTML contiene rutas reales y debe permanecer en el PC; no
+lo compartas. El JSON exportado contiene identificadores aleatorios, categorías
+y estadísticas, **sin rutas ni nombres**. El mapeo privado entre identificadores
+y rutas se guarda en `.ansyswarden/tree/ai-review/` y nunca se exporta.
+
+Se bloquean carpetas personales, copias de seguridad, marcadores `KEEP`,
+carpetas sin archivos y capturas con errores o enlaces simbólicos. Solo se
+muestran hasta 60 carpetas grandes; el contador de omitidas impide confundir
+esta selección con el inventario íntegro. **Aprobar no autoriza borrar nada.**
+
+Consulta [pruebas y criterios de revisión](tests/03-visor-html/README.md).
+
 ## Si no recuerdas qué comando usar
 
 No tienes que memorizar los nombres. **Piensa en el resultado que necesitas.** Los comandos de esta tabla leen archivos o capturas y generan informes: no eliminan los archivos de origen.

@@ -9,6 +9,8 @@ import { runTreeAudit } from './tree-audit';
 import { measureAllocatedSpace } from './tree-allocation';
 import { analyzeTreeAge } from './tree-age';
 import { analyzeTreeActivity } from './tree-activity';
+import { buildAiReview } from './ai-review';
+import { saveAiReview } from './ai-review-html';
 
 const treeHelp: Record<string, { description: string; args: string; options: string[]; example: string; warning: string }> = {
   "scan": {
@@ -105,6 +107,19 @@ const treeHelp: Record<string, { description: string; args: string; options: str
     "example": "export --latest --format html --out visor.html",
     "warning": "Leer una captura histórica no comprueba el estado actual del disco."
   },
+  "ai-preview": {
+    "description": "Revisar y aprobar localmente qué fichas Tree se prepararían para IA (sin enviar).",
+    "args": "[--latest | --scan-id ID | --index PATH] [--limit N] [--out archivo.html]",
+    "options": [
+      "--latest        Usar la última captura guardada",
+      "--scan-id ID    Elegir una captura anterior",
+      "--index PATH    Elegir el índice JSONL guardado",
+      "--limit N       Ver como máximo N carpetas (1..60; por defecto 60)",
+      "--out PATH      Guardar la revisión HTML; sin sobrescribir archivos"
+    ],
+    "example": "ai-preview --latest --out revision_ia.html",
+    "warning": "No envía información a la IA, no borra archivos y no autoriza el envío futuro."
+  },
   "activity": {
     "description": "Reconocer grupos de archivos que conviene revisar.",
     "args": "[--days N] [--out informe.json]",
@@ -119,7 +134,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
 
 const treeCommandOrder = [
   'scan', 'view', 'show', 'export', 'html',
-  'audit', 'allocated', 'age', 'activity',
+  'audit', 'allocated', 'age', 'activity', 'ai-preview',
 ] as const;
 
 // La explicación debe distinguir COMPORTAMIENTO, no solo nombres parecidos.
@@ -173,6 +188,12 @@ const treeGuidance: Record<string, { when: string; does: string; doesNot: string
     doesNot: 'No demuestra que nadie los use. Un archivo antiguo NO es necesariamente prescindible.',
     next: 'Revisa el informe de antigüedad; puedes usar «tree view --latest» para explorar su carpeta.',
   },
+  'ai-preview': {
+    when: 'Quieres COMPROBAR como persona qué fichas prepararemos antes de consultar a Gemma.',
+    does: 'Lee el JSONL existente y crea un HTML local con selección manual y exportación anonimizada.',
+    doesNot: 'No escanea archivos otra vez, no contacta con servidores ni envía nada al móvil. Aprobar no autoriza borrar.',
+    next: 'Abre el HTML generado, marca carpetas y revisa el JSON que podrías exportar.',
+  },
   activity: {
     when: 'Quieres detectar GRUPOS de archivos relacionados o que requieren revisión.',
     does: 'Analiza patrones en la captura y propone grupos para observar o revisar.',
@@ -207,6 +228,8 @@ function printHelp(command?: string): void {
     console.log('      ./ansys tree view --latest --out visor.html');
     console.log('    Ver esa captura como texto en esta terminal:');
     console.log('      ./ansys tree show --files');
+    console.log('    Revisar las fichas de Tree antes de preguntar a Gemma:');
+    console.log('      ./ansys tree ai-preview --latest --out revision_ia.html');
     console.log('    Ver qué ha cambiado respecto a la captura:');
     console.log('      ./ansys tree audit');
     console.log('    ¿Todavía no tienes una captura? Créala primero:');
@@ -224,6 +247,7 @@ function printHelp(command?: string): void {
     console.log('    tree export  = guarda una copia HTML; view también crea HTML.');
     console.log('    tree html    = nombre antiguo de la misma función de HTML.');
     console.log('    tree scan    = acceso antiguo para crear una captura.');
+    console.log('    ai-preview   = revisar las fichas para IA SIN ENVIAR datos.');
     console.log('    IMPORTANTE: tree view --scan <ruta> SÍ vuelve a escanear.');
 
     console.log('\n  Si olvidas una opción:');
@@ -712,6 +736,58 @@ async function runView(args: string[]): Promise<void> {
   return runHtml(args);
 }
 
+async function runAiPreview(args: string[]): Promise<void> {
+  const optionsWithValue = new Set(['--scan-id', '--index', '--limit', '--out']);
+  let selectorCount = 0;
+  for (let i = 0; i < args.length; i++) {
+    const option = args[i];
+    if (option === '--latest') {
+      selectorCount++;
+      continue;
+    }
+    if (!optionsWithValue.has(option)) {
+      throw new Error('Opción desconocida de ai-preview: ' + option);
+    }
+    const value = args[++i];
+    if (!value || value.startsWith('--')) {
+      throw new Error('Falta el valor de ' + option);
+    }
+    if (option === '--scan-id' || option === '--index') selectorCount++;
+  }
+  if (selectorCount > 1) throw new Error('Elige un solo índice con --latest, --scan-id o --index.');
+
+  const scanId = readOption(args, '--scan-id');
+  if (scanId && !/^tree-[0-9]{14}-[0-9a-f]{8}$/i.test(scanId)) {
+    throw new Error('Identificador de captura inválido.');
+  }
+  const inputIndex = readOption(args, '--index');
+  const idIndex = scanId ? join(resolve('.ansyswarden', 'tree', 'scans'), scanId + '.jsonl') : undefined;
+  const metadata = inputIndex ? await loadMetadataForIndex(inputIndex)
+    : idIndex ? await loadMetadataForIndex(idIndex) : await loadLatestMetadata();
+  const rawLimit = readOption(args, '--limit');
+  const limit = rawLimit === undefined ? 60 : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 60) {
+    throw new Error('--limit debe ser un entero entre 1 y 60.');
+  }
+
+  // No se invoca el escáner ni el backend: solo el índice ya persistido.
+  const review = await buildAiReview(metadata, limit);
+  const output = readOption(args, '--out') ?? ('revision_ia_' + metadata.id + '.html');
+  const saved = await saveAiReview(review, output);
+  console.log('\nAnSysWarden · Revisión humana antes de IA');
+  console.log('────────────────────────────────────────');
+  console.log('Captura:    ' + review.scanId);
+  console.log('Carpetas:   ' + review.totalDirectories);
+  console.log('Mostradas:  ' + review.shown);
+  console.log('Omitidas:   ' + review.omitted + ' (límite visual; no supone ausencia)');
+  console.log('Revisables: ' + review.folders.filter(folder => folder.eligible).length);
+  console.log('Errores:    ' + review.errors);
+  console.log('HTML local: ' + saved.htmlPath);
+  console.log('Mapa privado del PC: ' + saved.privateMapPath);
+  console.log('Abre el HTML para elegir carpetas y comprobar el JSON.');
+  console.log('No se ha contactado con IA ni se ha enviado o borrado ningún archivo.');
+}
+
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (!command || ['--help', '-h', 'help'].includes(command)) {
@@ -735,6 +811,7 @@ async function main(): Promise<void> {
   if (command === 'allocated') return runAllocated(args);
   if (command === 'age') return runAge(args);
   if (command === 'activity') return runActivity(args);
+  if (command === 'ai-preview') return runAiPreview(args);
   usage();
 }
 
