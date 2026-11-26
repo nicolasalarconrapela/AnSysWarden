@@ -118,7 +118,7 @@ const treeHelp: Record<string, { description: string; args: string; options: str
       "--out PATH      Guardar la revisión HTML; sin sobrescribir archivos"
     ],
     "example": "ai-preview --latest --out revision_ia.html",
-    "warning": "No envía información a la IA, no borra archivos y no autoriza el envío futuro."
+    "warning": "No envía información a la IA ni autoriza borrados. Si --out ya existe, se conserva: usa otro nombre."
   },
   "activity": {
     "description": "Reconocer grupos de archivos que conviene revisar.",

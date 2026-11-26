@@ -38,6 +38,16 @@ que incluya el identificador de la captura. Los índices originales siguen en
 ./ansys tree ai-preview --latest --out revision_ia.html
 ```
 
+Si `revision_ia.html` ya existe, AnSysWarden **no lo sobrescribe**.
+Abre la revisión anterior o crea otra utilizando un nombre distinto:
+
+```bash
+./ansys tree ai-preview --latest --out revision_ia_02.html
+```
+
+Si ese nombre también existe, el error propondrá el siguiente disponible
+sin eliminar ninguno. Las rutas de salida deben conservarse en el PC.
+
 Abre `revision_ia.html`. Valida que aparezcan carpetas conocidas, bloqueos
 de `backups` y `KEEP`, recuentos y limitación a 60 carpetas. No hay selección
 automática. Marca únicamente carpetas revisables, pulsa «Mostrar JSON» y

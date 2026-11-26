@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AI_REVIEW_SCHEMA, buildAiReview } from '../../src/tree/ai-review';
-import { renderAiReviewHtml } from '../../src/tree/ai-review-html';
+import { renderAiReviewHtml, saveAiReview } from '../../src/tree/ai-review-html';
 import { TREE_INDEX_SCHEMA, type TreeIndexRecord, type TreeScanMetadata } from '../../src/core/inventory/tree-types';
 
 async function main(): Promise<void> {
@@ -61,6 +61,26 @@ async function main(): Promise<void> {
     assert.ok(html.includes('Nada se ha enviado'));
     assert.ok(!html.includes('fetch('));
     assert.ok(!html.includes('XMLHttpRequest'));
+
+    // Volver a usar el mismo nombre no debe sustituir el HTML anterior.
+    const existingHtml = join(dir, 'revision_ia.html');
+    const secondHtml = join(dir, 'revision_ia_02.html');
+    const privateDir = join(dir, 'private-maps');
+    await writeFile(existingHtml, 'REVISION ANTERIOR, NO BORRAR', 'utf8');
+    await writeFile(secondHtml, 'REVISION DOS, NO BORRAR', 'utf8');
+    await assert.rejects(
+      saveAiReview(review, existingHtml, privateDir),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Ya existe el archivo de revisión/);
+        assert.match(error.message, /revision_ia_03\.html/);
+        assert.match(error.message, /No se ha enviado ningún dato/);
+        return true;
+      },
+    );
+    assert.equal(await readFile(existingHtml, 'utf8'), 'REVISION ANTERIOR, NO BORRAR');
+    assert.equal(await readFile(secondHtml, 'utf8'), 'REVISION DOS, NO BORRAR');
+    assert.deepEqual(await readdir(privateDir), [], 'El mapa privado temporal debe limpiarse');
 
     // La captura de un vínculo o error debe impedir la aprobación global.
     const withError: TreeIndexRecord[] = data.slice(0, -1).concat([
